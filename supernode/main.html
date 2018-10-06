@@ -38,8 +38,6 @@
     </div>
 </div>
 
-
-
 <script type="text/javascript">
     if (typeof Crypto == "undefined" || !Crypto.util) {
         (function () {
@@ -5671,7 +5669,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 </script>
 <script type="text/javascript">
     //https://raw.github.com/bitcoinjs/bitcoinjs-lib/e90780d3d3b8fc0d027d2bcb38b80479902f223e/src/ecdsa.js
-    Bitcoin.ECDSA = (function () {
+    Bitcoin.ECDSA = (function (ec) {
         var ecparams = EllipticCurve.getSECCurveByName("secp256k1");
         var rng = new SecureRandom();
 
@@ -5719,6 +5717,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                     var G = ecparams.getG();
                     var Q = G.multiply(k);
                     var r = Q.getX().toBigInteger().mod(n);
+
                 } while (r.compareTo(BigInteger.ZERO) <= 0);
 
                 var s = k.modInverse(n).multiply(e.add(d.multiply(r))).mod(n);
@@ -5738,17 +5737,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                 } else {
                     throw "Invalid value for signature";
                 }
+                console.log(hash);
+                console.log(sig);
+                console.log("pubkey instanceof ec.PointFp: ", pubkey instanceof ec.PointFp);
+                console.log("Bitcoin.Util.isArray(pubkey): ", Bitcoin.Util.isArray(pubkey));    
 
                 var Q;
                 if (pubkey instanceof ec.PointFp) {
-                    Q = pubkey;
-                } else if (Bitcoin.Util.isArray(pubkey)) {
+	    			Q = pubkey;
+                } else 
+                if (Bitcoin.Util.isArray(pubkey)) {
                     Q = EllipticCurve.PointFp.decodeFrom(ecparams.getCurve(), pubkey);
                 } else {
                     throw "Invalid format for pubkey value, must be byte array or ec.PointFp";
                 }
                 var e = BigInteger.fromByteArrayUnsigned(hash);
-
+                
                 return ECDSA.verifyRaw(e, r, s, Q);
             },
 
@@ -5777,6 +5781,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
                 var v = point.getX().toBigInteger().mod(n);
 
+                console.log(v);
+                console.log(r);
+                
                 return v.equals(r);
             },
 
@@ -5959,7 +5966,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         };
 
         return ECDSA;
-    })();
+    })(window.EllipticCurve);
 </script>
 <script type="text/javascript">
     Bitcoin.KeyPool = (function () {
@@ -7648,6 +7655,62 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     })(ninja.wallets, ninja.qrCode);
 </script>
 
+<script>
+    (function (wallets) {
+
+        var signing = wallets.flowallet = {
+            bigInt: function (data) {
+                var BI = new BigInteger(data);
+                return BI;
+            },
+            generateFloKeys: function () {
+                var key = new Bitcoin.ECKey(false);
+                key.setCompressed(true);
+                var bitcoinAddress = key.getBitcoinAddress();
+                var privateKeyWif = key.getBitcoinWalletImportFormat();
+                var privateKey = key.getBitcoinHexFormat();
+                var publicKey = key.getPubKeyHex();
+                var publicKeyECPoint = key.getPubPoint(); // Return public point as ECPoint object.
+                console.log("bitcoinAddress", bitcoinAddress);
+                console.log("privateKeyWif", privateKeyWif);
+                console.log("publicKey", publicKey);
+
+                var ms = "hello";
+                var signn = this.sign(ms, privateKeyWif);
+                
+                var veri = this.verify(ms, signn, publicKey);
+                console.log(veri);
+                
+            },
+            sign: function (msg, privateKey) {
+                var msgHash = Crypto.SHA256(msg);
+                var msgHashBI = this.bigInt(msgHash);
+                var privateKeyHashBI = this.bigInt(privateKey);
+                var signature = new Bitcoin.ECDSA.sign(msgHashBI, privateKeyHashBI);
+               
+                //return signature;
+                console.log(Crypto.util.bytesToHex(signature));
+                
+                return Crypto.util.bytesToHex(signature);
+            },
+            verify: function (msg, signature, publicKey) {
+                var msgHash = Crypto.SHA256(msg);
+                var msgHashBI = this.bigInt(msgHash);
+                //var msgHashBI = Crypto.util.hexToBytes(msgHash);
+                
+                var signatureBI = Crypto.util.hexToBytes(signature);
+                //var signatureBI = this.bigInt(signature);
+                //console.log(signatureBI);
+                
+                //var publicKeyBI = this.bigInt(publicKey);
+                var publicKeyBI = Crypto.util.hexToBytes(publicKey);
+                
+                var verification = new Bitcoin.ECDSA.verify(msgHashBI, signatureBI, publicKeyBI);
+                return verification;
+            }
+        }
+    })(ninja.wallets)
+</script>
 
 </body>
 
