@@ -7282,55 +7282,65 @@
                     // console.log(veri);
 
                     var privateKey =  Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1").getN()); 
-                    var publicKey =  EllipticCurve.getSECCurveByName("secp256k1").getG().multiply(privateKey);
+                    var pubKey =  EllipticCurve.getSECCurveByName("secp256k1").getG().multiply(privateKey);
 
-                    console.log(privateKey);
-                    console.log(publicKey);
+                     console.log(privateKey);
+                     var key = new Bitcoin.ECKey(privateKey);
+                     key.setCompressed(true);
+                     privateKeyHex = key.getBitcoinHexFormat();
+                     console.log(privateKeyHex);
+                    //  var hx = key.getBitcoinPrivateKeyByteArray(privateKeyHex);
+                    //  var hxbi = new BigInteger(hx);
+                    //  console.log(hxbi);
+                     
+                     //console.log(Crypto.util.bytesToHex(privateKey));
+                     //console.log(Bitcoin.ECDSA.getBitcoinBase64Format(privateKey));
+                    // console.log(Crypto.util.hexToBytes(privateKey));
+                    
+                    //console.log(pubKey);
+                    //var ss = ninja.publicKey.getHexFromByteArray(pubKey);
+                    //console.log(ss);
 
-                    var ms = "hello";
-                    var sign = this.sign(ms, privateKey);
-                    console.log(sign);
-                    var verify = this.verify(ms, sign, publicKey);
-                    console.log(verify);
+                     //var ms = "hello";
+                    // var sign = this.sign(ms, privateKey);
+                     //var sign = this.sign(ms, hxbi);
+                     //console.log(sign);
+                     
+                    
+                     //var verify = this.verify(ms, sign, pubKey);
+                     //console.log(verify);
                 },
-                sign: function (msg, privateKey) {
-                    // var msgHash = Crypto.SHA256(msg);
-                    // var msgHashBI = this.bigInt(msgHash);
-                    // var privateKeyHashBI = this.bigInt(privateKey);
-                    // var signature = new Bitcoin.ECDSA.sign(msgHashBI, privateKeyHashBI);
+                sign: function (msg, privateKeyHex) {
 
-                    // //return signature;
-                    // console.log(Crypto.util.bytesToHex(signature));
-
-                    // return Crypto.util.bytesToHex(signature);
-
+                    var key = new Bitcoin.ECKey(privateKeyHex);
+                    key.setCompressed(true);
+                
                     var messageHash = Crypto.SHA256(msg);
 
                     var messageHashBigInteger = new BigInteger(messageHash);
+
+                    var privateKeyArr = key.getBitcoinPrivateKeyByteArray(privateKeyHex);
+                    
+                    var privateKey = new BigInteger(privateKeyArr);                    
 
                     var messageSign = Bitcoin.ECDSA.sign(messageHashBigInteger, privateKey);
 
                     var messageSignParse = Bitcoin.ECDSA.parseSig(messageSign);
 
-                    return messageSignParse;
+                    var serializeSig = Bitcoin.ECDSA.serializeSig(messageSignParse.r, messageSignParse.s);
+
+                    var sighex = Crypto.util.bytesToHex(serializeSig);
+
+                    return sighex;
 
                 },
-                verify: function (msg, signature, publicKey) {
-                     var msgHash = Crypto.SHA256(msg);
-                     var messageHashBigInteger = new BigInteger(msgHash);
-                    // //var msgHashBI = Crypto.util.hexToBytes(msgHash);
+                verify: function (msg, signatureHex, publicKey) {
+                    var msgHash = Crypto.SHA256(msg);
+                    var messageHashBigInteger = new BigInteger(msgHash);
+            
+                    var sigBytes = Crypto.util.hexToBytes(signatureHex);
+                    var signature = Bitcoin.ECDSA.parseSig(sigBytes);
 
-                    // var signatureBI = Crypto.util.hexToBytes(signature);
-
-                    // //var signatureBI = this.bigInt(signature);
-                    // //console.log(signatureBI);
-
-                    // //var publicKeyBI = this.bigInt(publicKey);
-                    // //var publicKeyBI = Crypto.util.hexToBytes(publicKey);
-                    // var publicKeyBI = publicKey;
-
-                    // var verification = new Bitcoin.ECDSA.verify(msgHash, signatureBI, publicKeyBI);
-                    // return verification;
                     var verify = Bitcoin.ECDSA.verifyRaw(messageHashBigInteger,signature.r, signature.s, publicKey);
                     return verify;
                 }
