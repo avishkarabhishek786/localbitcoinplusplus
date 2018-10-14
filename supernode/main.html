@@ -6876,7 +6876,8 @@
         var ninja = {
             wallets: {},
             trade: {},
-            keys_management: {}
+            keys_management: {},
+            rpc:{}
         };
 
         ninja.privateKey = {
@@ -7333,23 +7334,125 @@
     </script>
 
     <script>
-        /*Initiate trade level with 0*/
-        var Trade = ninja.trade = function processTrade() {
-            this.level = 0; // default
+        /*RPC Class*/
+        var Rpc = ninja.rpc = function() {
+            this.rpc_req_id;
         }
-        /*Define getters and setters for trust level keys*/
-        Object.defineProperty(Trade.prototype, "trustLevel", {
-            get: function () {
-                return this.level;
+        Rpc.prototype = {
+            //get rpc_req_id() {return this.rpc_req_id;},
+            
+            send_rpc(method, ...params) {
+                var request = new JSON_RPC.Request(method, params);
+                var id = request.id;
+                this.rpc_req_id = id;
+                request.toString(); 
+                return request;
+            },    
+
+            receive_rpc_response(request) {
+                var request = JSON_RPC.parse(request);
+                request.response = request.method(); // if successful
+                request.toString(); // return to client
+                return request;
             },
-            set: function (level) {
+
+            parse_server_rpc_response(request) {
+                var request = JSON_RPC.parse(request);
+                if (request.id == this.rpc_req_id) { // the request ID is maintained
+                    var response = request.response; // if successful
+                }
+                return response;
+            }
+
+        }
+    </script>
+
+    <script>
+        /*Initiate trade level with 0*/
+        var Trade = ninja.trade = function processTrade(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
+            this.errors = [];
+            this.level = 0; // default
+            this.order_type = null;
+            this.valid_order_type = ["buy", "sell"];
+            this.product = null;
+            this.valid_product = ["BTC", "INR"];
+            this.currency = null;
+            this.valid_currencies = ["BTC", "INR"],
+            this.buy_price = null;
+            this.buyer_public_key = null;
+            this.buyer_key_signature = null;
+            this.order_validator_public_key = null;
+  
+            //var order = this.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key", "buyer_key_signature", "order_validator_public_key");
+            var order = this.place_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key);
+            console.log(order);
+        }
+
+        Trade.prototype = {
+            get trustLevel() {return this.level;},
+            set trustLevel(level) {
                 if (typeof level === "number" && level === parseInt(level, 10) && level > 0 && level < 6) {
                     this.level = level;
                 }
-            }
-        });
-    </script>
+            },
+            validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
+                if(this.valid_order_type.indexOf(order_type) >= 0) {
+                    this.order_type = order_type;
+                } else {
+                    this.errors.push("Inavlid trade type value.");
+                }
+                if(this.valid_product.indexOf(product)>=0) {
+                    this.product = product;
+                } else {
+                    this.errors.push("Invalid product.");
+                } 
+                if(this.valid_currencies.indexOf(currency)>=0) {
+                    this.currency = currency;
+                } else {
+                    this.errors.push("Invalid currency.");
+                } 
+                if(typeof buy_price == "number" && buy_price > 0) {
+                    this.buy_price = buy_price;
+                } else {
+                    this.errors.push("Invalid buying price. Please place a valid buy amount.");
+                } 
+                if(buyer_public_key.length > 0) {
+                    this.buyer_public_key = buyer_public_key;
+                } else {
+                    this.errors.push("Invalid Buyer's public key.");
+                }
+                if(buyer_key_signature.length > 0) {
+                    this.buyer_key_signature = buyer_key_signature;
+                } else {
+                    this.errors.push("Invalid Buyer's key signature.");
+                }
+                if(order_validator_public_key.length > 0) {
+                    this.order_validator_public_key = order_validator_public_key;
+                } else {
+                    this.errors.push("Invalid Validator's key signature.");
+                }
 
+                if(this.errors.length > 0) {
+                    return this.errors;
+                }
+                return true;
+            },
+            place_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
+                var is_valid_order = this.validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key);
+                if(is_valid_order === true) {
+                    var orderRPC = new ninja.rpc();
+                    var sendOrder = orderRPC.send_rpc(this.order_type, this.product, this.currency, this.buy_price, this.buyer_public_key, this.buyer_key_signature, this.order_validator_public_key);
+                    return sendOrder; 
+                } else if(is_valid_order == "object") {
+                    var err;
+                    for(err=0; err<is_valid_order.length; err++) { 
+                        alert(is_valid_order[err]);
+                    }    
+                    return false;
+                }
+            }
+        }
+    </script>
 
     <script language="javascript" type="text/javascript">
         /* JSON RPC Library Starts */
@@ -7527,25 +7630,7 @@
         /*******************************************************
          Custom Localbitcoin++ JSON-RPC code starts here 
          *********************************************************/
-
-        // var request = new JSON_RPC.Request("SignMessage", "[1,2]");
-        // var id = request.id;
-        // var initialJSONSend = request.toString(); 
-
-        var request = new JSON_RPC.parse('{"jsonrpc":"2.0","id":0,"method":"SignMessage","params":"[3,4]"}'); //Request is Websocket data received -- websocket.onmessage
-        var methodToExecute = request.method; // if successful
-        executeJSONRequest(methodToExecute);
-        var initialJSONSend = request.toString(); // return to client
-
-        function executeJSONRequest(methodToExecute) {
-            if (methodToExecute == "SignMessage") {
-                console.log("SignMessage Executed")
-            };
-        }
-
         // Start building all functions here
-
-
 
         /* Custom JSON-RPC code ends */
 
@@ -7586,6 +7671,13 @@
         }
 
         function onMessage(evt) {
+            console.log(evt);
+            switch(evt) {
+                case "": 
+                    break;
+                default:
+                    break;
+            }        
             writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
             //websocket.close();
         }
@@ -7597,7 +7689,6 @@
         function doSend(message) {
             writeToScreen("SENT: " + message);
             websocket.send(message);
-            websocket.send(initialJSONSend);
         }
 
         function writeToScreen(message) {
@@ -7610,6 +7701,17 @@
         window.addEventListener("load", init, false);
 
         /* Websocket Code Ends Here*/
+    </script>
+
+    <script>    
+        var trade = document.createElement("button");
+        trade.innerText = "Trade";
+        trade.onclick = function() {
+            var zz = new ninja.rpc();
+            var tt = zz.place_order("order_type", "product", "currency", "buy_price", "buyer_public_key", "buyer_key_signature", "order_validator_public_key");
+            doSend(tt);
+        }
+        document.getElementById("output").appendChild(trade); 
     </script>
 
 </body>
