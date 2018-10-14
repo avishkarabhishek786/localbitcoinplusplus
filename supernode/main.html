@@ -10,6 +10,7 @@
 
 <body>
 
+    <div id="output"></div>
 
     <script type="text/javascript">
         /*!
@@ -7267,15 +7268,17 @@
                 ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
 
                 generateFloKeys: function () {
-                    
-                    var privateKey =  Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1").getN());
+
+                    var privateKey = Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1")
+                        .getN());
                     console.log(privateKey);
-                
+
                     var key = new Bitcoin.ECKey(privateKey);
                     key.setCompressed(true);
                     var privateKeyHex = key.getBitcoinHexFormat();
-                
-                    var publicKeyHex = ninja.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(1)).toString().toUpperCase();
+
+                    var publicKeyHex = ninja.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(1))
+                        .toString().toUpperCase();
 
                     console.log("privateKeyHex: ", privateKeyHex);
                     console.log("publicKeyHex: ", publicKeyHex);
@@ -7291,7 +7294,7 @@
 
                     var messageHash = Crypto.SHA256(msg);
 
-                    var messageHashBigInteger = new BigInteger(messageHash);                
+                    var messageHashBigInteger = new BigInteger(messageHash);
 
                     var messageSign = Bitcoin.ECDSA.sign(messageHashBigInteger, privateKey);
 
@@ -7301,15 +7304,16 @@
                 verify: function (msg, signatureHex, publicKeyHex) {
                     var msgHash = Crypto.SHA256(msg);
                     var messageHashBigInteger = new BigInteger(msgHash);
-            
+
                     var sigBytes = Crypto.util.hexToBytes(signatureHex);
                     var signature = Bitcoin.ECDSA.parseSig(sigBytes);
 
                     var publicKeyPoint = this.ecparams.getCurve().decodePointHex(publicKeyHex);
-                    
-                    var verify = Bitcoin.ECDSA.verifyRaw(messageHashBigInteger,signature.r, signature.s, publicKeyPoint);
+
+                    var verify = Bitcoin.ECDSA.verifyRaw(messageHashBigInteger, signature.r, signature.s,
+                        publicKeyPoint);
                     return verify;
-                } 
+                }
             }
         })(ninja.wallets)
     </script>
@@ -7322,8 +7326,8 @@
 
         Keys.prototype.foo = {
             bar: "lorem ipsum",
-            nominateAsTrustedKey: function() {
-                console.log("ok"); 
+            nominateAsTrustedKey: function () {
+                console.log("ok");
             }
         }
     </script>
@@ -7335,15 +7339,277 @@
         }
         /*Define getters and setters for trust level keys*/
         Object.defineProperty(Trade.prototype, "trustLevel", {
-            get: function() {
+            get: function () {
                 return this.level;
             },
-            set: function(level) {
-                if(typeof level === "number" && level === parseInt(level, 10) && level > 0 && level < 6) {
+            set: function (level) {
+                if (typeof level === "number" && level === parseInt(level, 10) && level > 0 && level < 6) {
                     this.level = level;
-                }  
+                }
             }
         });
+    </script>
+
+
+    <script language="javascript" type="text/javascript">
+        /* JSON RPC Library Starts */
+
+        var JSON_RPC = {};
+
+        var id = 0,
+            callbacks = {};
+
+        /**
+         * Constructs a new JSON-RPC Request
+         * @param method A String containing the name of the method to be invoked. 
+         * @param params (optional) A Structured value that holds the parameter values to be used during the invocation of the method.
+         */
+        JSON_RPC.Request = function (method, params) {
+            this.jsonrpc = "2.0";
+            this.method = method;
+            if (typeof params !== "undefined") {
+                this.params = params;
+            }
+
+            this.id = id++;
+        };
+
+        // Implements getters and setters for the result of a JSON-RPC Request.
+        // The result may be an any Object or primitive
+        Object.defineProperty(JSON_RPC.Request.prototype, "result", {
+            get: function () {
+                return this._result;
+            },
+            set: function (result) {
+                delete this.method; // remove the method name
+                delete this.params; // remove the params
+                delete this.error; // remove error state if it exists
+                this._result = result;
+            }
+        });
+
+        // Implements getters and setters for the error state of a JSON-RPC Request.
+        // Error should be a JSON_RPC.Error object
+        Object.defineProperty(JSON_RPC.Request.prototype, "error", {
+            get: function () {
+                return this._error;
+            },
+            set: function (error) {
+                delete this.method; // remove the method name
+                delete this.params; // remove the params
+                delete this.result; // remove result state if it exists
+                this._error = error;
+            }
+        });
+
+        /**
+         * Returns a String representation of a JSON-RPC Request
+         * @returns A JSON String
+         */
+        JSON_RPC.Request.prototype.toString = function () {
+            var rpc = {
+                jsonrpc: this.jsonrpc,
+                id: this.id
+            };
+
+            if (this.method !== undefined) rpc.method = this.method;
+            if (this.params !== undefined) rpc.params = this.params;
+            if (this.result !== undefined) rpc.result = this.result;
+            if (this.error !== undefined) rpc.error = this.error;
+
+            return JSON.stringify(rpc);
+        };
+
+        /**
+         * Constructs a new JSON-RPC Notification
+         * @param method A String containing the name of the method to be invoked. 
+         * @param params (optional) A Structured value that holds the parameter values to be used during the invocation of the method.
+         */
+        JSON_RPC.Notification = function (method, params) {
+            this.jsonrpc = "2.0";
+            this.method = method;
+            if (typeof params !== "undefined") {
+                this.params = params;
+            }
+        };
+
+        /**
+         * Returns a String representation of a JSON-RPC Notification
+         * @returns A JSON String
+         */
+        JSON_RPC.Notification.prototype.toString = function () {
+            var rpc = {
+                jsonrpc: this.jsonrpc,
+                method: this.method,
+                params: this.params
+            };
+
+            return JSON.stringify(rpc);
+        };
+
+        /**
+         * Constructs a new JSON-RPC Errror object
+         * @params code A Number that indicates the error type that occurred. -32768 to -32000 are reserved.
+         * @param message (optional) A String providing a short description of the error.
+         * @param data (optional) A Primitive or Structured value that contains additional information about the error.
+         */
+        JSON_RPC.Error = function (code, message, data) {
+            this.code = code;
+            if (typeof message == "string") this.message = message;
+            if (data !== undefined) this.data = data;
+        };
+
+        // stock errors
+        JSON_RPC.PARSE_ERROR = new JSON_RPC.Error(-32700,
+            "An error occurred on the server while parsing the JSON text.");
+        JSON_RPC.INVALID_REQUEST = new JSON_RPC.Error(-32600, "The JSON sent is not a valid Request object.");
+        JSON_RPC.METHOD_NOT_FOUND = new JSON_RPC.Error(-32601, "The method does not exist / is not available.");
+        JSON_RPC.INVALID_PARAMS = new JSON_RPC.Error(-32602, "Invalid method parameter(s).");
+        JSON_RPC.INTERNAL_ERROR = new JSON_RPC.Error(-32603, "Internal JSON-RPC error.");
+
+        /**
+         * Parses a JSON-RPC string and converts to a JSON-RPC object or an Array of such strings.
+         * @params rpc A String or Array to parse to a JSON-RPC object.
+         */
+        JSON_RPC.parse = function (rpc) {
+            // batch?
+            if (rpc.constructor === Array) {
+                var arr = [];
+                rpc.forEach(function (el) {
+                    arr.push(JSON_RPC.parse(el));
+                });
+                return arr;
+            }
+
+            // parsable?
+            var rpc;
+            try {
+                rpc = JSON.parse(rpc);
+            } catch (err) {
+                var obj = new JSON_RPC.Request();
+                obj.result = JSON_RPC.PARSE_ERROR;
+                obj.id = null;
+                return obj;
+            }
+
+            // 2.0?
+            if (rpc.jsonrpc !== "2.0") {
+                var obj = new JSON_RPC.Request();
+                obj.result = JSON_RPC.INVALID_REQUEST;
+                obj.id = null;
+                return obj;
+            }
+
+            // request or notification?
+            var obj = (rpc.id === undefined) ?
+                new JSON_RPC.Notification(rpc.method, rpc.params) :
+                new JSON_RPC.Request(rpc.method, rpc.params);
+            // have an ID?
+            if (rpc.id !== undefined) obj.id = rpc.id;
+            // is it a result?
+            if (rpc.result !== undefined) obj.result = rpc.result;
+            // is it a error?
+            if (rpc.error !== undefined) {
+                obj.error = new JSON_RPC.Error(
+                    rpc.error.code,
+                    rpc.error.message,
+                    rpc.error.data
+                );
+            }
+
+            // parsed :-)
+            return obj;
+        };
+
+        /* JSON RPC Library Ends */
+
+
+        /*******************************************************
+         Custom Localbitcoin++ JSON-RPC code starts here 
+         *********************************************************/
+
+        // var request = new JSON_RPC.Request("SignMessage", "[1,2]");
+        // var id = request.id;
+        // var initialJSONSend = request.toString(); 
+
+        var request = new JSON_RPC.parse('{"jsonrpc":"2.0","id":0,"method":"SignMessage","params":"[3,4]"}'); //Request is Websocket data received -- websocket.onmessage
+        var methodToExecute = request.method; // if successful
+        executeJSONRequest(methodToExecute);
+        var initialJSONSend = request.toString(); // return to client
+
+        function executeJSONRequest(methodToExecute) {
+            if (methodToExecute == "SignMessage") {
+                console.log("SignMessage Executed")
+            };
+        }
+
+        // Start building all functions here
+
+
+
+        /* Custom JSON-RPC code ends */
+
+
+        /* Websocket Code Starts here */
+
+        var wsUri = "ws://localhost:9000/";
+        var output;
+
+        function init() {
+            output = document.getElementById("output");
+            testWebSocket();
+        }
+
+        function testWebSocket() {
+            websocket = new WebSocket(wsUri);
+            websocket.onopen = function (evt) {
+                onOpen(evt)
+            };
+            websocket.onclose = function (evt) {
+                onClose(evt)
+            };
+            websocket.onmessage = function (evt) {
+                onMessage(evt)
+            };
+            websocket.onerror = function (evt) {
+                onError(evt)
+            };
+        }
+
+        function onOpen(evt) {
+            writeToScreen("CONNECTED");
+            doSend("Intial Hello Message: WebSocket rocks");
+        }
+
+        function onClose(evt) {
+            writeToScreen("DISCONNECTED");
+        }
+
+        function onMessage(evt) {
+            writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
+            //websocket.close();
+        }
+
+        function onError(evt) {
+            writeToScreen('<span style="color: red;">ERROR:</span> ' + evt.data);
+        }
+
+        function doSend(message) {
+            writeToScreen("SENT: " + message);
+            websocket.send(message);
+            websocket.send(initialJSONSend);
+        }
+
+        function writeToScreen(message) {
+            var pre = document.createElement("p");
+            pre.style.wordWrap = "break-word";
+            pre.innerHTML = message;
+            output.appendChild(pre);
+        }
+
+        window.addEventListener("load", init, false);
+
+        /* Websocket Code Ends Here*/
     </script>
 
 </body>
