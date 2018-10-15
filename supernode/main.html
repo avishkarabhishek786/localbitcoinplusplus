@@ -7337,6 +7337,7 @@
         /*RPC Class*/
         var Rpc = ninja.rpc = function() {
             this.rpc_req_id;
+            this.valid_job = ["trade_buy", "trade_sell"];
         }
         Rpc.prototype = {
             //get rpc_req_id() {return this.rpc_req_id;},
@@ -7345,22 +7346,45 @@
                 var request = new JSON_RPC.Request(method, params);
                 var id = request.id;
                 this.rpc_req_id = id;
-                request.toString(); 
-                return request;
+                return request.toString(); 
+                //return request;
             },    
 
             receive_rpc_response(request) {
-                var request = JSON_RPC.parse(request);
-                request.response = request.method(); // if successful
-                request.toString(); // return to client
-                return request;
+                var request = JSON.parse(request);
+                
+                //if (typeof request.params.rpc_job == "string" && this.valid_job.indexOf(request.rpc_job)!=-1) {
+                if (typeof request.params != 'undefined' && request.params.length>0) {
+                    request.response = {};
+                    console.log(request.params[7]);
+                    
+                    switch (request.params[7]) {
+                        case "trade_buy":
+                            var Trade = new ninja.trade();
+                            request.response = Trade.trade_buy(...request.params);
+                            break;
+                        case "trade_sell":
+                            var Trade = new ninja.trade();
+                            request.response = Trade.trade_sell(...request.params);
+                            break;
+                    
+                        default:
+                            alert("Unknown method called for execution.");
+                            break;
+                    }
+                }
+                
+                //request.response = request.method(); // if successful
+                return request.toString(); // return to client
             },
 
             parse_server_rpc_response(request) {
                 var request = JSON_RPC.parse(request);
+                var response;
                 if (request.id == this.rpc_req_id) { // the request ID is maintained
-                    var response = request.response; // if successful
+                    response = request.response; // if successful
                 }
+                console.log("res:", response);
                 return response;
             }
 
@@ -7369,7 +7393,8 @@
 
     <script>
         /*Initiate trade level with 0*/
-        var Trade = ninja.trade = function processTrade(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
+        var Trade = ninja.trade = function processTrade() {
+            //this.op_code = null;
             this.errors = [];
             this.level = 0; // default
             this.order_type = null;
@@ -7382,10 +7407,7 @@
             this.buyer_public_key = null;
             this.buyer_key_signature = null;
             this.order_validator_public_key = null;
-  
-            //var order = this.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key", "buyer_key_signature", "order_validator_public_key");
-            var order = this.place_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key);
-            console.log(order);
+            this.rpc_job = null;            
         }
 
         Trade.prototype = {
@@ -7396,6 +7418,7 @@
                 }
             },
             validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
+                
                 if(this.valid_order_type.indexOf(order_type) >= 0) {
                     this.order_type = order_type;
                 } else {
@@ -7441,8 +7464,8 @@
                 var is_valid_order = this.validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key);
                 if(is_valid_order === true) {
                     var orderRPC = new ninja.rpc();
-                    var sendOrder = orderRPC.send_rpc(this.order_type, this.product, this.currency, this.buy_price, this.buyer_public_key, this.buyer_key_signature, this.order_validator_public_key);
-                    return sendOrder; 
+                    this.rpc_job = 'trade_'+this.order_type;
+                    return orderRPC.send_rpc(this.buy, this.order_type, this.product, this.currency, this.buy_price, this.buyer_public_key, this.buyer_key_signature, this.order_validator_public_key, this.rpc_job);
                 } else if(is_valid_order == "object") {
                     var err;
                     for(err=0; err<is_valid_order.length; err++) { 
@@ -7450,6 +7473,12 @@
                     }    
                     return false;
                 }
+            },
+            trade_buy() {
+                console.log("buy is called");
+            },
+            trade_sell() {
+                console.log("buy is called");
             }
         }
     </script>
@@ -7671,15 +7700,23 @@
         }
 
         function onMessage(evt) {
-            console.log(evt);
-            switch(evt) {
-                case "": 
-                    break;
-                default:
-                    break;
-            }        
+            var response = evt.data;
+            console.log(typeof response);
+            console.log(response);
+            
+            var res_pos = response.indexOf('{');
+            if (res_pos>=0) {
+                var res = response.substr(res_pos);
+                try {
+                    var res_obj = JSON.parse(res);
+                    var orderRPC = new ninja.rpc();
+                    return orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                } catch (error) {
+                    console.error(error);
+                    return;
+                } 
+            }       
             writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
-            //websocket.close();
         }
 
         function onError(evt) {
@@ -7707,9 +7744,10 @@
         var trade = document.createElement("button");
         trade.innerText = "Trade";
         trade.onclick = function() {
-            var zz = new ninja.rpc();
-            var tt = zz.place_order("order_type", "product", "currency", "buy_price", "buyer_public_key", "buyer_key_signature", "order_validator_public_key");
-            doSend(tt);
+            var trade = new ninja.trade;
+            var buytrade = trade.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key", "buyer_key_signature", "order_validator_public_key");
+            doSend(buytrade);
+            //doSend(JSON.stringify(buytrade));
         }
         document.getElementById("output").appendChild(trade); 
     </script>
