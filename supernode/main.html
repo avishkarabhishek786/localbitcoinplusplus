@@ -7344,6 +7344,8 @@
             
             send_rpc(method, ...params) {
                 var request = new JSON_RPC.Request(method, params);
+                console.log(request);
+                
                 var id = request.id;
                 this.rpc_req_id = id;
                 return request.toString(); 
@@ -7352,13 +7354,13 @@
 
             receive_rpc_response(request) {
                 var request = JSON.parse(request);
-                
-                //if (typeof request.params.rpc_job == "string" && this.valid_job.indexOf(request.rpc_job)!=-1) {
-                if (typeof request.params != 'undefined' && request.params.length>0) {
+                var params = request.params[0];
+                var method = request.method;
+
+                if (typeof params != undefined && typeof method != undefined) {
                     request.response = {};
-                    console.log(request.params[7]);
                     
-                    switch (request.params[7]) {
+                    switch (method) {
                         case "trade_buy":
                             var Trade = new ninja.trade();
                             request.response = Trade.trade_buy(...request.params);
@@ -7366,8 +7368,7 @@
                         case "trade_sell":
                             var Trade = new ninja.trade();
                             request.response = Trade.trade_sell(...request.params);
-                            break;
-                    
+                            break;    
                         default:
                             alert("Unknown method called for execution.");
                             break;
@@ -7465,7 +7466,7 @@
                 if(is_valid_order === true) {
                     var orderRPC = new ninja.rpc();
                     this.rpc_job = 'trade_'+this.order_type;
-                    return orderRPC.send_rpc(this.buy, this.order_type, this.product, this.currency, this.buy_price, this.buyer_public_key, this.buyer_key_signature, this.order_validator_public_key, this.rpc_job);
+                    return orderRPC.send_rpc(this.rpc_job, {"order_type":this.order_type, "product":this.product, "currency":this.currency, "buy_price":this.buy_price, "buyer_public_key":this.buyer_public_key, "buyer_key_signature":this.buyer_key_signature, "order_validator_public_key":this.order_validator_public_key});
                 } else if(is_valid_order == "object") {
                     var err;
                     for(err=0; err<is_valid_order.length; err++) { 
@@ -7476,9 +7477,10 @@
             },
             trade_buy() {
                 console.log("buy is called");
+                return "tb";
             },
             trade_sell() {
-                console.log("buy is called");
+                console.log("sell is called");
             }
         }
     </script>
@@ -7700,17 +7702,37 @@
         }
 
         function onMessage(evt) {
-            var response = evt.data;
-            console.log(typeof response);
-            console.log(response);
+            console.log(evt);
             
+            var response = evt.data;       
             var res_pos = response.indexOf('{');
             if (res_pos>=0) {
                 var res = response.substr(res_pos);
                 try {
                     var res_obj = JSON.parse(res);
-                    var orderRPC = new ninja.rpc();
-                    return orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                    console.log(res_obj);
+                    
+                    if (typeof res_obj.method !== undefined) {
+                        var orderRPC = new ninja.rpc();
+                        switch (res_obj.method) {
+                            case "trade_buy":
+                            
+                            var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                            //orderRPC.parse_server_rpc_response(response_from_sever);
+                            
+                            //doSend(response_from_sever); // send response to client
+                                break;
+                            case "trade_sell":
+                            var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                            doSend(response_from_sever); // send response to client
+                                break;
+                        
+                            default:
+                                break;
+                        }
+                    }
+                    
+                    
                 } catch (error) {
                     console.error(error);
                     return;
