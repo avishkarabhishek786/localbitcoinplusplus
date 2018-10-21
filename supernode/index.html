@@ -165,6 +165,157 @@
             })();
         }
     </script>
+
+    <!-- SHA1 -->
+    <script type="text/javascript">
+        //Adding SHA1 to fix basic PKBDF2
+        /*
+         * Crypto-JS v2.5.4
+         * http://code.google.com/p/crypto-js/
+         * (c) 2009-2012 by Jeff Mott. All rights reserved.
+         * http://code.google.com/p/crypto-js/wiki/License
+         */
+        (function () {
+
+            // Shortcuts
+            var C = Crypto,
+                util = C.util,
+                charenc = C.charenc,
+                UTF8 = charenc.UTF8,
+                Binary = charenc.Binary;
+
+            // Public API
+            var SHA1 = C.SHA1 = function (message, options) {
+                var digestbytes = util.wordsToBytes(SHA1._sha1(message));
+                return options && options.asBytes ? digestbytes :
+                    options && options.asString ? Binary.bytesToString(digestbytes) :
+                    util.bytesToHex(digestbytes);
+            };
+
+            // The core
+            SHA1._sha1 = function (message) {
+
+                // Convert to byte array
+                if (message.constructor == String) message = UTF8.stringToBytes(message);
+                /* else, assume byte array already */
+
+                var m = util.bytesToWords(message),
+                    l = message.length * 8,
+                    w = [],
+                    H0 = 1732584193,
+                    H1 = -271733879,
+                    H2 = -1732584194,
+                    H3 = 271733878,
+                    H4 = -1009589776;
+
+                // Padding
+                m[l >> 5] |= 0x80 << (24 - l % 32);
+                m[((l + 64 >>> 9) << 4) + 15] = l;
+
+                for (var i = 0; i < m.length; i += 16) {
+
+                    var a = H0,
+                        b = H1,
+                        c = H2,
+                        d = H3,
+                        e = H4;
+
+                    for (var j = 0; j < 80; j++) {
+
+                        if (j < 16) w[j] = m[i + j];
+                        else {
+                            var n = w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16];
+                            w[j] = (n << 1) | (n >>> 31);
+                        }
+
+                        var t = ((H0 << 5) | (H0 >>> 27)) + H4 + (w[j] >>> 0) + (
+                            j < 20 ? (H1 & H2 | ~H1 & H3) + 1518500249 :
+                            j < 40 ? (H1 ^ H2 ^ H3) + 1859775393 :
+                            j < 60 ? (H1 & H2 | H1 & H3 | H2 & H3) - 1894007588 :
+                            (H1 ^ H2 ^ H3) - 899497514);
+
+                        H4 = H3;
+                        H3 = H2;
+                        H2 = (H1 << 30) | (H1 >>> 2);
+                        H1 = H0;
+                        H0 = t;
+
+                    }
+
+                    H0 += a;
+                    H1 += b;
+                    H2 += c;
+                    H3 += d;
+                    H4 += e;
+
+                }
+
+                return [H0, H1, H2, H3, H4];
+
+            };
+
+            // Package private blocksize
+            SHA1._blocksize = 16;
+
+            SHA1._digestsize = 20;
+
+        })();
+    </script>
+
+    <!-- HMAC -->
+    <script type="text/javascript">
+        //Added to make PKBDF2 work
+        /*
+         * Crypto-JS v2.5.4
+         * http://code.google.com/p/crypto-js/
+         * (c) 2009-2012 by Jeff Mott. All rights reserved.
+         * http://code.google.com/p/crypto-js/wiki/License
+         */
+        (function () {
+
+            // Shortcuts
+            var C = Crypto,
+                util = C.util,
+                charenc = C.charenc,
+                UTF8 = charenc.UTF8,
+                Binary = charenc.Binary;
+
+            C.HMAC = function (hasher, message, key, options) {
+
+                // Convert to byte arrays
+                if (message.constructor == String) message = UTF8.stringToBytes(message);
+                if (key.constructor == String) key = UTF8.stringToBytes(key);
+                /* else, assume byte arrays already */
+
+                // Allow arbitrary length keys
+                if (key.length > hasher._blocksize * 4)
+                    key = hasher(key, {
+                        asBytes: true
+                    });
+
+                // XOR keys with pad constants
+                var okey = key.slice(0),
+                    ikey = key.slice(0);
+                for (var i = 0; i < hasher._blocksize * 4; i++) {
+                    okey[i] ^= 0x5C;
+                    ikey[i] ^= 0x36;
+                }
+
+                var hmacbytes = hasher(okey.concat(hasher(ikey.concat(message), {
+                    asBytes: true
+                })), {
+                    asBytes: true
+                });
+
+                return options && options.asBytes ? hmacbytes :
+                    options && options.asString ? Binary.bytesToString(hmacbytes) :
+                    util.bytesToHex(hmacbytes);
+
+            };
+
+        })();
+    </script>
+
     <script type="text/javascript">
         /*!
          * Crypto-JS v2.5.4	SHA256.js
@@ -6866,7 +7017,7 @@
                             dest[destPos++] = src[srcPos++];
                             dest[destPos++] = src[srcPos++];
                         }
-                }
+                    }
                 } // scryptCore
             }; // window.Crypto_scrypt
         })();
@@ -6877,7 +7028,7 @@
         var localbitcoinplusplus = {
             wallets: {},
             trade: {},
-            rpc:{},
+            rpc: {},
             rm_configs: {},
             flocha: "https://livenet.flocha.in"
         };
@@ -6994,7 +7145,8 @@
                     if (checksum[0] != hex[3] || checksum[1] != hex[4] || checksum[2] != hex[5] || checksum[
                             3] !=
                         hex[6]) {
-                        callback(new Error(localbitcoinplusplus.translator.get("bip38alertincorrectpassphrase"))); // callback using closure
+                        callback(new Error(localbitcoinplusplus.translator.get(
+                            "bip38alertincorrectpassphrase"))); // callback using closure
                         return;
                     }
                     callback(tmpkey.getBitcoinPrivateKeyByteArray()); // callback using closure
@@ -7164,7 +7316,8 @@
                 // address using either compressed or uncompressed public key methodology (specify which methodology is used
                 // inside flagbyte). This is the generated Bitcoin address, call it generatedaddress.
                 var ec = EllipticCurve.getSECCurveByName("secp256k1").getCurve();
-                var generatedPoint = ec.decodePointHex(localbitcoinplusplus.publicKey.getHexFromByteArray(passpoint));
+                var generatedPoint = ec.decodePointHex(localbitcoinplusplus.publicKey.getHexFromByteArray(
+                    passpoint));
                 var generatedBytes = generatedPoint.multiply(BigInteger.fromByteArrayUnsigned(factorB)).getEncoded(
                     compressed);
                 var generatedAddress = (new Bitcoin.Address(Bitcoin.Util.sha256ripe160(generatedBytes))).toString();
@@ -7207,8 +7360,9 @@
         localbitcoinplusplus.publicKey = {
             isPublicKeyHexFormat: function (key) {
                 key = key.toString();
-                return localbitcoinplusplus.publicKey.isUncompressedPublicKeyHexFormat(key) || localbitcoinplusplus.publicKey.isCompressedPublicKeyHexFormat(
-                    key);
+                return localbitcoinplusplus.publicKey.isUncompressedPublicKeyHexFormat(key) ||
+                    localbitcoinplusplus.publicKey.isCompressedPublicKeyHexFormat(
+                        key);
             },
             // 130 characters [0-9A-F] starts with 04
             isUncompressedPublicKeyHexFormat: function (key) {
@@ -7283,7 +7437,8 @@
                 key.setCompressed(true);
                 var privateKeyHex = key.getBitcoinHexFormat();
 
-                var publicKeyHex = localbitcoinplusplus.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(1))
+                var publicKeyHex = localbitcoinplusplus.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(
+                        1))
                     .toString().toUpperCase();
 
                 console.log("privateKeyHex: ", privateKeyHex);
@@ -7325,22 +7480,22 @@
 
     <!-- RPC Object -->
     <script>
-        var Rpc = localbitcoinplusplus.rpc = function() {
+        var Rpc = localbitcoinplusplus.rpc = function () {
             this.rpc_req_id;
             this.valid_job = ["trade_buy", "trade_sell"];
         }
         Rpc.prototype = {
             //get rpc_req_id() {return this.rpc_req_id;},
-            
+
             send_rpc(method, ...params) {
                 var request = new JSON_RPC.Request(method, params);
                 console.log(request);
-                
+
                 var id = request.id;
                 this.rpc_req_id = id;
-                return request.toString(); 
+                return request.toString();
                 //return request;
-            },    
+            },
 
             receive_rpc_response(request) {
                 var request = JSON.parse(request);
@@ -7349,7 +7504,7 @@
 
                 if (typeof params != undefined && typeof method != undefined) {
                     request.response = {};
-                    
+
                     switch (method) {
                         case "trade_buy":
                             var Trade = new localbitcoinplusplus.trade();
@@ -7358,13 +7513,13 @@
                         case "trade_sell":
                             var Trade = new localbitcoinplusplus.trade();
                             request.response = Trade.trade_sell(...request.params);
-                            break;    
+                            break;
                         default:
                             alert("Unknown method called for execution.");
                             break;
                     }
                 }
-                
+
                 //request.response = request.method(); // if successful
                 return request.toString(); // return to client
             },
@@ -7395,75 +7550,88 @@
             this.valid_product = ["BTC", "INR"];
             this.currency = null;
             this.valid_currencies = ["BTC", "INR"],
-            this.buy_price = null;
+                this.buy_price = null;
             this.buyer_public_key = null;
             this.buyer_key_signature = null;
             this.order_validator_public_key = null;
-            this.rpc_job = null;   
-            this.floAddress = null;         
+            this.rpc_job = null;
+            this.floAddress = null;
         }
 
         Trade.prototype = {
-            get trustLevel() {return this.level;},
+            get trustLevel() {
+                return this.level;
+            },
             set trustLevel(level) {
                 if (typeof level === "number" && level === parseInt(level, 10) && level > 0 && level < 6) {
                     this.level = level;
                 }
             },
-            validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
-                
-                if(this.valid_order_type.indexOf(order_type) >= 0) {
+            validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature,
+                order_validator_public_key) {
+
+                if (this.valid_order_type.indexOf(order_type) >= 0) {
                     this.order_type = order_type;
                 } else {
                     this.errors.push("Inavlid trade type value.");
                 }
-                if(this.valid_product.indexOf(product)>=0) {
+                if (this.valid_product.indexOf(product) >= 0) {
                     this.product = product;
                 } else {
                     this.errors.push("Invalid product.");
-                } 
-                if(this.valid_currencies.indexOf(currency)>=0) {
+                }
+                if (this.valid_currencies.indexOf(currency) >= 0) {
                     this.currency = currency;
                 } else {
                     this.errors.push("Invalid currency.");
-                } 
-                if(typeof buy_price == "number" && buy_price > 0) {
+                }
+                if (typeof buy_price == "number" && buy_price > 0) {
                     this.buy_price = buy_price;
                 } else {
                     this.errors.push("Invalid buying price. Please place a valid buy amount.");
-                } 
-                if(buyer_public_key.length > 0) {
+                }
+                if (buyer_public_key.length > 0) {
                     this.buyer_public_key = buyer_public_key;
                 } else {
                     this.errors.push("Invalid Buyer's public key.");
                 }
-                if(buyer_key_signature.length > 0) {
+                if (buyer_key_signature.length > 0) {
                     this.buyer_key_signature = buyer_key_signature;
                 } else {
                     this.errors.push("Invalid Buyer's key signature.");
                 }
-                if(order_validator_public_key.length > 0) {
+                if (order_validator_public_key.length > 0) {
                     this.order_validator_public_key = order_validator_public_key;
                 } else {
                     this.errors.push("Invalid Validator's key signature.");
                 }
 
-                if(this.errors.length > 0) {
+                if (this.errors.length > 0) {
                     return this.errors;
                 }
                 return true;
             },
-            place_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key) {
-                var is_valid_order = this.validate_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature, order_validator_public_key);
-                if(is_valid_order === true) {
+            place_order(order_type, product, currency, buy_price, buyer_public_key, buyer_key_signature,
+                order_validator_public_key) {
+                var is_valid_order = this.validate_order(order_type, product, currency, buy_price, buyer_public_key,
+                    buyer_key_signature, order_validator_public_key);
+                if (is_valid_order === true) {
                     var orderRPC = new localbitcoinplusplus.rpc();
-                    this.rpc_job = 'trade_'+this.order_type;
-                    return orderRPC.send_rpc(this.rpc_job, {"order_type":this.order_type, "product":this.product, "currency":this.currency, "buy_price":this.buy_price, "buyer_public_key":this.buyer_public_key, "buyer_key_signature":this.buyer_key_signature, "order_validator_public_key":this.order_validator_public_key});
-                } else if(is_valid_order == "object") {
+                    this.rpc_job = 'trade_' + this.order_type;
+                    return orderRPC.send_rpc(this.rpc_job, {
+                        "order_type": this.order_type,
+                        "product": this.product,
+                        "currency": this.currency,
+                        "buy_price": this.buy_price,
+                        "buyer_public_key": this.buyer_public_key,
+                        "buyer_key_signature": this.buyer_key_signature,
+                        "order_validator_public_key": this.order_validator_public_key
+                    });
+                } else if (is_valid_order == "object") {
                     var err;
-                    for(err=0; err<is_valid_order.length; err++) { 
+                    for (err = 0; err < is_valid_order.length; err++) {
                         alert(is_valid_order[err]);
-                    }    
+                    }
                     return false;
                 }
             },
@@ -7476,7 +7644,9 @@
             },
             /*Parse Flo Blockchain comments*/
             parse_flo_comments(callback) {
-                if (this.floAddress == null) { return false; }
+                if (this.floAddress == null) {
+                    return false;
+                }
                 var request = new XMLHttpRequest();
 
                 request.open('GET', `${localbitcoinplusplus.flocha}/api/txs/?address=${this.floAddress}`, true);
@@ -7489,7 +7659,7 @@
                         data.txs.forEach(tx => {
                             console.log(tx.floData);
                             callback(tx.floData);
-                        });                
+                        });
                     } else {
                         console.log('error');
                     }
@@ -7716,39 +7886,39 @@
 
         function onMessage(evt) {
             console.log(evt);
-            
-            var response = evt.data;       
+
+            var response = evt.data;
             var res_pos = response.indexOf('{');
-            if (res_pos>=0) {
+            if (res_pos >= 0) {
                 var res = response.substr(res_pos);
                 try {
                     var res_obj = JSON.parse(res);
                     console.log(res_obj);
-                    
+
                     if (typeof res_obj.method !== undefined) {
                         var orderRPC = new localbitcoinplusplus.rpc();
                         switch (res_obj.method) {
                             case "trade_buy":
-                            
-                            var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
-                            //orderRPC.parse_server_rpc_response(response_from_sever);
-                            
-                            //doSend(response_from_sever); // send response to client
+
+                                var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                                //orderRPC.parse_server_rpc_response(response_from_sever);
+
+                                //doSend(response_from_sever); // send response to client
                                 break;
                             case "trade_sell":
-                            var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
-                            doSend(response_from_sever); // send response to client
+                                var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                                doSend(response_from_sever); // send response to client
                                 break;
-                        
+
                             default:
                                 break;
                         }
-                    }                    
+                    }
                 } catch (error) {
                     console.error(error);
                     return;
-                } 
-            }       
+                }
+            }
             writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
         }
 
@@ -7773,33 +7943,33 @@
         /* Websocket Code Ends Here*/
     </script>
 
-    <script>    
-        (function() {
+    <script>
+        (function () {
 
             var RM_WALLET = new localbitcoinplusplus.wallets;
             var RM_TRADE = new localbitcoinplusplus.trade;
             var RM_RPC = new localbitcoinplusplus.rpc;
-            
+
             // Test: fetch flo comment
             RM_TRADE.floAddress = RM_WALLET.rm_flo_addr;
-            var fetch_configs = RM_TRADE.parse_flo_comments(function(floData) {
-                console.log(floData); 
+            var fetch_configs = RM_TRADE.parse_flo_comments(function (floData) {
+                console.log(floData);
             });
 
             // Test: Trade functionality
             var trade_btn = document.createElement("button");
             trade_btn.innerText = "Trade";
-            trade_btn.onclick = function() {     
-                var buytrade = RM_TRADE.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key", "buyer_key_signature", "order_validator_public_key");
+            trade_btn.onclick = function () {
+                var buytrade = RM_TRADE.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key",
+                    "buyer_key_signature", "order_validator_public_key");
                 doSend(buytrade);
             }
-            document.getElementById("output").appendChild(trade_btn); 
+            document.getElementById("output").appendChild(trade_btn);
         })()
-
     </script>
 
     <script>
-        
+
     </script>
 
 </body>
