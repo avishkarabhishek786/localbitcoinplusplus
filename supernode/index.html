@@ -12,6 +12,156 @@
 
     <div id="output"></div>
 
+    <!-- SHA1 -->
+    <script type="text/javascript">
+        //Adding SHA1 to fix basic PKBDF2
+        /*
+         * Crypto-JS v2.5.4
+         * http://code.google.com/p/crypto-js/
+         * (c) 2009-2012 by Jeff Mott. All rights reserved.
+         * http://code.google.com/p/crypto-js/wiki/License
+         */
+        (function () {
+
+            // Shortcuts
+            var C = Crypto,
+                util = C.util,
+                charenc = C.charenc,
+                UTF8 = charenc.UTF8,
+                Binary = charenc.Binary;
+
+            // Public API
+            var SHA1 = C.SHA1 = function (message, options) {
+                var digestbytes = util.wordsToBytes(SHA1._sha1(message));
+                return options && options.asBytes ? digestbytes :
+                    options && options.asString ? Binary.bytesToString(digestbytes) :
+                    util.bytesToHex(digestbytes);
+            };
+
+            // The core
+            SHA1._sha1 = function (message) {
+
+                // Convert to byte array
+                if (message.constructor == String) message = UTF8.stringToBytes(message);
+                /* else, assume byte array already */
+
+                var m = util.bytesToWords(message),
+                    l = message.length * 8,
+                    w = [],
+                    H0 = 1732584193,
+                    H1 = -271733879,
+                    H2 = -1732584194,
+                    H3 = 271733878,
+                    H4 = -1009589776;
+
+                // Padding
+                m[l >> 5] |= 0x80 << (24 - l % 32);
+                m[((l + 64 >>> 9) << 4) + 15] = l;
+
+                for (var i = 0; i < m.length; i += 16) {
+
+                    var a = H0,
+                        b = H1,
+                        c = H2,
+                        d = H3,
+                        e = H4;
+
+                    for (var j = 0; j < 80; j++) {
+
+                        if (j < 16) w[j] = m[i + j];
+                        else {
+                            var n = w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16];
+                            w[j] = (n << 1) | (n >>> 31);
+                        }
+
+                        var t = ((H0 << 5) | (H0 >>> 27)) + H4 + (w[j] >>> 0) + (
+                            j < 20 ? (H1 & H2 | ~H1 & H3) + 1518500249 :
+                            j < 40 ? (H1 ^ H2 ^ H3) + 1859775393 :
+                            j < 60 ? (H1 & H2 | H1 & H3 | H2 & H3) - 1894007588 :
+                            (H1 ^ H2 ^ H3) - 899497514);
+
+                        H4 = H3;
+                        H3 = H2;
+                        H2 = (H1 << 30) | (H1 >>> 2);
+                        H1 = H0;
+                        H0 = t;
+
+                    }
+
+                    H0 += a;
+                    H1 += b;
+                    H2 += c;
+                    H3 += d;
+                    H4 += e;
+
+                }
+
+                return [H0, H1, H2, H3, H4];
+
+            };
+
+            // Package private blocksize
+            SHA1._blocksize = 16;
+
+            SHA1._digestsize = 20;
+
+        })();
+    </script>
+
+    <!-- HMAC -->
+    <script type="text/javascript">
+        //Added to make PKBDF2 work
+        /*
+         * Crypto-JS v2.5.4
+         * http://code.google.com/p/crypto-js/
+         * (c) 2009-2012 by Jeff Mott. All rights reserved.
+         * http://code.google.com/p/crypto-js/wiki/License
+         */
+        (function () {
+
+            // Shortcuts
+            var C = Crypto,
+                util = C.util,
+                charenc = C.charenc,
+                UTF8 = charenc.UTF8,
+                Binary = charenc.Binary;
+
+            C.HMAC = function (hasher, message, key, options) {
+
+                // Convert to byte arrays
+                if (message.constructor == String) message = UTF8.stringToBytes(message);
+                if (key.constructor == String) key = UTF8.stringToBytes(key);
+                /* else, assume byte arrays already */
+
+                // Allow arbitrary length keys
+                if (key.length > hasher._blocksize * 4)
+                    key = hasher(key, {
+                        asBytes: true
+                    });
+
+                // XOR keys with pad constants
+                var okey = key.slice(0),
+                    ikey = key.slice(0);
+                for (var i = 0; i < hasher._blocksize * 4; i++) {
+                    okey[i] ^= 0x5C;
+                    ikey[i] ^= 0x36;
+                }
+
+                var hmacbytes = hasher(okey.concat(hasher(ikey.concat(message), {
+                    asBytes: true
+                })), {
+                    asBytes: true
+                });
+
+                return options && options.asBytes ? hmacbytes :
+                    options && options.asString ? Binary.bytesToString(hmacbytes) :
+                    util.bytesToHex(hmacbytes);
+
+            };
+
+        })();
+    </script>
+
     <script type="text/javascript">
         /*!
          * Crypto-JS v2.5.4	Crypto.js
@@ -6265,7 +6415,7 @@
             };
 
             ECKey.privateKeyPrefix = 0xA3; //(Bitcoin mainnet 0x80    testnet 0xEF) (FLO mainnet 0xA3 163 D)
-
+            
             /**
              * Whether public keys should be returned compressed by default.
              */
@@ -7319,7 +7469,7 @@
                 var generatedPoint = ec.decodePointHex(localbitcoinplusplus.publicKey.getHexFromByteArray(
                     passpoint));
                 var generatedBytes = generatedPoint.multiply(BigInteger.fromByteArrayUnsigned(factorB)).getEncoded(
-                    compressed);
+                    compressed); 
                 var generatedAddress = (new Bitcoin.Address(Bitcoin.Util.sha256ripe160(generatedBytes))).toString();
 
                 // 4) Take the first four bytes of SHA256(SHA256(generatedaddress)) and call it addresshash.
@@ -7429,18 +7579,28 @@
 
                 var privateKey = Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1")
                     .getN());
-                console.log(privateKey);
+                //console.log(privateKey);
 
                 var key = new Bitcoin.ECKey(privateKey);
                 key.setCompressed(true);
                 var privateKeyHex = key.getBitcoinHexFormat();
+                var privateKeyWIF= key.getBitcoinWalletImportFormat();
 
                 var publicKeyHex = localbitcoinplusplus.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(
                         1))
                     .toString().toUpperCase();
 
+                var pubKeyHash = key.getPubKeyHash();
+                var pubKeyHex = key.getPubKeyHex();
+
+                var address = key.getBitcoinAddress(publicKeyHex);
+
                 console.log("privateKeyHex: ", privateKeyHex);
+                console.log("privateKeyWIF: ", privateKeyWIF);
                 console.log("publicKeyHex: ", publicKeyHex);
+                console.log("pubKeyHash: ", pubKeyHash);
+                console.log("pubKeyHex: ", pubKeyHex);
+                console.log("address: ", address);
             },
             sign: function (msg, privateKeyHex) {
 
@@ -7959,9 +8119,9 @@
             var RM_RPC = new localbitcoinplusplus.rpc;
 
             //Test: fetch flo comment
-            var rm_configs = RM_TRADE.fetch_configs(function(data) {
-                 console.log(data);               
-            });
+            // var rm_configs = RM_TRADE.fetch_configs(function(data) {
+            //      console.log(data);               
+            // });
 
             // // Test: Trade functionality
             var trade_btn = document.createElement("button");
