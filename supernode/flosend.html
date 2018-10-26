@@ -3302,9 +3302,26 @@
                         buffer = buffer.concat(scriptBytes);
                     }
 
-                    buffer = buffer.concat(bitjs.numToBytes(parseInt(this.locktime), 4));
+                    buffer = buffer.concat(bitjs.numToBytes(parseInt(this.locktime),4));  
                     flohex = ascii_to_hexa(this.floData);
-                    return Crypto.util.bytesToHex(buffer) + flohex; // flochange -- Addition of floData in serialization
+                    floDataCount = this.floData.length;
+
+                    //flochange -- creating unique data character count logic for floData. This string is prefixed before actual floData string in Raw Transaction 
+                    if (floDataCount <= 16) {
+                                  floDataCountString = floDataCount.toString(16);   
+                                  floDataCountString = "0"+ floDataCountString;
+                    } else if (floDataCount < 253) {
+                                  floDataCountString = floDataCount.toString(16);
+                    } else if (floDataCount <= 1023) {
+                                  floDataCountAdjusted = (floDataCount - 253) +  parseInt("0xfd00fd");
+                                  floDataCountStringAdjusted = floDataCountAdjusted.toString(16);
+                                  floDataCountString = floDataCountStringAdjusted.substr(0,2)+ floDataCountStringAdjusted.substr(4,2)+ floDataCountStringAdjusted.substr(2,2);
+                    } else {
+                                  floDataCountString = "Character Limit Exceeded";
+                              }
+
+
+                    return Crypto.util.bytesToHex(buffer)+floDataCountString+flohex;    // flochange -- Addition of floDataCountString and floData in serialization
                 }
 
 
@@ -3432,7 +3449,6 @@
         })();
 
 
-
         //script.js
         // Actual Code Begins Here
         function createRawTransaction() {
@@ -3457,39 +3473,13 @@
     </script>
 
     <script>
-        // var request = new XMLHttpRequest();
+        const mainnet = `https://livenet.flocha.in`;
+        const testnet = `https://testnet.flocha.in`;
 
-        // request.open('GET', 'https://livenet.flocha.in/api/txs/?address=FMg9M7GPuUAGKvhWmgWjoqYtMqmckD4tRF', true);
-        // request.onload = function () {
-
-        //     // Begin accessing JSON data here
-        //     var data = JSON.parse(this.response);
-
-        //     if (request.status >= 200 && request.status < 400) {
-        //         data.txs.forEach(tx => {
-        //             console.log(tx.floData);
-        //         });                
-        //     } else {
-        //         console.log('error');
-        //     }
-        // }
-
-        // request.send();
+        let server = mainnet;
     </script>
 
     <script>
-
-        // [0 … 99]
-        // 0:
-        // address: "FMg9M7GPuUAGKvhWmgWjoqYtMqmckD4tRF"
-        // amount: 12.5
-        // confirmations: 58
-        // height: 3043098
-        // satoshis: 1250000000
-        // scriptPubKey: "76a914adcfd792793fb204ec4e8cf2d0215fea6963b97388ac"
-        // txid: "340ee0f8e298ae79baa9f32e367105a04be9d173cb9ec20253619ebeeee64d9f"
-        // vout: 1
-
         var utxo_btn = document.getElementById("utxo_btn");
 
         utxo_btn.onclick = function (addr) {
@@ -3504,7 +3494,7 @@
             }
 
             var request = new XMLHttpRequest();
-            request.open('GET', `https://livenet.flocha.in/api/addr/${addr}/utxo`, true);
+            request.open('GET', `${server}/api/addr/${addr}/utxo`, true);
             request.onload = function () {
 
                 // Begin accessing JSON data here
@@ -3535,18 +3525,19 @@
     <script>
         function broadcastTx() {
             var http = new XMLHttpRequest();
-            //var url = 'https://testnet.flocha.in/api/tx/send';
-            var url = 'https://livenet.flocha.in/api/tx/send';
-            var signedTxHash = document.getElementById("rawTrx");
+            var url = `${server}/api/tx/send`;
+            var signedTxHash = document.getElementById("rawTrx").value;
             if (signedTxHash.length < 1) {
                 alert("Empty Signature");
                 return false;
             }
-            var params = `rawtx=${signedTxHash}`;
+            
+            var params = `{"rawtx":"${signedTxHash}"}`;
+            
             http.open('POST', url, true);
 
             //Send the proper header information along with the request
-            http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+            http.setRequestHeader('Content-type', 'application/json');
 
             http.onreadystatechange = function () { //Call a function when the state changes.
                 if (http.readyState == 4 && http.status == 200) {
