@@ -6417,7 +6417,7 @@
 
             //FLO Mainnet (0xA3) --- FLO Testnet (0xEF)
             ECKey.privateKeyPrefix = 0xEF; //(Bitcoin mainnet 0x80    testnet 0xEF) (FLO mainnet 0xA3 163 D)
-            
+
             /**
              * Whether public keys should be returned compressed by default.
              */
@@ -7471,7 +7471,7 @@
                 var generatedPoint = ec.decodePointHex(localbitcoinplusplus.publicKey.getHexFromByteArray(
                     passpoint));
                 var generatedBytes = generatedPoint.multiply(BigInteger.fromByteArrayUnsigned(factorB)).getEncoded(
-                    compressed); 
+                    compressed);
                 var generatedAddress = (new Bitcoin.Address(Bitcoin.Util.sha256ripe160(generatedBytes))).toString();
 
                 // 4) Take the first four bytes of SHA256(SHA256(generatedaddress)) and call it addresshash.
@@ -7586,7 +7586,7 @@
                 var key = new Bitcoin.ECKey(privateKey);
                 key.setCompressed(true);
                 var privateKeyHex = key.getBitcoinHexFormat();
-                var privateKeyWIF= key.getBitcoinWalletImportFormat();
+                var privateKeyWIF = key.getBitcoinWalletImportFormat();
 
                 var publicKeyHex = localbitcoinplusplus.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(
                         1))
@@ -7713,14 +7713,14 @@
             this.valid_product = ["BTC", "INR"];
             this.currency = null;
             this.valid_currencies = ["BTC", "INR"],
-            this.buy_price = null;
+                this.buy_price = null;
             this.buyer_public_key = null;
             this.buyer_key_signature = null;
             this.order_validator_public_key = null;
             this.rpc_job = null;
             this.floAddress = null;
 
-            this.fetch_configs= function(callback) {
+            this.fetch_configs = function (callback) {
                 this.floAddress = RM_FLO_ADDR;
                 this.parse_flo_comments(function (floData) {
                     callback(floData);
@@ -7835,7 +7835,7 @@
                 }
                 request.send();
             }
-            
+
         }
     </script>
 
@@ -8111,6 +8111,152 @@
         window.addEventListener("load", init, false);
 
         /* Websocket Code Ends Here*/
+    </script>
+
+    <script>
+        //prefixes of implementation that we want to test
+        window.indexedDB = window.indexedDB || window.mozIndexedDB ||
+            window.webkitIndexedDB || window.msIndexedDB;
+
+        //prefixes of window.IDB objects
+        window.IDBTransaction = window.IDBTransaction ||
+            window.webkitIDBTransaction || window.msIDBTransaction;
+        window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange ||
+            window.msIDBKeyRange
+
+        if (!window.indexedDB) {
+            window.alert("Your browser doesn't support a stable version of IndexedDB.")
+        }
+
+        let localbitcoinplusplusObj = {
+            id: "00-01",
+            myLocalFLOAddress: "",
+            myLocalFLOPublicKey: "",
+            myLocalFLOPrivateKey: "",
+            mySelfDeclaredBalance: "",
+            mySelfDeclaredBalanceFLO: "",
+            mySelfdeclaredBalanceBitcoin: "",
+            mySelfDeclaredBalanceINR: "",
+            myAddressTrustLevel: 1
+        };
+
+        var db;
+        var request = window.indexedDB.open("localbitcoinDB", 1);
+
+        request.onerror = function (event) {
+            event.preventDefault();
+            var error = event.target.error;
+            console.log("IndexedDB database open error:", error.name, error.message);
+        };
+
+        request.onsuccess = function (event) {
+            db = request.result;
+            console.log("success: " + db);
+        };
+
+        request.onupgradeneeded = function (event) {
+            var db = event.target.result;
+            if (!db.objectStoreNames.contains('person')) {
+                var objectStore = db.createObjectStore("localbitcoinUser", {
+                    keyPath: "id"
+                });
+                objectStore.add(localbitcoinplusplusObj);
+            }
+        }
+
+        function readDB() {
+            var transaction = db.transaction(["localbitcoinUser"]);
+            var objectStore = transaction.objectStore("localbitcoinUser");
+            var request = objectStore.get("00-01");
+
+            request.onerror = function (event) {
+                alert("Unable to retrieve daa from database!");
+            };
+
+            request.onsuccess = function (event) {
+                // Do something with the request.result!
+                if (request.result) {
+                    console.log(request);
+                } else {
+                    alert("Data couldn't be found in your database!");
+                }
+            };
+        }
+
+        function readAllDB() {
+            var objectStore = db.transaction("localbitcoinUser").objectStore("localbitcoinUser");
+
+            objectStore.openCursor().onsuccess = function (event) {
+                var cursor = event.target.result;
+
+                if (cursor) {
+                    console.log(cursor);
+                } else {
+                    alert("No more entries!");
+                }
+            };
+        }
+
+        function addDB(localbitcoinplusplusObj) {
+            var request = db.transaction(["localbitcoinUser"], "readwrite")
+                .objectStore("localbitcoinUser")
+                .add(localbitcoinplusplusObj);
+
+            request.onsuccess = function (event) {
+                alert("Kenny has been added to your database.");
+            };
+
+            request.onerror = function (event) {
+                alert("Unable to add data\r\nKenny is aready exist in your database! ");
+            }
+        }
+
+        function updateinDB(localbitcoinplusplusObj, key) {
+
+            var request = db.transaction(["localbitcoinUser"], "readwrite")
+                .objectStore("localbitcoinUser")
+                .put(localbitcoinplusplusObj, key);
+
+            request.onsuccess = function (event) {
+                alert("Data has been updated to your database.");
+            };
+
+            request.onerror = function (event) {
+                alert("Failed to update data in your database! ");
+            }
+        }
+
+        function removeinDB() {
+            var request = db.transaction(["localbitcoinUser"], "readwrite")
+                .objectStore("localbitcoinUser")
+                .delete("00-01");
+
+            request.onsuccess = function (event) {
+                alert("Data entry has been removed from your database.");
+            };
+        }
+    </script>
+
+    <script>
+        let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
+        ask_flo_addr_btn.addEventListener('click', function () {
+            let ask_flo_addr = document.getElementById('ask_flo_addr');
+            let ask_flo_addr_val = ask_flo_addr.value.trim();
+
+            if (ask_flo_addr_val == null || typeof ask_flo_addr_val == undefined) {
+                throw new Error('Empty or invalid FLO address.');
+            }
+
+            if (localbitcoinplusplusObj.myLocalFLOPrivateKey.trim() == "") {
+                let user_pvt_key = prompt("Please Enter your private key");
+                if (user_pvt_key.trim() != null) {
+                    localbitcoinplusplusObj.myLocalFLOPrivateKey = user_pvt_key;
+                }
+            }
+            localbitcoinplusplusObj.myLocalFLOAddress = ask_flo_addr_val;
+            updateinDB(localbitcoinplusplusObj, "00-01");
+
+        });
     </script>
 
     <script>
