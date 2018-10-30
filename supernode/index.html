@@ -7587,9 +7587,9 @@
         wallets.prototype = {
             ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
 
-            generateFloKeys: function () {
+            generateFloKeys: function (pk) {
 
-                var privateKey = Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1")
+                var privateKey = pk || Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1")
                     .getN());
                 //console.log(privateKey);
 
@@ -7613,6 +7613,12 @@
                 console.log("pubKeyHash: ", pubKeyHash);
                 console.log("pubKeyHex: ", pubKeyHex);
                 console.log("address: ", address);
+
+                return {
+                    privateKeyWIF,
+                    pubKeyHex,
+                    address
+                };
             },
             sign: function (msg, privateKeyHex) {
 
@@ -8175,7 +8181,7 @@
             }
         }
 
-        function readDB() {
+        function readDB(callback) {
             var transaction = db.transaction(["localbitcoinUser"]);
             var objectStore = transaction.objectStore("localbitcoinUser");
             var request = objectStore.get("00-01");
@@ -8187,7 +8193,7 @@
             request.onsuccess = function (event) {
                 // Do something with the request.result!
                 if (request.result) {
-                    console.log(request);
+                    callback(request.result);
                 } else {
                     alert("Data couldn't be found in your database!");
                 }
@@ -8237,10 +8243,10 @@
             }
         }
 
-        function removeinDB() {
+        function removeinDB(id) {
             var request = db.transaction(["localbitcoinUser"], "readwrite")
                 .objectStore("localbitcoinUser")
-                .delete("00-01");
+                .delete(id);
 
             request.onsuccess = function (event) {
                 alert("Data entry has been removed from your database.");
@@ -8249,49 +8255,69 @@
     </script>
 
     <script>
-        let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
-        ask_flo_addr_btn.addEventListener('click', function () {
-            let ask_flo_addr = document.getElementById('ask_flo_addr');
-            let ask_flo_addr_val = ask_flo_addr.value.trim();
+        var RM_WALLET = new localbitcoinplusplus.wallets;
+        var RM_TRADE = new localbitcoinplusplus.trade;
+        var RM_RPC = new localbitcoinplusplus.rpc;
 
-            if (ask_flo_addr_val == null || typeof ask_flo_addr_val == undefined) {
-                throw new Error('Empty or invalid FLO address.');
-            }
+        //Test: fetch flo comment
+        // var rm_configs = RM_TRADE.fetch_configs(function(data) {
+        //      console.log(data);               
+        // });
 
-            if (localbitcoinplusplusObj.myLocalFLOPrivateKey.trim() == "") {
-                let user_pvt_key = prompt("Please Enter your private key");
-                if (user_pvt_key.trim() != null) {
-                    localbitcoinplusplusObj.myLocalFLOPrivateKey = user_pvt_key;
-                }
-            }
-            localbitcoinplusplusObj.myLocalFLOAddress = ask_flo_addr_val;
-            updateinDB(localbitcoinplusplusObj, "00-01");
-
-        });
+        // // Test: Trade functionality
+        var trade_btn = document.createElement("button");
+        trade_btn.innerText = "Trade";
+        trade_btn.onclick = function () {
+            var buytrade = RM_TRADE.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key",
+                "buyer_key_signature", "order_validator_public_key");
+            doSend(buytrade);
+        }
+        document.getElementById("output_div").appendChild(trade_btn);
     </script>
 
-    <script>
-        (function () {
+    <script>         
+        window.onload = function() { 
+            let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
+            ask_flo_addr_btn.addEventListener('click', function () {
+                let ask_flo_addr = document.getElementById('ask_flo_addr');
+                let ask_flo_addr_val = ask_flo_addr.value.trim();
 
-            var RM_WALLET = new localbitcoinplusplus.wallets;
-            var RM_TRADE = new localbitcoinplusplus.trade;
-            var RM_RPC = new localbitcoinplusplus.rpc;
+                if (ask_flo_addr_val == null || typeof ask_flo_addr_val == undefined) {
+                    throw new Error('Empty or invalid FLO address.');
+                }
 
-            //Test: fetch flo comment
-            // var rm_configs = RM_TRADE.fetch_configs(function(data) {
-            //      console.log(data);               
-            // });
+                try {
+                    readDB(function(idbData) {
+                        //console.log(idbData);
+                        if (typeof idbData.myLocalFLOPrivateKey == undefined || idbData.myLocalFLOPrivateKey.trim() == '') {
+                            let user_pvt_key = prompt("Please Enter your private key");
+                            if (user_pvt_key.trim() != null) {
 
-            // // Test: Trade functionality
-            var trade_btn = document.createElement("button");
-            trade_btn.innerText = "Trade";
-            trade_btn.onclick = function () {
-                var buytrade = RM_TRADE.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key",
-                    "buyer_key_signature", "order_validator_public_key");
-                doSend(buytrade);
-            }
-            document.getElementById("output_div").appendChild(trade_btn);
-        })()
+                                let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
+
+                                if (typeof newKeys == 'object' && typeof newKeys.address !== undefined) {
+                                    localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
+                                    localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
+                                    localbitcoinplusplusObj.myLocalFLOPrivateKey = newKeys.privateKeyWIF;
+                                    localbitcoinplusplusObj.mySelfDeclaredBalance = 0;
+                                    localbitcoinplusplusObj.mySelfDeclaredBalanceFLO = 0;
+                                    localbitcoinplusplusObj.mySelfdeclaredBalanceBitcoin = 0;
+                                    localbitcoinplusplusObj.mySelfDeclaredBalanceINR = 0;
+                                    
+                                    updateinDB(localbitcoinplusplusObj, "00-01");
+                                }
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.log(e);
+                    throw new Error(
+                        "ERROR: Failed to initialise the database. You are unable to trade at the moment.");
+                }
+
+                // Further operation here 
+            });
+        }
     </script>
 
 </body>
