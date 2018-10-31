@@ -7717,29 +7717,40 @@
     <script>
         /*Initiate trade level with 0*/
         var Trade = localbitcoinplusplus.trade = function processTrade() {
-            //this.op_code = null;
-            //3354E12F0D2737A16B30B46D66CEDB9C7C0CD35F22CFCCE9828318DDBB73C0F6 // private key
-            const MASTER_NODE = "038E48297353843614190D9C36D1F6565D68CB24C01A66DC7432BD91D979F7AC68"; // pub key
-            const RM_FLO_ADDR = "FSTDEb1ygMSwKB65uMYrrzjhdcCpXkt1uH";
+            const MASTER_NODE = "023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75"; // pub key
+            const RM_FLO_SENDING_ADDR = "oUbQYNBo7hWRcVN4dnx2ZQPfumfnTS7NsP"; // C2832A5C3AEFFA1583379A67AB9B92CB7EC6566CCB35F00A9F1AF08EBD74B235 
+            const RM_FLO_RECEIVING_ADDR = "oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy"; // 79F82A750FF2EAE51A50BE242043634B3DDE7ABE3B09732A7842A56CFE3C098E
             this.errors = [];
             this.level = 0; // default
             this.order_type = null;
             this.valid_order_type = ["buy", "sell"];
             this.product = null;
-            this.valid_product = ["BTC", "INR"];
+            this.valid_assets = ["BTC", "INR"];
             this.currency = null;
             this.valid_currencies = ["BTC", "INR"],
-                this.buy_price = null;
+            this.buy_price = null;
             this.buyer_public_key = null;
             this.buyer_key_signature = null;
             this.order_validator_public_key = null;
             this.rpc_job = null;
             this.floAddress = null;
+            this.super_nodes_array = [];
 
             this.fetch_configs = function (callback) {
-                this.floAddress = RM_FLO_ADDR;
-                this.parse_flo_comments(function (floData) {
-                    callback(floData);
+                this.floAddress = RM_FLO_SENDING_ADDR;
+                this.parse_flo_comments(function (RMAssets) {
+                    // remove this line later
+                    //'ValidAssets=BTC,FLO,INR#!#Supernode=oH6e6K8MhBG9VWeLEpTREqeL1YkfizSS22,oHsGVh6r682HxXNT21UXXC42TZatUcGvDB';
+                    let floAssetsArray = RMAssets.split('#!#');
+                    let validAssetsList = floAssetsArray[0].split('=');
+                    if(validAssetsList[0]=="ValidAssets") {
+                        this.valid_assets = validAssetsList[1].split(','); 
+                    }
+                    
+                    let superNodesList = floAssetsArray[1].split('=');
+                    if(superNodesList[0].trim() == "Supernode" && superNodesList[0].trim().length > 0) {
+                        this.super_nodes_array = superNodesList[1].split(','); 
+                    }
                 });
             }
         }
@@ -7761,7 +7772,7 @@
                 } else {
                     this.errors.push("Inavlid trade type value.");
                 }
-                if (this.valid_product.indexOf(product) >= 0) {
+                if (this.valid_assets.indexOf(product) >= 0) {
                     this.product = product;
                 } else {
                     this.errors.push("Invalid product.");
