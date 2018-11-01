@@ -7192,7 +7192,7 @@
             trade: {},
             rpc: {},
             rm_configs: {},
-            flocha: "https://livenet.flocha.in"
+            flocha: "https://testnet.flocha.in"
         };
 
         localbitcoinplusplus.privateKey = {
@@ -7734,23 +7734,35 @@
             this.order_validator_public_key = null;
             this.rpc_job = null;
             this.floAddress = null;
-            this.super_nodes_array = [];
-
+            this.super_nodes_array = null;
+            
             this.fetch_configs = function (callback) {
                 this.floAddress = RM_FLO_SENDING_ADDR;
-                this.parse_flo_comments(function (RMAssets) {
+                this.parse_flo_comments(function (floData) {
+                    let RMAssets = floData.slice(5);
+                    
                     // remove this line later
                     //'ValidAssets=BTC,FLO,INR#!#Supernode=oH6e6K8MhBG9VWeLEpTREqeL1YkfizSS22,oHsGVh6r682HxXNT21UXXC42TZatUcGvDB';
                     let floAssetsArray = RMAssets.split('#!#');
-                    let validAssetsList = floAssetsArray[0].split('=');
-                    if(validAssetsList[0]=="ValidAssets") {
-                        this.valid_assets = validAssetsList[1].split(','); 
-                    }
                     
-                    let superNodesList = floAssetsArray[1].split('=');
-                    if(superNodesList[0].trim() == "Supernode" && superNodesList[0].trim().length > 0) {
-                        this.super_nodes_array = superNodesList[1].split(','); 
-                    }
+                    if(floAssetsArray.length>0 && typeof floAssetsArray[0] != undefined && floAssetsArray[0].trim() !== "" && typeof floAssetsArray[1] !== undefined && floAssetsArray[1].trim() !== "") {
+                        
+                        let validAssetsList = floAssetsArray[0].split('=');
+                        let superNodesList = floAssetsArray[1].split('=');
+                    
+                        if(validAssetsList[0]=="ValidAssets" && superNodesList[0].trim() == "Supernode" && superNodesList[0].trim().length > 0) {
+                            try {
+                                let fetchedAssestsResponseObject = {
+                                    validAssetsArray: validAssetsList[1].split(','),
+                                    superNodesArray: superNodesList[1].split(',')
+                                } 
+                                callback(fetchedAssestsResponseObject);
+                            } catch (error) {
+                                console.error(error);
+                                callback(error);
+                            }
+                        } 
+                    } 
                 });
             }
         }
@@ -8271,9 +8283,11 @@
         var RM_RPC = new localbitcoinplusplus.rpc;
 
         //Test: fetch flo comment
-        // var rm_configs = RM_TRADE.fetch_configs(function(data) {
-        //      console.log(data);               
-        // });
+        var rm_configs = RM_TRADE.fetch_configs(function(...fetch_configs_res) {
+            let local_btc_configs = fetch_configs_res[0];
+            RM_TRADE.super_nodes_array =  local_btc_configs.superNodesArray;           
+            RM_TRADE.valid_assets =  local_btc_configs.validAssetsArray;           
+        });
 
         // // Test: Trade functionality
         var trade_btn = document.createElement("button");
@@ -8284,6 +8298,7 @@
             doSend(buytrade);
         }
         document.getElementById("output_div").appendChild(trade_btn);
+
     </script>
 
     <script>         
