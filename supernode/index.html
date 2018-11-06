@@ -7786,7 +7786,12 @@
                         case "trade_sell":
                             request.response = Trade.trade_sell(...request.params);
                             break;
-                        case "sync":
+                        case "broadcastBlockDataToAll":
+                            // TODO: Make a separate class for syncing
+                            if (typeof params.blockOwnerFLOAddress !== undefined) {
+                                request.response = updateinDB("datablocks", params, params.id);   
+                            }
+                            break;
 
                         default:
                             alert("Unknown method called for execution.");
@@ -8159,6 +8164,11 @@
                                 var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
                                 doSend(response_from_sever); // send response to client
                                 break;
+                            case "broadcastBlockDataToAll":
+                                var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                                console.log(response_from_sever);
+                                //doSend(response_from_sever); // send response to client
+                                break;
 
                             default:
                                 break;
@@ -8230,6 +8240,7 @@
         };
 
         let dataBlock = {
+            id: "00-01",
             version: 1,
             data: {},
             blockOwnerFLOAddress: "",
@@ -8239,7 +8250,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 3);
+        var request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -8264,7 +8275,7 @@
 
             if (!db.objectStoreNames.contains('datablocks')) {
                 var objectStore = db.createObjectStore("datablocks", {
-                    keyPath: "version"
+                    keyPath: "id"
                 });
                 objectStore.put(dataBlock);
             }
@@ -8455,6 +8466,7 @@
             let blockSignature = RM_WALLET.sign(blockHash);
 
             let updatedDataBlock = {
+                id: "00-01",
                 version: blockVersion,
                 data: data,
                 blockOwnerFLOAddress: blockOwnerFLOAddress,
@@ -8464,9 +8476,12 @@
 
             syncButton.onclick = function() {
                 try {
-                    updateinDB("datablocks", updatedDataBlock, "");
+                    // Update the data in current node
+                    updateinDB("datablocks", updatedDataBlock, "00-01");
                     try {
-                        
+                        // Broadcast to other nodes
+                        let sendBlockDataToAll = RM_RPC.send_rpc("broadcastBlockDataToAll", updatedDataBlock);
+                        doSend(sendBlockDataToAll);
                     } catch (error) {
                         throw new Error("ERROR: Failed to broadcast to other nodes.");
                     }
