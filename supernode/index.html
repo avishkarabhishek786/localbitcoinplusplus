@@ -14,12 +14,17 @@
 
         <div id="output_div"></div>
 
+        <h5>Indexed DB</h5>
         <div class="box">
             <label for="ask_flo_addr">Enter Your FLO Address: </label>
             <input type="text" id="ask_flo_addr" class="form-control">
 
             <input type="button" id="ask_flo_addr_btn" value="Submit">
         </div>
+
+        <h5>Sync</h5>
+        <div id="syncNodes"></div>
+
     </div>
 
     <!-- SHA1 -->
@@ -7724,7 +7729,6 @@
 
                 var privateKeyArr = key.getBitcoinPrivateKeyByteArray(privateKeyHex);
                 privateKey = BigInteger.fromByteArrayUnsigned(privateKeyArr);
-                console.log(privateKey);
 
                 var messageHash = Crypto.SHA256(msg);
 
@@ -7755,17 +7759,13 @@
     <script>
         var Rpc = localbitcoinplusplus.rpc = function () {
             this.rpc_req_id;
-            this.valid_job = ["trade_buy", "trade_sell"];
+            this.valid_job = ["trade_buy", "trade_sell", "sync"];
         }
         Rpc.prototype = {
 
             send_rpc(method, ...params) {
                 var request = new JSON_RPC.Request(method, params);
-                console.log(request);
-
                 var id = request.id;
-                console.log(id);
-                
                 this.rpc_req_id = id;
                 return request.toString();
             },
@@ -7777,16 +7777,17 @@
 
                 if (typeof params != undefined && typeof method != undefined) {
                     request.response = {};
+                    var Trade = new localbitcoinplusplus.trade();
 
                     switch (method) {
                         case "trade_buy":
-                            var Trade = new localbitcoinplusplus.trade();
                             request.response = Trade.trade_buy(...request.params);
                             break;
                         case "trade_sell":
-                            var Trade = new localbitcoinplusplus.trade();
                             request.response = Trade.trade_sell(...request.params);
                             break;
+                        case "sync":
+
                         default:
                             alert("Unknown method called for execution.");
                             break;
@@ -8179,6 +8180,14 @@
             writeToScreen("SENT: " + message);
             websocket.send(message);
         }
+        
+        function SendToSpecificAddress(to, message) {
+            writeToScreen("SENT: " + message);
+            websocket.send(JSON.stringify({
+                to: to,
+                data: message
+            }));
+        }
 
         function writeToScreen(message) {
             var pre = document.createElement("p");
@@ -8220,8 +8229,17 @@
             myAddressTrustLevel: 1
         };
 
+        let dataBlock = {
+            version: 1,
+            data: {},
+            blockOwnerFLOAddress: "",
+            blockhash: "",
+            blockSignature: ""
+        }
+
         var db;
-        var request = window.indexedDB.open("localbitcoinDB", 1);
+        const DBName = "localbitcoinDB";
+        var request = window.indexedDB.open(DBName, 3);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -8237,18 +8255,25 @@
 
         request.onupgradeneeded = function (event) {
             var db = event.target.result;
-            if (!db.objectStoreNames.contains('person')) {
+            if (!db.objectStoreNames.contains('localbitcoinUser')) {
                 var objectStore = db.createObjectStore("localbitcoinUser", {
                     keyPath: "id"
                 });
-                objectStore.add(localbitcoinplusplusObj);
+                objectStore.put(localbitcoinplusplusObj);
+            }
+
+            if (!db.objectStoreNames.contains('datablocks')) {
+                var objectStore = db.createObjectStore("datablocks", {
+                    keyPath: "version"
+                });
+                objectStore.put(dataBlock);
             }
         }
 
-        function readDB(callback) {
-            var transaction = db.transaction(["localbitcoinUser"]);
-            var objectStore = transaction.objectStore("localbitcoinUser");
-            var request = objectStore.get("00-01");
+        function readDB(tablename, id, callback) {
+            var transaction = db.transaction([tablename]);
+            var objectStore = transaction.objectStore(tablename);
+            var request = objectStore.get(id);
 
             request.onerror = function (event) {
                 alert("Unable to retrieve daa from database!");
@@ -8264,8 +8289,8 @@
             };
         }
 
-        function readAllDB() {
-            var objectStore = db.transaction("localbitcoinUser").objectStore("localbitcoinUser");
+        function readAllDB(tablename) {
+            var objectStore = db.transaction(tablename).objectStore(tablename);
 
             objectStore.openCursor().onsuccess = function (event) {
                 var cursor = event.target.result;
@@ -8278,10 +8303,10 @@
             };
         }
 
-        function addDB(localbitcoinplusplusObj) {
-            var request = db.transaction(["localbitcoinUser"], "readwrite")
-                .objectStore("localbitcoinUser")
-                .add(localbitcoinplusplusObj);
+        function addDB(tablename, dbObject) {
+            var request = db.transaction([tablename], "readwrite")
+                .objectStore(tablename)
+                .add(dbObject);
 
             request.onsuccess = function (event) {
                 alert("Data has been added to your database.");
@@ -8292,10 +8317,10 @@
             }
         }
 
-        function updateinDB(Obj, key) {
+        function updateinDB(tablename, Obj, key) {
 
-            var request = db.transaction(["localbitcoinUser"], "readwrite")
-                .objectStore("localbitcoinUser")
+            var request = db.transaction([tablename], "readwrite")
+                .objectStore(tablename)
                 .put(Obj);
 
             request.onsuccess = function (event) {
@@ -8307,9 +8332,9 @@
             }
         }
 
-        function removeinDB(id) {
-            var request = db.transaction(["localbitcoinUser"], "readwrite")
-                .objectStore("localbitcoinUser")
+        function removeinDB(tablename, id) {
+            var request = db.transaction([tablename], "readwrite")
+                .objectStore(tablename)
                 .delete(id);
 
             request.onsuccess = function (event) {
@@ -8324,11 +8349,15 @@
         var RM_RPC = new localbitcoinplusplus.rpc;
 
         //Test: fetch flo comment
-        var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
-            let local_btc_configs = fetch_configs_res[0];
-            RM_TRADE.super_nodes_array = local_btc_configs.superNodesArray;
-            RM_TRADE.valid_assets = local_btc_configs.validAssetsArray;
-        });
+        try {
+            var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
+                let local_btc_configs = fetch_configs_res[0];
+                RM_TRADE.super_nodes_array = local_btc_configs.superNodesArray;
+                RM_TRADE.valid_assets = local_btc_configs.validAssetsArray;
+            });
+        } catch (error) {
+            throw new Error(`Failed to fetch configurations: ${error}`);
+        }
 
         //Test: Trade functionality
         var trade_btn = document.createElement("button");
@@ -8343,10 +8372,6 @@
 
     <!-- Database operations -->
     <script>
-        // Nodes Database
-        
-        
-
         // localbitcoinUser Databse
         window.onload = function () {
             let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
@@ -8359,8 +8384,8 @@
                 }
 
                 try {
-                    readDB(function (idbData) {
-                        //console.log(idbData);
+                    readDB("localbitcoinUser", "00-01", function (idbData) {
+                        console.log(idbData);
                         if (typeof idbData.myLocalFLOPrivateKey == undefined || idbData.myLocalFLOPrivateKey
                             .trim() == '') {
                             let user_pvt_key = prompt("Please Enter your private key");
@@ -8378,7 +8403,7 @@
                                     localbitcoinplusplusObj.mySelfdeclaredBalanceBitcoin = 0;
                                     localbitcoinplusplusObj.mySelfDeclaredBalanceINR = 0;
 
-                                    updateinDB(localbitcoinplusplusObj, "00-01");
+                                    updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
                                 }
                             }
                         }
@@ -8386,14 +8411,70 @@
                 } catch (e) {
                     console.log(e);
                     throw new Error(
-                        "ERROR: Failed to initialise the database. You are unable to trade at the moment."
+                        "ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment."
                     );
+                }
+
+                // datablocks database
+                try {
+                    readDB("datablocks", "", function(blockData) {
+                        console.log(blockData);
+                    });
+                } catch (error) {
+                    throw new Error("ERROR: Failed to initialise the datablocks database. You are unable to trade at the moment.");
                 }
 
                 // Further operation here
                 console.log("Hello! You are doing great.");
                  
             });
+        }
+    </script>
+
+
+    <!-- Sync Nodes Database -->
+    <script>
+        window.onload = function() {
+            let syncButton = document.createElement('button');
+            let syncButtonText = document.createTextNode('Sync');
+            syncButton.appendChild(syncButtonText);
+            let syncNodes = document.getElementById("syncNodes");
+            syncNodes.appendChild(syncButton);
+
+            let blockVersion = Math.floor(Math.random(1,100)*100);
+            let blockOwnerFLOAddress = "olVxhjhaIedlpafshT";
+            let data = {
+                sample: "lorem ipsum..."
+            };
+            if (Object.keys(data).length === 0 && data.constructor === Object) {
+                throw new Error("Data cannot be empty.");
+            }
+            let datastr = JSON.stringify(data);
+            let blockHashMsg = `${blockVersion}${blockOwnerFLOAddress}${datastr}`;
+            let blockHash = Crypto.SHA256(blockHashMsg);
+            let blockSignature = RM_WALLET.sign(blockHash);
+
+            let updatedDataBlock = {
+                version: blockVersion,
+                data: data,
+                blockOwnerFLOAddress: blockOwnerFLOAddress,
+                blockhash: blockHash,
+                blockSignature: blockSignature
+            }
+
+            syncButton.onclick = function() {
+                try {
+                    updateinDB("datablocks", updatedDataBlock, "");
+                    try {
+                        
+                    } catch (error) {
+                        throw new Error("ERROR: Failed to broadcast to other nodes.");
+                    }
+                } catch (error) {
+                    throw new Error("ERROR: Failed to update the datablocks database. You are unable to trade at the moment.");
+                }
+                
+            }
         }
     </script>
 
