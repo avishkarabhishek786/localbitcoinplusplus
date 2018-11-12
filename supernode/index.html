@@ -18,12 +18,16 @@
         <div class="box">
             <label for="ask_flo_addr">Enter Your FLO Address: </label>
             <input type="text" id="ask_flo_addr" class="form-control">
-
             <input type="button" id="ask_flo_addr_btn" value="Submit">
+            <br>
+            <div id="localbitcoinuserdiv"></div>    
         </div>
 
         <h5>Sync</h5>
-        <div id="syncNodes"></div>
+        <div class="box">
+            <div id="syncNodes"></div>
+            <div id="datablocksdiv"></div>   
+        </div>
 
     </div>
 
@@ -7777,14 +7781,12 @@
 
                 if (typeof params != undefined && typeof method != undefined) {
                     request.response = {};
-                    var Trade = new localbitcoinplusplus.trade();
-
                     switch (method) {
                         case "trade_buy":
-                            request.response = Trade.trade_buy(...request.params);
+                            request.response = localbitcoinplusplus.trade.prototype.trade_buy.call(this, ...request.params);
                             break;
                         case "trade_sell":
-                            request.response = Trade.trade_sell(...request.params);
+                            request.response = localbitcoinplusplus.trade.prototype.trade_sell.call(this, ...request.params);
                             break;
                         case "broadcastBlockDataToAll":
                             // TODO: Make a separate class for syncing
@@ -8384,13 +8386,13 @@
     <!-- Database operations -->
     <script>
         // localbitcoinUser Databse
-        window.onload = function () {
+        //window.onload = function () {
             let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
             ask_flo_addr_btn.addEventListener('click', function () {
                 let ask_flo_addr = document.getElementById('ask_flo_addr');
                 let ask_flo_addr_val = ask_flo_addr.value.trim();
 
-                if (ask_flo_addr_val == null || typeof ask_flo_addr_val == undefined) {
+                if (ask_flo_addr_val == null || typeof  ask_flo_addr_val == undefined || ask_flo_addr_val == "") {
                     throw new Error('Empty or invalid FLO address.');
                 }
 
@@ -8400,7 +8402,7 @@
                         if (typeof idbData.myLocalFLOPrivateKey == undefined || idbData.myLocalFLOPrivateKey
                             .trim() == '') {
                             let user_pvt_key = prompt("Please Enter your private key");
-                            if (user_pvt_key.trim() != null) {
+                            if (user_pvt_key.trim() !== "") {
 
                                 let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
 
@@ -8418,6 +8420,14 @@
                                 }
                             }
                         }
+                        //localbitcoinuserdiv
+                        document.getElementById("localbitcoinuserdiv").innerHTML=
+                            `<p>Address: ${idbData.myLocalFLOAddress}<p>
+                            <p>Declared Balance: ${idbData.mySelfDeclaredBalance}<p>
+                            <p>Declared FLO Balance: ${idbData.mySelfDeclaredBalanceFLO}<p>
+                            <p>Declared BTC Balance: ${idbData.mySelfdeclaredBalanceBitcoin}<p>
+                            <p>Declared INR Balance: ${idbData.mySelfDeclaredBalanceINR}<p>`;
+
                     });
                 } catch (e) {
                     console.log(e);
@@ -8428,8 +8438,12 @@
 
                 // datablocks database
                 try {
-                    readDB("datablocks", "", function(blockData) {
-                        console.log(blockData);
+                    readDB("datablocks", "00-01", function(blockData) {
+                        document.getElementById("datablocksdiv").innerHTML = 
+                        `<p>Version: ${blockData.version}</p>
+                        <p>Block Owner FLO Address: ${blockData.blockOwnerFLOAddress}</p>
+                        <p>Block Signature: ${blockData.blockSignature}</p>
+                        <p>Blockhash: ${blockData.blockhash}</p>`
                     });
                 } catch (error) {
                     throw new Error("ERROR: Failed to initialise the datablocks database. You are unable to trade at the moment.");
@@ -8437,9 +8451,9 @@
 
                 // Further operation here
                 console.log("Hello! You are doing great.");
-                 
+          
             });
-        }
+       // }
     </script>
 
 
@@ -8453,7 +8467,7 @@
             syncNodes.appendChild(syncButton);
 
             let blockVersion = Math.floor(Math.random(1,100)*100);
-            let blockOwnerFLOAddress = "olVxhjhaIedlpafshT";
+            let blockOwnerFLOAddress = "oY1qc4jbY15Vzc3s7eaqicuPZZjav97aFG";
             let data = {
                 sample: "lorem ipsum..."
             };
