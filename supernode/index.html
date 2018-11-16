@@ -7783,10 +7783,14 @@
                     request.response = {};
                     switch (method) {
                         case "trade_buy":
-                            request.response = localbitcoinplusplus.trade.prototype.trade_buy.call(this, ...request.params);
+                            request.response = localbitcoinplusplus.trade.prototype.trade_buy.call(this, ...request.params, function() {
+                                localbitcoinplusplus.trade.prototype.match_trade.call(this);
+                            });
                             break;
                         case "trade_sell":
-                            request.response = localbitcoinplusplus.trade.prototype.trade_sell.call(this, ...request.params);
+                            request.response = localbitcoinplusplus.trade.prototype.trade_sell.call(this, ...request.params, function() {
+                                localbitcoinplusplus.trade.prototype.match_trade.call(this);
+                            });
                             break;
                         case "broadcastBlockDataToAll":
                             // TODO: Make a separate class for syncing
@@ -7846,6 +7850,8 @@
             this.rpc_job = null;
             this.floAddress = null;
             this.super_nodes_array = null;
+            this.buy_list = null;
+            this.sell_list = null;
         }
 
         Trade.prototype = {
@@ -7925,12 +7931,43 @@
                     return false;
                 }
             },
-            trade_buy() {
-                console.log("buy is called");
-                return "tb";
+            match_trade() {
+                console.log(this.buy_list);
+                console.log(this.sell_list);
             },
-            trade_sell() {
-                console.log("sell is called");
+            trade_buy(params, callback) {
+                for (var key in params) {
+                    if (params.hasOwnProperty(key)) {
+                        //console.log(key + " -> " + params[key]);
+                        if (typeof key == undefined || key == "" || key == null) {
+                             throw new Error("Incomplete or invalid request!");
+                        }                        
+                    }
+                }
+                if (params.order_type != "buy" || params.product != "BTC" || params.currency != "INR") {
+                    throw new Error("Invalid buy request.");
+                }
+                params['rand_id'] = Math.floor(Math.random(1,1000)*1000);
+                this.buy_list = params;
+                addDB("buyOrders", params);
+                callback();         
+            },
+            trade_sell(params, callback) {
+                for (var key in params) {
+                    if (params.hasOwnProperty(key)) {
+                        //console.log(key + " -> " + params[key]);
+                        if (typeof key == undefined || key == "" || key == null) {
+                             throw new Error("Incomplete or invalid request!");
+                        }                        
+                    }
+                }
+                if (params.order_type != "sell" || params.product != "BTC" || params.currency != "INR") {
+                    throw new Error("Invalid sell request.");
+                }
+
+                params['rand_id'] = Math.floor(Math.random(1,1000)*1000);
+                this.sell_list = params;
+                callback();
             }
         }
     </script>
@@ -8118,6 +8155,7 @@
         /* Websocket Code Starts here */
 
         var wsUri = "ws://localhost:9000/";
+        //var wsUri = "ws://ranchimall.duckdns.org:9000/";
         var output;
 
         function init() {
@@ -8158,6 +8196,8 @@
             if (res_pos >= 0) {
                 var res = response.substr(res_pos);
                 try {
+                    console.log(res);
+                    
                     var res_obj = JSON.parse(res);
                     console.log(res_obj);
 
@@ -8257,11 +8297,33 @@
             blockOwnerFLOAddress: "",
             blockhash: "",
             blockSignature: ""
-        }
+        };
+
+        let buyList = {
+            id: "",
+            buy_price: null,
+            buyer_key_signature: null,
+            buyer_public_key: null,
+            currency: null,
+            order_type: null,
+            order_validator_public_key: null,
+            product: null
+        };
+
+        let sellList = {
+            id: "",
+            sell_price: null,
+            seller_key_signature: null,
+            seller_public_key: null,
+            currency: null,
+            order_type: null,
+            order_validator_public_key: null,
+            product: null
+        };
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 2);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -8289,6 +8351,18 @@
                     keyPath: "id"
                 });
                 objectStore.put(dataBlock);
+            }
+            if (!db.objectStoreNames.contains('buyOrders')) {
+                var objectStore = db.createObjectStore("buyOrders", {
+                    autoIncrement: true
+                });
+                objectStore.put(buyList);
+            }
+            if (!db.objectStoreNames.contains('sellOrders')) {
+                var objectStore = db.createObjectStore("sellOrders", {
+                    autoIncrement: true
+                });
+                objectStore.put(sellList);
             }
         }
 
@@ -8479,7 +8553,8 @@
             let blockVersion = Math.floor(Math.random(1,100)*100);
             let blockOwnerFLOAddress = "oY1qc4jbY15Vzc3s7eaqicuPZZjav97aFG";
             let data = {
-                sample: "lorem ipsum doler..."
+                sample2: "lorem ipsum doler conn...",
+                sample1: "kfhdjkfhjkdhfjkhj"
             };
             if (Object.keys(data).length === 0 && data.constructor === Object) {
                 throw new Error("Data cannot be empty.");
@@ -8506,7 +8581,8 @@
                         // Broadcast to other nodes
                         let sendBlockDataToAll = RM_RPC.send_rpc("broadcastBlockDataToAll", updatedDataBlock);
                         doSend(sendBlockDataToAll);
-                        
+                        console.log(updatedDataBlock);
+                                                
                         // Update HTML of current page
                         readDB("datablocks", "00-01", function(blockData) {
                             document.getElementById("datablocksdiv").innerHTML = 
