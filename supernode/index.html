@@ -6,6 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Document</title>
+
+    <style>
+        .tradebox {
+            display: flex;
+            flex: 1;
+        }
+        ul {
+            list-style-type: none;
+        }
+        ul.panel-box > li {
+            width: auto;
+            height: auto;   
+            padding: 10px 10px;
+            margin: 10px 10px;
+        }
+        .buybox > ul.panel-box > li {
+            background-color: chocolate;
+        }
+        .sellbox > ul.panel-box > li {
+            background-color: cornflowerblue;
+        }
+    </style>
 </head>
 
 <body>
@@ -27,6 +49,26 @@
         <div class="box">
             <div id="syncNodes"></div>
             <div id="datablocksdiv"></div>   
+        </div>
+
+        <h5>Buy--Sell</h5>
+        <div class="box tradebox">
+            <div class="buybox">
+                <strong>Buy BTC</strong>
+                <ul class="panel-box trade_amount_box" id="buyul">
+                    <li>INR 10000</li>
+                    <li>INR 50000</li>
+                    <li>INR 100000</li>
+                </ul>
+            </div>
+            <div class="sellbox">
+                <strong>Sell BTC</strong>
+                <ul class="panel-box trade_amount_box" id="sellul">
+                    <li>INR 10000</li>
+                    <li>INR 50000</li>
+                    <li>INR 100000</li>
+                </ul>
+            </div>
         </div>
 
     </div>
@@ -7912,18 +7954,20 @@
                 var is_valid_order = this.validate_order(order_type, product, currency, buy_price, buyer_public_key,
                     buyer_key_signature, order_validator_public_key);
                 if (is_valid_order === true) {
-                    var orderRPC = new localbitcoinplusplus.rpc();
+
                     this.rpc_job = 'trade_' + this.order_type;
-                    return orderRPC.send_rpc(this.rpc_job, {
+                    
+                    let placeNewOrder = localbitcoinplusplus.rpc.prototype.send_rpc.call(this, this.rpc_job, {
                         "order_type": this.order_type,
                         "product": this.product,
                         "currency": this.currency,
                         "buy_price": this.buy_price,
                         "buyer_public_key": this.buyer_public_key,
                         "buyer_key_signature": this.buyer_key_signature,
-                        "order_validator_public_key": this.order_validator_public_key
-                    });
-                } else if (is_valid_order == "object") {
+                        "order_validator_public_key": this.order_validator_public_key}
+                    );
+                    return placeNewOrder;
+                } else if (typeof is_valid_order == "object") {
                     var err;
                     for (err = 0; err < is_valid_order.length; err++) {
                         alert(is_valid_order[err]);
@@ -7932,8 +7976,13 @@
                 }
             },
             match_trade() {
-                console.log(this.buy_list);
-                console.log(this.sell_list);
+                try {
+                    readAllDB("sellOrders", function(ss) {
+                        console.log(ss);  
+                    });
+                } catch (e) {
+                    console.error(e);      
+                }    
             },
             trade_buy(params, callback) {
                 for (var key in params) {
@@ -7967,6 +8016,7 @@
 
                 params['rand_id'] = Math.floor(Math.random(1,1000)*1000);
                 this.sell_list = params;
+                addDB("sellOrders", params);
                 callback();
             }
         }
@@ -8189,7 +8239,7 @@
         }
 
         function onMessage(evt) {
-            console.log(evt);
+            //console.log(evt);
             
             var response = evt.data;
             var res_pos = response.indexOf('{');
@@ -8385,7 +8435,7 @@
             };
         }
 
-        function readAllDB(tablename) {
+        function readAllDB(tablename, callback) {
             var objectStore = db.transaction(tablename).objectStore(tablename);
 
             objectStore.openCursor().onsuccess = function (event) {
@@ -8393,6 +8443,7 @@
 
                 if (cursor) {
                     console.log(cursor);
+                    callback(cursor);
                 } else {
                     alert("No more entries!");
                 }
@@ -8454,16 +8505,6 @@
         } catch (error) {
             throw new Error(`Failed to fetch configurations: ${error}`);
         }
-
-        //Test: Trade functionality
-        var trade_btn = document.createElement("button");
-        trade_btn.innerText = "Trade";
-        trade_btn.onclick = function () {
-            var buytrade = RM_TRADE.place_order("buy", "BTC", "INR", 10000.00, "buyer_public_key",
-                "buyer_key_signature", "order_validator_public_key");
-            doSend(buytrade);
-        }
-        document.getElementById("output_div").appendChild(trade_btn);
     </script>
 
     <!-- Database operations -->
@@ -8512,7 +8553,43 @@
                             <p>Declared BTC Balance: ${idbData.mySelfdeclaredBalanceBitcoin}<p>
                             <p>Declared INR Balance: ${idbData.mySelfDeclaredBalanceINR}<p>`;
 
+                        /* Give user the facillity to trade */
+                        var buyul = document.getElementById('buyul');
+                        var sellul = document.getElementById('sellul');
+
+                        function getEventTarget(e) {
+                            e = e || window.event; // for browsers compatibility
+                            return e.target || e.srcElement; 
+                        }
+
+                        buyul.onclick = function(event) {
+                            let target = getEventTarget(event);
+                            let intAmount = parseFloat(target.innerHTML.match(/\d+/)[0]); // Amount of INR/BTC/whatever in integer
+                            let signing_object = {
+                                flo_address: idbData.myLocalFLOAddress,
+                                order_type: "buy",
+                                trading_product: "BTC",
+                                currency: "INR",
+                                tradingAmount: intAmount 
+                            };
+                            // Get private key here
+                            //let trader_signature = RM_WALLET.sign(JSON.stringify(signing_object), privateKeyWIF);
+                            let buytrade = RM_TRADE.place_order("buy", "BTC", "INR", intAmount, idbData.myLocalFLOPublicKey,
+                            "trader_signature", "order_validator_public_key");
+                            console.log(buytrade);
+                            doSend(buytrade);            
+                        }
+
+                        sellul.onclick = function(event) {
+                            let target = getEventTarget(event);
+                            let intAmount = parseFloat(target.innerHTML.match(/\d+/)[0]); // Amount of INR/BTC/whatever in integer
+                            var buytrade = RM_TRADE.place_order("sell", "BTC", "INR", intAmount, idbData.myLocalFLOPublicKey,
+                            "trader_signature", "order_validator_public_key");
+                            doSend(buytrade);            
+                        }
+                        
                     });
+
                 } catch (e) {
                     console.log(e);
                     throw new Error(
@@ -8529,6 +8606,7 @@
                         <p>Block Signature: ${blockData.blockSignature}</p>
                         <p>Blockhash: ${blockData.blockhash}</p>`
                     });
+
                 } catch (error) {
                     throw new Error("ERROR: Failed to initialise the datablocks database. You are unable to trade at the moment.");
                 }
