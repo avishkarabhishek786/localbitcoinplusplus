@@ -7977,8 +7977,33 @@
             },
             match_trade() {
                 try {
-                    readAllDB("sellOrders", function(ss) {
-                        console.log(ss);  
+                    let sellOrdersList = [];
+                    let buyOrdersList = [];
+                    readAllDB("sellOrders", function(sellOrdersList) {    
+                        if(sellOrdersList.length>0) {
+                            readAllDB("buyOrders", function(buyOrdersList) {
+                                if (buyOrdersList.length>0) {
+                                    let list10ksell = sellOrdersList.filter(function(sellOrder) {
+                                        return sellOrder.buy_price == 10000;
+                                    });
+                                    let list50ksell = sellOrdersList.filter(function(sellOrder) {
+                                        return sellOrder.buy_price == 50000;
+                                    });
+                                    let list100ksell = sellOrdersList.filter(function(sellOrder) {
+                                        return sellOrder.buy_price == 100000;
+                                    });
+                                    let list10kbuy = buyOrdersList.filter(function(buyOrder) {
+                                        return buyOrder.buy_price == 10000;
+                                    });
+                                    let list50kbuy = buyOrdersList.filter(function(buyOrder) {
+                                        return buyOrder.buy_price == 50000;
+                                    });
+                                    let list100kbuy = buyOrdersList.filter(function(buyOrder) {
+                                        return buyOrder.buy_price == 100000;
+                                    });     
+                                }
+                            });
+                        }  
                     });
                 } catch (e) {
                     console.error(e);      
@@ -8437,17 +8462,20 @@
 
         function readAllDB(tablename, callback) {
             var objectStore = db.transaction(tablename).objectStore(tablename);
-
+            let response = [];
+            objectStore.openCursor().onerror = function(event) {
+                console.err("Error fetching data");
+            };
             objectStore.openCursor().onsuccess = function (event) {
-                var cursor = event.target.result;
-
+                let cursor = event.target.result;
                 if (cursor) {
-                    console.log(cursor);
-                    callback(cursor);
+                    response.push(cursor.value);
+                    cursor.continue();
                 } else {
-                    alert("No more entries!");
+                     callback(response);
                 }
             };
+
         }
 
         function addDB(tablename, dbObject) {
@@ -8523,7 +8551,6 @@
 
                 try {
                     readDB("localbitcoinUser", "00-01", function (idbData) {
-                        console.log(idbData);
                         if (typeof idbData.myLocalFLOPrivateKey == undefined || idbData.myLocalFLOPrivateKey
                             .trim() == '') {
                             let user_pvt_key = prompt("Please Enter your private key");
