@@ -7860,6 +7860,30 @@
                                 });  
                             }
                             break;
+                        case "deposit_asset_request":
+                           // if(typeof params.assetType !== undefined && localbitcoinplusplus.trade.valid_assets.includes(this, params.assetType) 
+                           //     && typeof params.amount !== undefined && localbitcoinplusplus.trade.valid_trading_amount.includes(this, parseFloat(params.amount))
+                           // ) {
+                               if(params.assetType == "BTC") {
+                                    // YOU HAVE TO PROVIDE BTC KEYS HERE. CHANGE IT LATER
+                                     let generate_btc_keys_for_requester = localbitcoinplusplus.wallets.prototype.generateFloKeys.call(); 
+                                
+                                    // Need to do: Super Node saves the private keys and sends the BTC address to the requester
+                                    // Code here ...
+                                    // Send the address to the requester
+                                    let requester_data = `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`;
+                                     return {error: false, method:"deposit_asset_request_response", data:requester_data};
+                               } else if(params.assetType=="INR") {
+                                     // YOU NEED TO DETERMINE A BANK ACCOUNT HERE
+                                     let bank_account = 'Name: John Doe, State Bank of India, Branch: Ashok Nagar Ranchi';
+                                     let requester_data = `Plese send the money to following bank address: "${bank_account}"`;
+                                     return {error: false, method:"deposit_asset_request_response", data:requester_data};   
+                               }
+
+                               // Return error to the requester
+                               return {error: true, method:"deposit_asset_request_response", data:"Deposit request failed."}; 
+                            //}
+                            break;
 
                         default:
                             alert("Unknown method called for execution.");
@@ -8146,15 +8170,10 @@
                     throw new Error("User address required.");
                 }
 
-                console.log(userFLOaddress);
-                
-                // Determine the level of the user and check if he/she can trade for 'amount'
-                // in params above
-
-                // Find a person selling BTC in lieu of Cash or Find a person buying BTC in lieu of Cash
-                let counterTraderAsset = assetType=="BTC" ? "INR":"BTC";
-                let getCounterTraderAccountAddress = this.findTrader(counterTraderAsset, amount);
-                callback(getCounterTraderAccountAddress);
+                let deposit_request_object = {assetType, amount};  
+                let deposit_request = localbitcoinplusplus.rpc.prototype.send_rpc.call(this, "deposit_asset_request", deposit_request_object);
+                doSend(deposit_request);
+                callback(deposit_request); 
             }
         }
     </script>
@@ -8389,25 +8408,33 @@
                     console.log(res_obj);
 
                     if (typeof res_obj.method !== undefined) {
-                        var orderRPC = new localbitcoinplusplus.rpc();
+                        //var orderRPC = new localbitcoinplusplus.rpc();
+                        let response_from_sever;
                         switch (res_obj.method) {
                             case "trade_buy":
 
-                                var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                                response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));
                                 //orderRPC.parse_server_rpc_response(response_from_sever);
 
                                 //doSend(response_from_sever); // send response to client
                                 break;
                             case "trade_sell":
-                                var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                                response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));
                                 //doSend(response_from_sever); // send response to client
                                 break;
                             case "broadcastBlockDataToAll":
-                                var response_from_sever = orderRPC.receive_rpc_response(JSON.stringify(res_obj));
+                                response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));
                                 console.log(response_from_sever);
                                 //doSend(response_from_sever); // send response to client
                                 break;
-
+                            case "deposit_asset_request":
+                                response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));
+                                doSend(JSON.stringify(response_from_sever)); // send response to client
+                            case "deposit_asset_request_response":
+                                if(!res_obj.error && typeof res_obj.data !== "undefined" && res_obj.data.length) {
+                                    alert(res_obj.data);
+                                }
+                                break;
                             default:
                                 break;
                         }
@@ -8890,7 +8917,6 @@
                     RM_TRADE.depositAsset(asset_type, tradeAmount, userFLOaddress, function(res) {
                         console.log(res);
                         if (res.length>0) {
-                            //let counterTraderAccountAddress = document.createTextNode(res);
                             let counterTraderAccountAddress = `
                                 <p><strong>Please pay the amount to following address:</strong></p>
                                 <p>${res}</p>
