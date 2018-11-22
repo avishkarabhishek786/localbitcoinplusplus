@@ -7252,7 +7252,8 @@
         var localbitcoinplusplus = {
             wallets: {},
             trade: {},
-            rpc: {}
+            rpc: {},
+            master_configurations:{}
         };
 
         Object.defineProperty(localbitcoinplusplus, 'flocha', {
@@ -7262,22 +7263,8 @@
             enumerable: false
         });
 
-        Object.defineProperty(localbitcoinplusplus, 'MASTER_NODE', {
-            value: "023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75",
-            writable: false,
-            configurable: false,
-            enumerable: true
-        });
-
-        Object.defineProperty(localbitcoinplusplus, "RM_FLO_SENDING_ADDR", {
-            value: "oUbQYNBo7hWRcVN4dnx2ZQPfumfnTS7NsP", //C2832A5C3AEFFA1583379A67AB9B92CB7EC6566CCB35F00A9F1AF08EBD74B235
-            writable: false,
-            configurable: false,
-            enumerable: true
-        });
-
-        Object.defineProperty(localbitcoinplusplus, "RM_FLO_RECEIVING_ADDR", {
-            value: "oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy", // 79F82A750FF2EAE51A50BE242043634B3DDE7ABE3B09732A7842A56CFE3C098E
+        Object.defineProperty(localbitcoinplusplus, 'RM_FLO_SENDING_ADDR', {
+            value: "oUbQYNBo7hWRcVN4dnx2ZQPfumfnTS7NsP",
             writable: false,
             configurable: false,
             enumerable: true
@@ -7681,7 +7668,9 @@
 
                     if (request.status >= 200 && request.status < 400) {
                         data.txs.forEach(tx => {
-                            callback(tx.floData);
+                            if (typeof tx !== undefined && typeof tx.floData == 'string' && tx.floData.length>0) {
+                                callback(tx.floData);   
+                            }
                         });
                     } else {
                         console.log('error');
@@ -7696,44 +7685,26 @@
                     let RMAssets = floData.slice(5);
 
                     // remove this line later
-                    //'ValidAssets=BTC,FLO,INR#!#Supernode=oH6e6K8MhBG9VWeLEpTREqeL1YkfizSS22,oHsGVh6r682HxXNT21UXXC42TZatUcGvDB';
+                    //RMAssets = 'validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75#!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy';
                     let floAssetsArray = RMAssets.split('#!#');
-
-                    if (floAssetsArray.length > 0 && typeof floAssetsArray[0] != undefined &&
+                    
+                    if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
                         floAssetsArray[0].trim() !== "" && typeof floAssetsArray[1] !== undefined &&
                         floAssetsArray[1].trim() !== "") {
-
-                        let validAssetsList = floAssetsArray[0].split('=');
-                        let superNodesList = floAssetsArray[1].split('=');
-
-                        if (validAssetsList[0] == "ValidAssets" && superNodesList[0].trim() ==
-                            "Supernode" && superNodesList[0].trim().length > 0) {
-                            try {
-                                let fetchedAssestsResponseObject = {
-                                    validAssetsArray: validAssetsList[1].split(','),
-                                    superNodesArray: superNodesList[1].split(',')
-                                }
-                                callback(fetchedAssestsResponseObject);
-                            } catch (error) {
-                                console.error(error);
-                                callback(error);
-                            }
+                        try {
+                            floAssetsArray.map(function(assets_string) {
+                                let k = assets_string.split('=');
+                                return Object.defineProperty(localbitcoinplusplus.master_configurations, k[0], {
+                                    value: k[1], writable: false, configurable: false, enumerable: true
+                                });
+                            });
+                           return callback(localbitcoinplusplus);
+                        } catch (error) {
+                            console.error('FATAL ERROR: Failed to fetch master configuration: ', error);
                         }
                     }
+                    return false;
                 });
-            }
-        }
-    
-        localbitcoinplusplus.rm_configs = {
-            networkSettings: function() {
-                this.myNodeUrl = null;
-                this.networkNodes = [];
-            },
-            dataBlock: function() {
-                this.blockVersion = null;
-                this.blockOwner = null;
-                this.blockHash = null;
-                this.blockSignature = null;
             }
         }
     </script>
@@ -8092,22 +8063,6 @@
                                             doSend(sellers_job);
                                         }
                                     });
-
-                                    // for list10k
-                                    // let iter = list10k[0].length < list10k[1].length ? list10k[0].length:list10k[1].length;
-                                    // console.log(iter);
-                                    
-                                    // for (let index = 0; index < iter; index++) {
-                                    //     const buy_element = list10k[0][index];
-                                    //     const sell_element = list10k[1][index];
-                                    
-                                    //     let buyers_job = `${buy_element.user_flo_address} to pay ${buy_element.currency} ${buy_element.buy_price} to bank address "${sell_element.receiving_address}"`;
-                                    //     let sellers_job = `${sell_element.user_flo_address} to pay X Bitcoins to address ${buy_element.receiving_address}`;
-                                        
-                                    //     doSend(buyers_job);
-                                    //     doSend(sellers_job);
-                                    // }
-                                    
                                 }
                             });
                         }  
@@ -8662,12 +8617,12 @@
         var RM_TRADE = new localbitcoinplusplus.trade;
         var RM_RPC = new localbitcoinplusplus.rpc;
 
-        //Test: fetch flo comment
+        // Fetch configs from Master Key
         try {
+            console.log("ok");
+            
             var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
-                let local_btc_configs = fetch_configs_res[0];
-                RM_TRADE.super_nodes_array = local_btc_configs.superNodesArray;
-                RM_TRADE.valid_assets = local_btc_configs.validAssetsArray;
+                console.log(fetch_configs_res);
             });
         } catch (error) {
             throw new Error(`Failed to fetch configurations: ${error}`);
@@ -8804,7 +8759,6 @@
        // }
     </script>
 
-
     <!-- Sync Nodes Database -->
     <script>
         window.onload = function() {
@@ -8930,6 +8884,7 @@
             });            
         }
     </script>
+    <!-- Generate new keys -->
     <script>
         (function() {
             let new_flo_keys_ul = document.getElementById('new_flo_keys_ul');
