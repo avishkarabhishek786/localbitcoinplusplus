@@ -7685,7 +7685,8 @@
                     let RMAssets = floData.slice(5);
 
                     // remove this line later
-                    //RMAssets = 'validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75#!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy';
+                    RMAssets = `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
+                        #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000`;
                     let floAssetsArray = RMAssets.split('#!#');
                     
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -7694,6 +7695,11 @@
                         try {
                             floAssetsArray.map(function(assets_string) {
                                 let k = assets_string.split('=');
+                                if (k[1].indexOf(',')>0) {
+                                    k[1] = k[1].split(',').map(function(val) {
+                                        return val = !isNaN(val) ? parseFloat(val):val;
+                                    });
+                                }
                                 return Object.defineProperty(localbitcoinplusplus.master_configurations, k[0], {
                                     value: k[1], writable: false, configurable: false, enumerable: true
                                 });
@@ -7721,20 +7727,16 @@
 
                 var privateKey = pk || Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1")
                     .getN());
-                //console.log(privateKey);
-
                 var key = new Bitcoin.ECKey(privateKey);
                 key.setCompressed(true);
                 var privateKeyHex = key.getBitcoinHexFormat();
                 var privateKeyWIF = key.getBitcoinWalletImportFormat();
 
                 var publicKeyHex = localbitcoinplusplus.publicKey.getHexFromByteArray(key.getPubPoint().getEncoded(
-                        1))
-                    .toString().toUpperCase();
+                    1)).toString().toUpperCase();
 
                 var pubKeyHash = key.getPubKeyHash();
                 var pubKeyHex = key.getPubKeyHex();
-
                 var address = key.getBitcoinAddress(publicKeyHex);
 
                 console.log("privateKeyHex: ", privateKeyHex);
@@ -7832,17 +7834,18 @@
                             }
                             break;
                         case "deposit_asset_request":
-                           // if(typeof params.assetType !== undefined && localbitcoinplusplus.trade.valid_assets.includes(this, params.assetType) 
-                           //     && typeof params.amount !== undefined && localbitcoinplusplus.trade.valid_trading_amount.includes(this, parseFloat(params.amount))
-                           // ) {
+                            if(typeof params.assetType !== undefined && localbitcoinplusplus.master_configurations.validAssets.includes(params.assetType) 
+                                && typeof params.amount !== undefined && typeof localbitcoinplusplus.master_configurations.validTradingAmount !=='undefined' 
+                                && localbitcoinplusplus.master_configurations.validTradingAmount.includes(parseFloat(params.amount))
+                            ) {
                                if(params.assetType == "BTC") {
                                     // YOU HAVE TO PROVIDE BTC KEYS HERE. CHANGE IT LATER
-                                     let generate_btc_keys_for_requester = localbitcoinplusplus.wallets.prototype.generateFloKeys.call(); 
+                                    let generate_btc_keys_for_requester = localbitcoinplusplus.wallets.prototype.generateFloKeys.call(); 
                                 
                                     // Need to do: Super Node saves the private keys and sends the BTC address to the requester
                                     // Code here ...
                                     // Send the address to the requester
-                                    let requester_data = `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`;
+                                     let requester_data = `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`;
                                      return {error: false, method:"deposit_asset_request_response", data:requester_data};
                                } else if(params.assetType=="INR") {
                                      // YOU NEED TO DETERMINE A BANK ACCOUNT HERE
@@ -7853,7 +7856,9 @@
 
                                // Return error to the requester
                                return {error: true, method:"deposit_asset_request_response", data:"Deposit request failed."}; 
-                            //}
+                            } else {
+                                console.log("oops");
+                            }
                             break;
 
                         default:
@@ -7888,10 +7893,8 @@
             this.order_type = null;
             this.valid_order_type = ["buy", "sell"];
             this.product = null;
-            this.valid_assets = ["BTC", "INR"];
             this.currency = null;
             this.valid_currencies = ["BTC", "INR"];
-            this.valid_trading_amount = [10000, 50000, 100000];
             this.buy_price = null;
             this.buyer_public_key = null;
             this.buyer_key_signature = null;
@@ -7932,7 +7935,7 @@
                 } else {
                     this.errors.push("No receiving BTC or Bank address provided.");
                 }
-                if (this.valid_assets.indexOf(product) >= 0) {
+                if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && localbitcoinplusplus.master_configurations.validAssets.indexOf(product) >= 0) {
                     this.product = product;
                 } else {
                     this.errors.push("Invalid product.");
@@ -8107,7 +8110,10 @@
                 callback();
             },
             findTrader(traderAssetType, traderAssetAmount) {
-                if (this.valid_assets.includes(traderAssetType) && this.valid_trading_amount.includes(traderAssetAmount)) {
+                if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' 
+                && localbitcoinplusplus.master_configurations.validAssets.includes(traderAssetType) 
+                && typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' 
+                && localbitcoinplusplus.master_configurations.validTradingAmount.includes(traderAssetAmount)) {
                     if(traderAssetType=="BTC") {
                         return "1TRADERBITCOINADDRESS";
                     } else if(traderAssetType=="INR") {
@@ -8117,7 +8123,7 @@
                 return false;
             },
             depositAsset(assetType, amount, userFLOaddress, callback) {
-                if(!this.valid_assets.includes(assetType)) {
+                if(typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && !localbitcoinplusplus.master_configurations.validAssets.includes(assetType)) {
                     throw new Error("Invalid asset error");
                 } else if(parseFloat(amount)<=0) {
                     throw new Error("Invalid amount error.");
@@ -8619,10 +8625,9 @@
 
         // Fetch configs from Master Key
         try {
-            console.log("ok");
-            
             var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
                 console.log(fetch_configs_res);
+                dataBaseOperations();
             });
         } catch (error) {
             throw new Error(`Failed to fetch configurations: ${error}`);
@@ -8631,9 +8636,8 @@
 
     <!-- Database operations -->
     <script>
-
         // localbitcoinUser Databse
-        //window.onload = function () {
+        const dataBaseOperations = function () {
             let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
             ask_flo_addr_btn.addEventListener('click', function () {
                 let ask_flo_addr = document.getElementById('ask_flo_addr');
@@ -8756,7 +8760,7 @@
                 console.log("Hello! You are doing great.");
           
             });
-       // }
+        }
     </script>
 
     <!-- Sync Nodes Database -->
@@ -8829,26 +8833,30 @@
             let assetTypeInput = document.createElement('select');
             assetTypeInput.id = "select_assets_type";
             asset_box.appendChild(assetTypeInput);
-            let assetTypeSelectArray = RM_TRADE.valid_assets;
-            assetTypeSelectArray.unshift("Select Asset Type");
-            for (var i = 0; i < assetTypeSelectArray.length; i++) {
-                var option = document.createElement("option");
-                option.value = assetTypeSelectArray[i];
-                option.text = assetTypeSelectArray[i];
-                assetTypeInput.appendChild(option);
+            if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && localbitcoinplusplus.master_configurations.validAssets.length>0) {
+                let assetTypeSelectArray = localbitcoinplusplus.master_configurations.validAssets;
+                assetTypeSelectArray.unshift("Select Asset Type");
+                for (var i = 0; i < assetTypeSelectArray.length; i++) {
+                    var option = document.createElement("option");
+                    option.value = assetTypeSelectArray[i];
+                    option.text = assetTypeSelectArray[i];
+                    assetTypeInput.appendChild(option);
+                }   
             }
 
             // Create a select input for trade amount
             let tradeAmountSelect = document.createElement('select');
             tradeAmountSelect.id = "trade_amount_select";
             asset_box.appendChild(tradeAmountSelect);
-            let tradeAmountSelectArray = RM_TRADE.valid_trading_amount;
-            tradeAmountSelectArray.unshift("Select Asset Amount");
-            for (var i = 0; i < tradeAmountSelectArray.length; i++) {
-                var option = document.createElement("option");
-                option.value = tradeAmountSelectArray[i];
-                option.text = tradeAmountSelectArray[i];
-                tradeAmountSelect.appendChild(option);
+            if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' && localbitcoinplusplus.master_configurations.validTradingAmount.length>0) {
+                let tradeAmountSelectArray = localbitcoinplusplus.master_configurations.validTradingAmount;
+                tradeAmountSelectArray.unshift("Select Asset Amount");
+                for (var i = 0; i < tradeAmountSelectArray.length; i++) {
+                    var option = document.createElement("option");
+                    option.value = tradeAmountSelectArray[i];
+                    option.text = tradeAmountSelectArray[i];
+                    tradeAmountSelect.appendChild(option);
+                }                
             }
 
             // Create a deposit and withdraw button
@@ -8867,14 +8875,16 @@
                 if(typeof userFLOaddress == undefined || userFLOaddress.trim().length<1) {
                     throw new Errror("Invalid or empty user FLO address.");
                 } 
-                if (RM_TRADE.valid_trading_amount.includes(tradeAmount) && RM_TRADE.valid_assets.includes(asset_type)) {
+                if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' 
+                && localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) 
+                && typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' 
+                && localbitcoinplusplus.master_configurations.validAssets.includes(asset_type)) {
                     RM_TRADE.depositAsset(asset_type, tradeAmount, userFLOaddress, function(res) {
                         console.log(res);
                         if (res.length>0) {
                             let counterTraderAccountAddress = `
                                 <p><strong>Please pay the amount to following address:</strong></p>
-                                <p>${res}</p>
-                            `;
+                                <p>${res}</p>`;
                             asset_box.insertAdjacentHTML('beforeend', counterTraderAccountAddress);
                         }
                     });
