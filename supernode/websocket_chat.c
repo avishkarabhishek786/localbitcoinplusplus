@@ -20,7 +20,7 @@ static int is_websocket(const struct mg_connection *nc) {
 
 static void broadcast(struct mg_connection *nc, const struct mg_str msg) {
   struct mg_connection *c;
-  char buf[500];
+  char buf[2500];
   char addr[32];
   mg_sock_addr_to_str(&nc->sa, addr, sizeof(addr),
                       MG_SOCK_STRINGIFY_IP | MG_SOCK_STRINGIFY_PORT);
