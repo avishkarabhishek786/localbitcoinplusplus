@@ -7885,6 +7885,7 @@
                                     // Need to do: Super Node saves the private keys and sends the BTC address to the requester
                                     // THIS IS VERY DANGEROUS STEP BCOZ BTC PRIVATE KEY DATA CAN BE LEAKED HERE IF ANYTHING GOES WRONG
                                     *****************************************************************************/
+                                    params.id = + new Date();
                                     params.status = 1;
                                     params.btc_private_key = generate_btc_keys_for_requester.privateKeyWIF;
                                     params.btc_address = generate_btc_keys_for_requester.address;
@@ -7893,7 +7894,7 @@
                                     GET EQUIVALENT BTC HERE IN TERMS OF ORDERED INR I.E 10K, 50K...
                                     ******************************************************/
                                     params.bitcoinToBePaid = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash.call(params.depositing_amount);
-
+                                    
                                     let receivedTradeInfo = {...params};
                                     
                                     try {
@@ -7913,6 +7914,7 @@
                                         data: requester_data
                                     };
                                 } else if (params.product == "INR") {
+                                    params.id = + new Date();
                                     params.status = 1;
                                     let receivedTradeInfo = {...params};
                                     
@@ -8065,7 +8067,7 @@
                 if (is_valid_order === true) {
 
                     this.rpc_job = 'trade_' + this.order_type;
-
+                    
                     let placeNewOrder = localbitcoinplusplus.rpc.prototype.send_rpc.call(this, this.rpc_job, {
                         "order_type": this.order_type,
                         "trader_flo_address": this.user_flo_address,
@@ -8184,7 +8186,7 @@
                 // "receiving_address": this.receiving_address
                
                 //Check buyer's INR balance
-                readDBbyIndex("cash_balances", "trader_flo_address", params.trader_flo_address, function(res) {
+                readDB("cash_balances", "trader_flo_address", params.trader_flo_address, function(res) {
                     if(!isNaN(res.cash_balance)) {
                         let buyer_cash_balance = parseFloat(res.cash_balance);
                         let buy_price_btc = parseFloat(params.buy_price);
@@ -8202,7 +8204,7 @@
                             updateinDB("cash_balances", res, params.trader_flo_address);
                             
                             // Increase BTC balance of buyer with extra eqBTC amount of BTC 
-                            readDBbyIndex("btc_balances", "trader_flo_address", params.trader_flo_address, function(res) {
+                            readDB("btc_balances", "trader_flo_address", params.trader_flo_address, function(res) {
                                 if (typeof res.btc_balance == "undefined" && !NaN(res.btc_balance)) {
                                     res.btc_balance = parseFloat(res.btc_balance)+eqBTC;
                                     updateinDB("btc_balances", res, params.trader_flo_address);
@@ -8211,12 +8213,12 @@
                                 }
                             });
                         } else {
-                            throw new Error("Failed to fetch cuurent BTC price.");
+                            throw new Error("Failed to fetch current BTC price.");
                         }
                     }
                 });
 
-                params['rand_id'] = Math.floor(Math.random(1, 1000) * 1000);
+                params['id'] = + new Date();
                 addDB("buyOrders", params);
                 callback();
             },
@@ -8240,7 +8242,7 @@
                 // Check BTC balance of the seller
                 console.log(params.trader_flo_address);
                 
-                readDBbyIndex("btc_balances", "trader_flo_address", params.trader_flo_address, function(res) {
+                readDB("btc_balances", "trader_flo_address", params.trader_flo_address, function(res) {
                     if (typeof res.trader_flo_address == "string" && res.trader_flo_address.length>0 
                     && typeof res.btc_balance == "number" && res.btc_balance>0) {
                         let seller_btc_balance = parseFloat(res.btc_balance);
@@ -8271,7 +8273,7 @@
                     }
                 });
 
-                params['rand_id'] = Math.floor(Math.random(1, 1000) * 1000);
+                params['rand_id'] = + new Date();
                 addDB("sellOrders", params);
                 callback();
             },
@@ -8798,7 +8800,6 @@
             depositing_amount: 0,
             depositor_key_signature: null,
             depositor_public_key: null,
-            //currency: null,
             operation_type: null,
             order_validator_public_key: null,
             product: null,
@@ -8807,7 +8808,6 @@
 
         const btc_balances = {
             trader_flo_address: null,
-            btc_address: null,
             btc_balance: null
         }
 
@@ -8815,10 +8815,16 @@
             trader_flo_address: null,
             cash_balance: null
         }
+
+        const system_btc_reserves = {
+            id: '',
+            btc_address: null,
+            balance: null 
+        }
         
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 2);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -8834,47 +8840,32 @@
         request.onupgradeneeded = function (event) {
             var db = event.target.result;
             if (!db.objectStoreNames.contains('localbitcoinUser')) {
-                var objectStore = db.createObjectStore("localbitcoinUser", {
-                    keyPath: "id"
-                });
+                var objectStore = db.createObjectStore("localbitcoinUser", {keyPath: "id"});
+                objectStore.createIndex('myLocalFLOAddress', 'myLocalFLOAddress', { unique: false });
                 objectStore.put(localbitcoinplusplusObj);
             }
 
             if (!db.objectStoreNames.contains('datablocks')) {
-                var objectStore = db.createObjectStore("datablocks", {
-                    keyPath: "id"
-                });
+                var objectStore = db.createObjectStore("datablocks", {keyPath: "id"});
                 objectStore.put(dataBlock);
             }
             if (!db.objectStoreNames.contains('buyOrders')) {
-                var objectStore = db.createObjectStore("buyOrders", {
-                    keyPath: 'trader_flo_address'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false, multiEntry:true });
+                var objectStore = db.createObjectStore("buyOrders", {keyPath: 'id'});
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false });
             }
             if (!db.objectStoreNames.contains('sellOrders')) {
-                var objectStore = db.createObjectStore("sellOrders", {
-                    keyPath: 'trader_flo_address'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false, multiEntry:true });
+                var objectStore = db.createObjectStore("sellOrders", {keyPath: 'id'});
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false });
             }
             if (!db.objectStoreNames.contains('deposit')) {
-                var objectStore = db.createObjectStore("deposit", {
-                    keyPath: 'trader_flo_address'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false, multiEntry:true });
+                var objectStore = db.createObjectStore("deposit", {keyPath: 'id'});
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false });
             }
             if (!db.objectStoreNames.contains('btc_balances')) {
-                var objectStore = db.createObjectStore("btc_balances", {
-                    keyPath: 'trader_flo_address'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false, multiEntry:true });
+                var objectStore = db.createObjectStore("btc_balances", {keyPath: 'trader_flo_address'});
             }
             if (!db.objectStoreNames.contains('cash_balances')) {
-                var objectStore = db.createObjectStore("cash_balances", {
-                    keyPath: 'trader_flo_address'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false, multiEntry:true });
+                var objectStore = db.createObjectStore("cash_balances", {keyPath: 'trader_flo_address'});
             }
         }
 
@@ -8963,33 +8954,6 @@
                 alert("Failed to update data in your database! ");
             }
         }
-
-        // function updateDeposit(trader_flo_address, updatedObject) {
-        //     const transaction = db.transaction(['deposit'], 'readwrite');
-        //     const objectStore = transaction.objectStore('deposit');
-        //     objectStore.openCursor().onsuccess = function(event) {
-        //         const cursor = event.target.result;
-        //         if (cursor) {
-        //             if (cursor.value.trader_flo_address === trader_flo_address) {
-        //                 const updateData = cursor.value;
-                        
-        //                 for (const key in updatedObject) {
-        //                     if (updatedObject.hasOwnProperty(key)) {
-        //                         updateData.key = updatedObject[key];
-        //                     }
-        //                 }
-        //                 const request = cursor.update(updateData);
-        //                 request.onsuccess = function() {
-        //                   console.log();
-        //                 };
-        //             };
-        //             cursor.continue();        
-        //         } else {
-        //             console.log('Entries displayed.');         
-        //         }
-        //     }
-        // }
-
 
         function removeinDB(tablename, id) {
             var request = db.transaction([tablename], "readwrite")
@@ -9355,13 +9319,13 @@
                                 removeinDB("deposit", trader_flo_address);
                                 updateinDB("deposit", res, trader_flo_address);
 
-                                let updateBalanceTableOfUser = {
-                                    trader_flo_address: trader_flo_address,
+                                let updateSystemBTCreserve = {
+                                    id: + new Date(),
                                     btc_address: BTCAddress,
                                     btc_balance: balance
                                 }
-                                // Periodly update the BTC balance of this trader in balances table 
-                                updateinDB("btc_balances", updateBalanceTableOfUser, trader_flo_address); 
+                                // Periodly update the BTC balance of this trader in system_btc_reserves table 
+                                updateinDB("system_btc_reserves", updateSystemBTCreserve, BTCAddress); 
                                 
                                 // update balance of user
                                 readDB("localbitcoinUser", "00-01", function(user_data) {
