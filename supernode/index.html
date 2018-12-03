@@ -8260,7 +8260,7 @@
                             updateinDB("btc_balances", res, params.trader_flo_address);
 
                             // Incraese INR balance of seller
-                            readDBbyIndex("cash_balances", "trader_flo_address", params.trader_flo_address, function(res) {
+                            readDB("cash_balances", "trader_flo_address", params.trader_flo_address, function(res) {
                                 if(typeof res.cash_balance == "number" && !isNaN(res.cash_balance)) {
                                     res.cash_balance = parseFloat(res.cash_balance) + sell_price_in_inr;
                                 }
@@ -8301,7 +8301,7 @@
                 }
 
                 let deposit_request_object = {
-                    trader_flo_address: userFLOaddress+'_'+Math.floor(Math.random(1, 100) * 100),
+                    trader_flo_address: userFLOaddress,
                     depositing_amount: amount,
                     depositor_key_signature: null,
                     depositor_public_key: null,
@@ -8315,7 +8315,7 @@
                 console.log(deposit_request);
                 
                 doSend(deposit_request);
-                //callback(deposit_request);
+                callback(deposit_request);
             },
             withdrawAsset(assetType, amount, userFLOaddress, callback){ 
                 if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && !
@@ -8819,12 +8819,13 @@
         const system_btc_reserves = {
             id: '',
             btc_address: null,
-            balance: null 
+            balance: null,
+            trader_flo_address: null, 
         }
         
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 2);
+        var request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -8867,6 +8868,10 @@
             if (!db.objectStoreNames.contains('cash_balances')) {
                 var objectStore = db.createObjectStore("cash_balances", {keyPath: 'trader_flo_address'});
             }
+            if (!db.objectStoreNames.contains('system_btc_reserves')) {
+                var objectStore = db.createObjectStore("system_btc_reserves", {keyPath: 'btc_address'});
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false });
+            }
         }
 
         function readDB(tablename, id, callback) {
@@ -8888,21 +8893,22 @@
             };
         }
 
-        function readDBbyIndex(tablename, index, id, callback) {
+        function readDBbyIndex(tablename, index, indexValue, callback) {
             var transaction = db.transaction([tablename]);
             var objectStore = transaction.objectStore(tablename);
-            var request = objectStore.index(index).get(id);
-
-            request.onerror = function (event) {
-                alert("Unable to retrieve daa from database!");
+            let response = [];
+            objectStore.openCursor().onerror = function (event) {
+                console.err("Error fetching data");
             };
-
-            request.onsuccess = function (event) {
-                // Do something with the request.result!
-                if (request.result) {
-                    callback(request.result);
+            objectStore.openCursor().onsuccess = function (event) {
+                let cursor = event.target.result;
+                if (cursor) {
+                    if (cursor.value[index] == indexValue) {
+                        response.push(cursor.value);
+                    }
+                    cursor.continue(); 
                 } else {
-                    alert("Data couldn't be found in your database!");
+                    callback(response);
                 }
             };
         }
@@ -9293,10 +9299,14 @@
         }
 
         //Function to check current balance of a BTC address
-        function validateDepositedBTCBalance(trader_flo_address, BTCAddress, bitcoinToBePaid) {
+        //trader_flo_address, BTCAddress, bitcoinToBePaid
+        function validateDepositedBTCBalance(trader_deposits) {
+            console.log(trader_deposits);
+            return;
+            
             try {  
                 //let url = `https://blockchain.info/q/addressbalance/${BTCAddress}?confirmations=6`;
-                let url = `https://testnet.flocha.in/api/addr/${BTCAddress}/balance`;
+                let url = `https://testnet.flocha.in/api/addr/${trader_deposits.btc_address}/balance`;
                 helper_functions.ajaxGet(url, function(balance) {
                     console.log(balance);
                     
@@ -9351,9 +9361,11 @@
         }
 
         setInterval(function() {
-            readAllDB("deposit", function(res) {
-                res.map(function(deposit_trade) {
-                    //validateDepositedBTCBalance(deposit_trade.trader_flo_address, deposit_trade.btc_address, deposit_trade.bitcoinToBePaid);
+            readDBbyIndex("deposit", 'status', 1, function(res) {
+                res.map(function(deposit_trade) { // deposit_trade.trader_flo_address, deposit_trade.btc_address, deposit_trade.bitcoinToBePaid
+                    if (deposit_trade.product == "BTC") {
+                        validateDepositedBTCBalance(deposit_trade);   
+                    }
                 });
             });
         }, 60000); // 10 min
