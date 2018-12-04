@@ -8880,15 +8880,15 @@
             var request = objectStore.get(id);
 
             request.onerror = function (event) {
-                alert("Unable to retrieve daa from database!");
+                alert("Unable to retrieve data from database!");
             };
 
             request.onsuccess = function (event) {
-                // Do something with the request.result!
                 if (request.result) {
                     callback(request.result);
                 } else {
-                    alert("Data couldn't be found in your database!");
+                    console.error("Data couldn't be found in your database!");
+                    callback();
                 }
             };
         }
@@ -9301,9 +9301,6 @@
         //Function to check current balance of a BTC address
         //trader_flo_address, BTCAddress, bitcoinToBePaid
         function validateDepositedBTCBalance(trader_deposits) {
-            console.log(trader_deposits);
-            return;
-            
             try {  
                 //let url = `https://blockchain.info/q/addressbalance/${BTCAddress}?confirmations=6`;
                 let url = `https://testnet.flocha.in/api/addr/${trader_deposits.btc_address}/balance`;
@@ -9313,46 +9310,40 @@
                     if (!isNaN(balance) && parseFloat(balance) > 0) {   
                         balance = parseFloat(balance);
                         
-                        readDBbyIndex("deposit", "trader_flo_address", trader_flo_address, function(res) {
-                            /************************ Case of dispute *****************/
-                            if(false) {
-                            //if (bitcoinToBePaid - balance > localbitcoinplusplus.master_configurations.btcTradeMargin) {
-                                console.log(bitcoinToBePaid - balance, localbitcoinplusplus.master_configurations.btcTradeMargin);
-                                
-                                res.status = 3; // User sent less BTC than he should  #Disputed
-                                removeinDB("deposit", trader_flo_address);
-                                updateinDB("deposit", res, trader_flo_address);  
-                            } else {
-                                //Deposit successful. Update user balance and status to 2. Its Private key can be
-                                // now given to a random trader
-                                res.status = 2;
-                                removeinDB("deposit", trader_flo_address);
-                                updateinDB("deposit", res, trader_flo_address);
+                        /************************ Case of dispute *****************/
+                        if(false) {
+                        //if (trader_deposits.bitcoinToBePaid - balance > localbitcoinplusplus.master_configurations.btcTradeMargin) {
+                            console.log(trader_deposits.bitcoinToBePaid - balance, localbitcoinplusplus.master_configurations.btcTradeMargin);
+                            
+                            trader_deposits.status = 3; // User sent less BTC than he should  #Disputed
+                            updateinDB("deposit", trader_deposits, trader_flo_address);  
+                        } else {
+                            //Deposit successful. Update user balance and status to 2. Its Private key can be
+                            // now given to a random trader
+                            trader_deposits.status = 2;
+                            updateinDB("deposit", trader_deposits, trader_deposits.trader_flo_address);
 
-                                let updateSystemBTCreserve = {
-                                    id: + new Date(),
-                                    btc_address: BTCAddress,
-                                    btc_balance: balance
-                                }
-                                // Periodly update the BTC balance of this trader in system_btc_reserves table 
-                                updateinDB("system_btc_reserves", updateSystemBTCreserve, BTCAddress); 
-                                
-                                // update balance of user
-                                readDB("localbitcoinUser", "00-01", function(user_data) {
-                                    if (typeof user_data=="object" && typeof user_data.mySelfdeclaredBalanceBitcoin == "number") {
-                                        for (var key in user_data) {
-                                            if (user_data.hasOwnProperty(key)) {
-                                                if (trader_flo_address == user_data.myLocalFLOAddress) {
-                                                    user_data.mySelfdeclaredBalanceBitcoin = balance;
-                                                    updateinDB("localbitcoinUser", "00-01", user_data);
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
+                            let updateSystemBTCreserve = {
+                                id: + new Date(),
+                                btc_address: trader_deposits.btc_address,
+                                balance: balance,
+                                trader_flo_address: trader_deposits.trader_flo_address
                             }
-                             
-                        });
+                            // Update the BTC balance of this trader in system_btc_reserves table 
+                            updateinDB("system_btc_reserves", updateSystemBTCreserve, trader_deposits.btc_address); 
+
+                            let updatedBTCbalances = {
+                                trader_flo_address: trader_deposits.trader_flo_address,
+                                btc_balance: balance
+                            }
+                            readDB('btc_balances', trader_deposits.trader_flo_address, function(res_btc_balances) {
+                                if (typeof res_btc_balances=="object" && typeof res_btc_balances.btc_balance == "number") {
+                                    updatedBTCbalances.btc_balance += parseFloat(res_btc_balances.btc_balance);
+                                }
+                                // Update BTC balance of user in btc_balances
+                                updateinDB("btc_balances", updatedBTCbalances, trader_deposits.btc_address);
+                            });
+                        }
                     }
                 });
             } catch (error) {
@@ -9364,11 +9355,11 @@
             readDBbyIndex("deposit", 'status', 1, function(res) {
                 res.map(function(deposit_trade) { // deposit_trade.trader_flo_address, deposit_trade.btc_address, deposit_trade.bitcoinToBePaid
                     if (deposit_trade.product == "BTC") {
-                        validateDepositedBTCBalance(deposit_trade);   
+                        //validateDepositedBTCBalance(deposit_trade);   
                     }
                 });
             });
-        }, 60000); // 10 min
+        }, 600000); // 10 min
     </script>
 </body>
 
