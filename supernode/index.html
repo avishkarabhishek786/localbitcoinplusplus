@@ -7814,6 +7814,7 @@
                 var request = JSON.parse(request);
                 var params = request.params[0];
                 var method = request.method;
+                console.log(request);
                 
                 if (typeof params == "object" && typeof method == "string") { 
                     if (typeof params.trader_flo_address != "string" && params.trader_flo_address.length < 1) {
@@ -7824,18 +7825,18 @@
                     
                     /** CHECK HERE IF USER IS INDULGED IN ANY MORE TRADE. 
                         IF TRUE RETURN ERROR */
-                    readAllDB("deposit", function(res) {
-                        if (typeof res == "object" && res.length>0) {
-                            let canUserTrade = res.map(function(user) {
-                                return respective_trader_id == user.trader_flo_address;
-                            });
-                            if (canUserTrade.includes(true)) {
-                                request.response = `Trader id ${respective_trader_id} is not clear for trade currently.
-                                You must finish your previos pending orders to qualify again to trade.`;
-                                return false;
-                            }
-                        }
-                    });
+                    // readAllDB("deposit", function(res) {
+                    //     if (typeof res == "object" && res.length>0) {
+                    //         let canUserTrade = res.map(function(user) {
+                    //             return respective_trader_id == user.trader_flo_address;
+                    //         });
+                    //         if (canUserTrade.includes(true)) {
+                    //             request.response = `Trader id ${respective_trader_id} is not clear for trade currently.
+                    //             You must finish your previos pending orders to qualify again to trade.`;
+                    //             return false;
+                    //         }
+                    //     }
+                    // });
 
                     switch (method) {
                         case "trade_buy":
@@ -7893,11 +7894,16 @@
                                     /***************************************************
                                     GET EQUIVALENT BTC HERE IN TERMS OF ORDERED INR I.E 10K, 50K...
                                     ******************************************************/
-                                    params.bitcoinToBePaid = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash.call(params.depositing_amount);
+                                    console.log(params.depositing_amount);
+                                    
+                                    console.log(localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(params.depositing_amount));
+                                    
+                                    params.bitcoinToBePaid = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(params.depositing_amount);
                                     
                                     let receivedTradeInfo = {...params};
                                     
                                     try {
+                                        console.log(receivedTradeInfo);
                                         addDB("deposit", receivedTradeInfo);
                                     } catch (error) {
                                         throw new Error(error);
@@ -7925,29 +7931,139 @@
                                     }
 
                                     // YOU NEED TO DETERMINE A BANK ACCOUNT HERE
-                                    let bank_account =
-                                        'Name: John Doe, State Bank of India, Branch: Ashok Nagar Ranchi';
-                                    let requester_data ={
-                                        msg: `Plese send the money to following bank address: "${bank_account}"`,
-                                        deposit_db_object: receivedTradeInfo
-                                    };
-                                    return {
-                                        error: false,
-                                        method: "deposit_asset_request_response",
-                                        data: requester_data
-                                    };
+                                    try {
+                                        readDBbyIndex("withdraw_cash", "status", 1, function(withdrawers_list) {
+                                            withdrawers_list.map(function(withdrawer) {
+                                                if(withdrawer.withdraw_amount==params.depositing_amount) {
+                                                    let withdrawer_bank_account = withdrawer.receivinAddress;
+                                                    let requester_data ={
+                                                        msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                        deposit_db_object: receivedTradeInfo
+                                                    };
+                                                    return {
+                                                        error: false,
+                                                        method: "deposit_asset_request_response",
+                                                        data: requester_data
+                                                    };
+                                                } else {
+                                                    // Return error to the requester
+                                                    return {
+                                                        error: true,
+                                                        method: "deposit_asset_request_response",
+                                                        data: "Deposit request failed: We could not find a withdrawer."
+                                                    };
+                                                }
+                                            });
+                                        });
+                                    } catch (error) {
+                                        return {
+                                            error: true,
+                                            method: "deposit_asset_request_response",
+                                            data: "Deposit request failed: We could not find a withdrawer. Come again later."
+                                        };
+                                    }
                                 }
-
-                                // Return error to the requester
-                                return {
-                                    error: true,
-                                    method: "deposit_asset_request_response",
-                                    data: "Deposit request failed."
-                                };
                             } else {
-                                console.log("oops");
+                                console.log("deposit asset request error");
                             }
                             break;
+                        case "withdraw_request_method":
+                        if (typeof params.product !== "undefined" 
+                            && localbitcoinplusplus.master_configurations.validAssets.includes(params.product) 
+                            && typeof params.withdrawing_amount !== "undefined" 
+                            && typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' 
+                            && localbitcoinplusplus.master_configurations.validTradingAmount.includes(parseFloat(params.withdrawing_amount)) 
+                            && typeof params.trader_flo_address == "string" && params.trader_flo_address.length>0
+                            && typeof params.receivinAddress == "string" && params.receivinAddress.length>0
+                        ) {
+                            params.id = + new Date();
+                            params.status = 1;
+                                if (params.product == "BTC") {
+                                    // Check how much Bitcoins the user can withdraw
+                                    readDB("btc_balances", params.trader_flo_address, function(btc_balance_res) {
+                                        if (typeof btc_balance_res == "object" && typeof btc_balance_res.trader_flo_address == "string"
+                                            && typeof btc_balance_res.btc_balance == "number" && btc_balance_res > 0) {
+                                            let withdrawer_btc_balance = parseFloat(btc_balance_res.btc_balance);
+                                            let withdrawing_btc_amount = parseFloat(params.withdrawing_amount);
+                                            let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(withdrawing_btc_amount);
+                                            if (withdrawer_btc_balance>0 && withdrawing_btc_amount>0 && eqBTC>0 && eqBTC<=withdrawer_btc_balance) {
+                                                // Now details of Bitcoins can be sent to withdrawer
+                                                
+                                                // Your code here ...  
+                                                // send him Bitcoins from system's reserve
+                                                
+                                            } else {
+                                                // Return error to the requester
+                                                return {
+                                                    error: true,
+                                                    method: "withdrawal_request_response",
+                                                    data: "Withdrawal request failed: You are trying to withdraw more Bitcoins than you have."
+                                                };
+                                            }
+                                        } else {
+                                            // Return error to the requester
+                                            return {
+                                                error: true,
+                                                method: "withdrawal_request_response",
+                                                data: `Withdrawal request failed: You don't seem to have any Bitcoin balance in the system yet.
+                                                Please buy some Bitcoins to withdraw.`
+                                            };
+                                        } 
+                                    });    
+                                } else if(params.product == "INR") {
+                                    // Check if there's no already a withdraw cash order of this user
+                                    /*ONLY DELETE A WITHDRAW ORDER WHEN A DEPOSITOR HAS CONFIRMED DEPOSIT
+                                      AND RECEIVER HAS CONFIRMED WITHDRAW*/
+
+                                    // Check how much Cash user can withdraw
+                                    readDB("cash_balances", params.trader_flo_address, function(cash_balances_res) {
+                                        if (typeof cash_balances_res == "object" && typeof cash_balances_res.trader_flo_address == "string"
+                                        && typeof cash_balances_res.cash_balance == "number" && cash_balances_res.cash_balance>0) {
+                                            
+                                            let withdrawer_cash_balance = parseFloat(cash_balances_res.cash_balance);
+                                            let withdrawing_cash_amount = parseFloat(params.withdrawing_amount);
+                                            let bank_details = params.receivinAddress.trim();
+                                            if (withdrawer_cash_balance>0 && withdrawing_cash_amount>0 && withdrawer_cash_balance>=withdrawer_cash_balance) {
+                                                // Add it to cash withdrawal table
+                                                let withdraw_request_db_object = {
+                                                    id: + new Date(),
+                                                    trader_flo_address: params.trader_flo_address,
+                                                    withdraw_amount: params.withdrawing_cash_amount,
+                                                    receivinAddress: bank_details,
+                                                    status: 1  // withdraw request called
+                                                }
+                                                try {
+                                                    addDB("withdraw_cash", withdraw_request_db_object);
+                                                    return {
+                                                        error: false,
+                                                        method: "withdrawal_request_response",
+                                                        data: withdraw_request_db_object
+                                                    };
+                                                } catch (error) {
+                                                    console.log(error);
+                                                    
+                                                    return {
+                                                        error: true,
+                                                        method: "withdrawal_request_response",
+                                                        data: "Withdrawal request failed: "+error
+                                                    };
+                                                }
+
+                                            } else {
+                                                // Return error to the requester
+                                                return {
+                                                    error: true,
+                                                    method: "withdrawal_request_response",
+                                                    data: "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account."
+                                                };
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    console.log("withdraw request error");
+                                }
+                        }
+                            break;                            
 
                         default:
                             alert("Unknown method called for execution.");
@@ -8158,7 +8274,7 @@
                             throw new Error("Insufficient balance.");
                         }
                         // calculate equivalent BTC for x amount of Cash
-                        let eqBTC = this.calculateBTCEquivalentOfCash("INR", buy_price_btc);
+                        let eqBTC = this.calculateBTCEquivalentOfCash(buy_price_btc);
 
                         if (!isNaN(eqBTC)) {
                             let eqBTC = parseFloat(eqBTC);
@@ -8210,7 +8326,7 @@
                     && typeof res.btc_balance == "number" && res.btc_balance>0) {
                         let seller_btc_balance = parseFloat(res.btc_balance);
                         let sell_price_in_inr = parseFloat(params.buy_price);
-                        let eqBTC = this.calculateBTCEquivalentOfCash("INR", sell_price_in_inr);
+                        let eqBTC = this.calculateBTCEquivalentOfCash(sell_price_in_inr);
                         console.log(eqBTC);
                         
                         if (!isNaN(eqBTC)) {
@@ -8285,7 +8401,7 @@
                 doSend(deposit_request);
                 callback(deposit_request);
             },
-            withdrawAsset(assetType, amount, userFLOaddress, callback){ 
+            withdrawAsset(assetType, amount, receivinAddress, userFLOaddress, callback) { 
                 if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && !
                     localbitcoinplusplus.master_configurations.validAssets.includes(assetType)) {
                     throw new Error("Invalid asset error");
@@ -8293,28 +8409,31 @@
                     throw new Error("Invalid amount error.");
                 } else if (userFLOaddress.length < 0) {
                     throw new Error("User address required.");
+                } else if (receivinAddress.trim() == "") {
+                    throw new Error("You must provide a vaid Bitcoin address to receive funds.");
                 }
 
                 let withdraw_request_object = {
-                    trader_flo_address: userFLOaddress+'_'+Math.floor(Math.random(1, 100) * 100),
-                    depositing_amount: amount,
-                    depositor_key_signature: null,
-                    depositor_public_key: null,
+                    trader_flo_address: userFLOaddress,
+                    receivinAddress: receivinAddress,
+                    withdrawing_amount: amount,
+                    wihdrawer_key_signature: null,
+                    wihdrawer_public_key: null,
                     operation_type: "withdraw",
                     order_validator_public_key: null,
                     product: assetType
                 }
                 
                 let withdraw_request = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
-                    "withdraw_request_object", withdraw_request_object);
-                console.log(deposit_request);
+                    "withdraw_request_method", withdraw_request_object);
+                //doSend(withdraw_request);
+                console.log(withdraw_request);
                 
-                doSend(withdraw_request);
+                callback(withdraw_request);
             },
             calculateBTCEquivalentOfCash(btc_buy_price) {
-                console.log(this);
                 if (localbitcoinplusplus.master_configurations.validTradingAmount.includes(btc_buy_price)) {
-                    let current_btc_price = this.get_current_btc_price_in_fiat();
+                    let current_btc_price = localbitcoinplusplus.trade.prototype.get_current_btc_price_in_fiat.call();
                     if (current_btc_price > 0) {
                         return parseFloat(btc_buy_price/current_btc_price);
                     }
@@ -8647,16 +8766,23 @@
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                             case "deposit_asset_request_response":
                                 console.log(res_obj);
-                                if (!res_obj.error && typeof res_obj.data !== "undefined" && typeof res_obj.data.msg !== "undefined" && res_obj.data.msg.length
+                                if (typeof res_obj.error !== "undefined" && !res_obj.error && typeof res_obj.data !== "undefined" && typeof res_obj.data.msg !== "undefined" && res_obj.data.msg.length
                                     && typeof res_obj.data.deposit_db_object.trader_flo_address !== 'undefined' 
                                     && res_obj.data.deposit_db_object.trader_flo_address.length>0 ) {
-                                    addDB('deposit', res_obj.data.deposit_db_object, res_obj.data.deposit_db_object.trader_flo_address);
-                                    alert(res_obj.data.msg);
+                                    addDB('deposit', res_obj.data.deposit_db_object);
                                 }
-                                else if (typeof res_obj.params[0] == "object") {
-                                    addDB('deposit', res_obj.params[0], res_obj.params[0].trader_flo_address);
-                                }
-                                //console.log(typeof res_obj.params[0] == "object");
+                                break;
+                            case "withdraw_request_method":
+                                response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));
+                                console.log(response_from_sever);
+                                
+                                doSend(JSON.stringify(response_from_sever)); // send response to client
+                                break;
+                            case "withdrawal_request_response":
+                                console.log(res_obj);
+                                // if (!res_obj.error && typeof res_obj.data == "object") {
+                                //     addDB('withdraw_cash', res_obj.data);
+                                // }
                                 break;
                             default:
                                 break;
@@ -8774,6 +8900,15 @@
             status: 0  
         }
 
+        const withdraw_cash = {
+            id: "",
+            trader_flo_address: null,
+            withdraw_amount: null,
+            receivinAddress: null,
+            status: null,
+            depositor_found_at: null
+        }
+
         const btc_balances = {
             trader_flo_address: null,
             btc_balance: null
@@ -8793,7 +8928,7 @@
         
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 2);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -8829,6 +8964,10 @@
             if (!db.objectStoreNames.contains('deposit')) {
                 var objectStore = db.createObjectStore("deposit", {keyPath: 'id'});
                 objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('withdraw_cash')) {
+                var objectStore = db.createObjectStore("withdraw_cash", {keyPath: 'id'});
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', { unique: true });
             }
             if (!db.objectStoreNames.contains('btc_balances')) {
                 var objectStore = db.createObjectStore("btc_balances", {keyPath: 'trader_flo_address'});
@@ -9221,6 +9360,45 @@
                                  <p>${server_response}</p>`;
                             asset_box.insertAdjacentHTML('beforeend', counterTraderAccountAddress);
                         }
+                    });
+                } else {
+                    throw new Error("Error while depositing your address.");
+                }
+            });
+
+            withdrawAssetButton.addEventListener('click', function(params) {
+                let receivinAddress = prompt("Please enter a Bitcoin address or full bank details.");
+                if (receivinAddress.trim == "") {
+                    alert("You must specify either a Bitcoin address to withdraw Bitcoin or your bank detail to withdraw cash.");
+                    return false;
+                }
+                
+                let asset_type = assetTypeInput.value;
+                let tradeAmount = parseFloat(tradeAmountSelect.value);
+                if (typeof userFLOaddress == undefined || userFLOaddress.trim().length < 1) {
+                    throw new Error("Invalid or empty user FLO address.");
+                }
+                if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
+                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
+                    typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' &&
+                    localbitcoinplusplus.master_configurations.validAssets.includes(asset_type)) {
+                    RM_TRADE.withdrawAsset(asset_type, tradeAmount, receivinAddress, userFLOaddress, function (server_response) {
+                        try {
+                            let withdrawAssetResponseObj = JSON.parse(server_response);
+                            if (typeof withdrawAssetResponseObj == "object" && typeof withdrawAssetResponseObj.params == "object" 
+                                && withdrawAssetResponseObj.params.length>0 && withdrawAssetResponseObj.method == "withdraw_request_method"
+                            ) {
+                                console.log(withdrawAssetResponseObj.params[0]);
+                                
+                                //updateinDB('withdraw_cash', withdrawAssetResponseObj.params[0], userFLOaddress);
+                                
+                                if (withdrawAssetResponseObj.params[0].trader_flo_address == userFLOaddress) {
+                                    // inform user    
+                                }      
+                            }
+                        } catch (error) {
+                            throw new Error(error);
+                        }  
                     });
                 } else {
                     throw new Error("Error while depositing your address.");
