@@ -8019,43 +8019,45 @@
                                     readDB("cash_balances", params.trader_flo_address, function(cash_balances_res) {
                                         if (typeof cash_balances_res == "object" && typeof cash_balances_res.trader_flo_address == "string"
                                         && typeof cash_balances_res.cash_balance == "number" && cash_balances_res.cash_balance>0) {
+                                            console.log(params);
                                             
                                             let withdrawer_cash_balance = parseFloat(cash_balances_res.cash_balance);
                                             let withdrawing_cash_amount = parseFloat(params.withdrawing_amount);
                                             let bank_details = params.receivinAddress.trim();
-                                            if (withdrawer_cash_balance>0 && withdrawing_cash_amount>0 && withdrawer_cash_balance>=withdrawer_cash_balance) {
+                                            if (withdrawer_cash_balance>0 && withdrawing_cash_amount>0 && withdrawer_cash_balance>=withdrawing_cash_amount) {
                                                 // Add it to cash withdrawal table
                                                 let withdraw_request_db_object = {
                                                     id: + new Date(),
                                                     trader_flo_address: params.trader_flo_address,
-                                                    withdraw_amount: params.withdrawing_cash_amount,
+                                                    withdraw_amount: withdrawing_cash_amount,
                                                     receivinAddress: bank_details,
                                                     status: 1  // withdraw request called
                                                 }
                                                 try {
+                                                    // add the request to supernode db
                                                     addDB("withdraw_cash", withdraw_request_db_object);
-                                                    return {
-                                                        error: false,
-                                                        method: "withdrawal_request_response",
-                                                        data: withdraw_request_db_object
-                                                    };
+                                                    // return back the response to client 
+                                                    let withdrawal_request_response = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
+                                                        "withdrawal_request_response", withdraw_request_db_object);
+                                                    doSend(withdrawal_request_response);
+                                                    return true;
                                                 } catch (error) {
                                                     console.log(error);
                                                     
-                                                    return {
-                                                        error: true,
-                                                        method: "withdrawal_request_response",
-                                                        data: "Withdrawal request failed: "+error
-                                                    };
+                                                    // return {
+                                                    //     error: true,
+                                                    //     method: "withdrawal_request_response",
+                                                    //     data: "Withdrawal request failed: "+error
+                                                    // };
                                                 }
 
                                             } else {
                                                 // Return error to the requester
-                                                return {
-                                                    error: true,
-                                                    method: "withdrawal_request_response",
-                                                    data: "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account."
-                                                };
+                                                // return {
+                                                //     error: true,
+                                                //     method: "withdrawal_request_response",
+                                                //     data: "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account."
+                                                // };
                                             }
                                         }
                                     });
@@ -8426,10 +8428,7 @@
                 
                 let withdraw_request = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
                     "withdraw_request_method", withdraw_request_object);
-                //doSend(withdraw_request);
-                console.log(withdraw_request);
-                
-                callback(withdraw_request);
+                doSend(withdraw_request);
             },
             calculateBTCEquivalentOfCash(btc_buy_price) {
                 if (localbitcoinplusplus.master_configurations.validTradingAmount.includes(btc_buy_price)) {
@@ -8724,7 +8723,7 @@
         }
 
         function onMessage(evt) {
-            //console.log(evt);
+            console.log(evt);
 
             var response = evt.data;
             var res_pos = response.indexOf('{');
@@ -8774,15 +8773,13 @@
                                 break;
                             case "withdraw_request_method":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));
-                                console.log(response_from_sever);
-                                
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                                 break;
                             case "withdrawal_request_response":
                                 console.log(res_obj);
-                                // if (!res_obj.error && typeof res_obj.data == "object") {
-                                //     addDB('withdraw_cash', res_obj.data);
-                                // }
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    addDB('withdraw_cash', res_obj.params[0]);
+                                }
                                 break;
                             default:
                                 break;
@@ -9382,24 +9379,7 @@
                     localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
                     typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.validAssets.includes(asset_type)) {
-                    RM_TRADE.withdrawAsset(asset_type, tradeAmount, receivinAddress, userFLOaddress, function (server_response) {
-                        try {
-                            let withdrawAssetResponseObj = JSON.parse(server_response);
-                            if (typeof withdrawAssetResponseObj == "object" && typeof withdrawAssetResponseObj.params == "object" 
-                                && withdrawAssetResponseObj.params.length>0 && withdrawAssetResponseObj.method == "withdraw_request_method"
-                            ) {
-                                console.log(withdrawAssetResponseObj.params[0]);
-                                
-                                //updateinDB('withdraw_cash', withdrawAssetResponseObj.params[0], userFLOaddress);
-                                
-                                if (withdrawAssetResponseObj.params[0].trader_flo_address == userFLOaddress) {
-                                    // inform user    
-                                }      
-                            }
-                        } catch (error) {
-                            throw new Error(error);
-                        }  
-                    });
+                    RM_TRADE.withdrawAsset(asset_type, tradeAmount, receivinAddress, userFLOaddress);
                 } else {
                     throw new Error("Error while depositing your address.");
                 }
