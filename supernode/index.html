@@ -7894,10 +7894,6 @@
                                     /***************************************************
                                     GET EQUIVALENT BTC HERE IN TERMS OF ORDERED INR I.E 10K, 50K...
                                     ******************************************************/
-                                    console.log(params.depositing_amount);
-                                    
-                                    console.log(localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(params.depositing_amount));
-                                    
                                     params.bitcoinToBePaid = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(params.depositing_amount);
                                     
                                     let receivedTradeInfo = {...params};
@@ -7910,15 +7906,17 @@
                                     }
 
                                     // Send the address to the requester
-                                    let requester_data ={
-                                        msg: `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`,
-                                        deposit_db_object: receivedTradeInfo
-                                    };
-                                    return {
+                                    let deposit_response_object = {
                                         error: false,
                                         method: "deposit_asset_request_response",
-                                        data: requester_data
+                                        msg: `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`,
+                                        data: receivedTradeInfo
                                     };
+
+                                    let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
+                                        "deposit_asset_request_response", deposit_response_object);
+                                    doSend(deposit_request_response);
+
                                 } else if (params.product == "INR") {
                                     params.id = + new Date();
                                     params.status = 1;
@@ -7930,21 +7928,22 @@
                                         throw new Error(error);
                                     }
 
-                                    // YOU NEED TO DETERMINE A BANK ACCOUNT HERE
+                                    // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NOONE IS WITHDRAWING
                                     try {
                                         readDBbyIndex("withdraw_cash", "status", 1, function(withdrawers_list) {
                                             withdrawers_list.map(function(withdrawer) {
                                                 if(withdrawer.withdraw_amount==params.depositing_amount) {
                                                     let withdrawer_bank_account = withdrawer.receivinAddress;
-                                                    let requester_data ={
-                                                        msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
-                                                        deposit_db_object: receivedTradeInfo
-                                                    };
-                                                    return {
+                                                    
+                                                    let deposit_response_object = {
                                                         error: false,
                                                         method: "deposit_asset_request_response",
-                                                        data: requester_data
+                                                        msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                        data: receivedTradeInfo
                                                     };
+                                                    let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
+                                                        "deposit_asset_request_response", deposit_response_object);
+                                                    doSend(deposit_request_response);
                                                 } else {
                                                     // Return error to the requester
                                                     return {
@@ -8019,8 +8018,6 @@
                                     readDB("cash_balances", params.trader_flo_address, function(cash_balances_res) {
                                         if (typeof cash_balances_res == "object" && typeof cash_balances_res.trader_flo_address == "string"
                                         && typeof cash_balances_res.cash_balance == "number" && cash_balances_res.cash_balance>0) {
-                                            console.log(params);
-                                            
                                             let withdrawer_cash_balance = parseFloat(cash_balances_res.cash_balance);
                                             let withdrawing_cash_amount = parseFloat(params.withdrawing_amount);
                                             let bank_details = params.receivinAddress.trim();
@@ -8276,16 +8273,20 @@
                             throw new Error("Insufficient balance.");
                         }
                         // calculate equivalent BTC for x amount of Cash
-                        let eqBTC = this.calculateBTCEquivalentOfCash(buy_price_btc);
+                        let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(buy_price_btc);
 
-                        if (!isNaN(eqBTC)) {
-                            let eqBTC = parseFloat(eqBTC);
+                        if (!isNaN(eqBTC) && typeof eqBTC == "number") {
+                            eqBTC = parseFloat(eqBTC);
 
                             readDB("btc_balances", params.trader_flo_address, function(res) {
                                 if (typeof res == "object" && typeof res.btc_balance == "number" && !NaN(res.btc_balance)) {
                                     res.btc_balance = parseFloat(res.btc_balance)+eqBTC;
                                 } else {
-                                    res.btc_balance = eqBTC;
+                                    // The user bought BTC for first time
+                                   let res = {
+                                        trader_flo_address: params.trader_flo_address,
+                                        btc_balance: eqBTC
+                                    }
                                 }
                                 // Increase BTC balance of buyer with extra eqBTC amount of BTC 
                                 updateinDB("btc_balances", res, params.trader_flo_address);
@@ -8313,10 +8314,6 @@
                         }
                     }
                 }
-                console.log(params.buy_price);
-                
-                console.log(localbitcoinplusplus.master_configurations.validTradingAmount.includes(params.buy_price));
-                
                 if (params.order_type != "sell" || params.product != "BTC" || params.currency != "INR"
                     && localbitcoinplusplus.master_configurations.validTradingAmount.includes(params.buy_price)) {
                     throw new Error("Invalid sell request.");
@@ -8328,11 +8325,10 @@
                     && typeof res.btc_balance == "number" && res.btc_balance>0) {
                         let seller_btc_balance = parseFloat(res.btc_balance);
                         let sell_price_in_inr = parseFloat(params.buy_price);
-                        let eqBTC = this.calculateBTCEquivalentOfCash(sell_price_in_inr);
-                        console.log(eqBTC);
+                        let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(sell_price_in_inr);
                         
-                        if (!isNaN(eqBTC)) {
-                            let eqBTC = parseFloat(eqBTC);
+                        if (!isNaN(eqBTC) && typeof eqBTC == "number") {
+                            eqBTC = parseFloat(eqBTC);
                             if (seller_btc_balance < eqBTC) {
                                 throw new Error("Insufficient BTC balance.");
                             }
@@ -8342,7 +8338,11 @@
                                 if(typeof res == "object" && typeof res.cash_balance == "number" && !isNaN(res.cash_balance)) {
                                     res.cash_balance = parseFloat(res.cash_balance) + sell_price_in_inr;
                                 } else {
-                                    res.cash_balance = sell_price_in_inr;
+                                    // User got cash for the first time
+                                    let res = {
+                                        trader_flo_address: params.trader_flo_address,
+                                        cash_balance: sell_price_in_inr
+                                    }
                                 }
                                 updateinDB("cash_balances", res, params.trader_flo_address);
 
@@ -8688,8 +8688,8 @@
 
         /* Websocket Code Starts here */
 
-        var wsUri = "ws://localhost:9000/";
-        //var wsUri = "ws://ranchimall.duckdns.org:9000/";
+        //var wsUri = "ws://localhost:9000/";
+        var wsUri = "ws://ranchimall.duckdns.org:9000/";
         var output;
 
         function init() {
@@ -8760,14 +8760,17 @@
                             case "deposit_asset_request":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
-                                    console.log(response_from_sever);
-                                    
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                             case "deposit_asset_request_response":
                                 console.log(res_obj);
-                                if (typeof res_obj.error !== "undefined" && !res_obj.error && typeof res_obj.data !== "undefined" && typeof res_obj.data.msg !== "undefined" && res_obj.data.msg.length
-                                    && typeof res_obj.data.deposit_db_object.trader_flo_address !== 'undefined' 
-                                    && res_obj.data.deposit_db_object.trader_flo_address.length>0 ) {
+                                // let deposit_response_object = {
+                            //         error: false,
+                            //         method: "deposit_asset_request_response",
+                            //         msg: `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`,
+                            //         data: receivedTradeInfo
+                            //     };
+                                if (typeof res_obj.error !== "undefined" && !res_obj.error && typeof res_obj.data == "object" && typeof res_obj.msg !== "undefined" && res_obj.msg.length
+                                    && typeof res_obj.data.trader_flo_address !== 'undefined' && res_obj.data.trader_flo_address.length>0 ) {
                                     addDB('deposit', res_obj.data.deposit_db_object);
                                 }
                                 break;
@@ -9479,7 +9482,7 @@
                     }
                 });
             });
-        }, 600000); // 10 min
+        }, 3600000);
     </script>
 </body>
 
