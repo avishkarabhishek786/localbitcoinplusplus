@@ -7689,7 +7689,8 @@
                     // btcTradeMargin is tolerable difference between BTC trader should deposit and BTC he actually deposited 
                     RMAssets =
                         `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
-                        #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000`;
+                        #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
+                        #!#supernodesPubKeys=037F59A09903234B570752D096745040C2653A1BE11A21191E149C00C4F5C1A3C8,`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -7699,10 +7700,9 @@
                             floAssetsArray.map(function (assets_string) {
                                 let k = assets_string.split('=');
                                 if (k[1].indexOf(',') > 0) {
-                                    k[1] = k[1].split(',').map(function (val) {
-                                        return val = !isNaN(val) ? parseFloat(val) :
-                                            val;
-                                    });
+                                    k[1] = k[1].split(',')
+                                    .map(val => !isNaN(val) ? parseFloat(val) : val)
+                                    .filter(v=>![null, "", undefined, NaN].includes(v));
                                 } else if(!isNaN(k[1])) {
                                     k[1] = parseFloat(k[1]);
                                 }
@@ -7916,6 +7916,7 @@
                                     let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
                                         "deposit_asset_request_response", deposit_response_object);
                                     doSend(deposit_request_response);
+                                    return true;
 
                                 } else if (params.product == "INR") {
                                     params.id = + new Date();
@@ -7931,35 +7932,54 @@
                                     // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NOONE IS WITHDRAWING
                                     try {
                                         readDBbyIndex("withdraw_cash", "status", 1, function(withdrawers_list) {
-                                            withdrawers_list.map(function(withdrawer) {
-                                                if(withdrawer.withdraw_amount==params.depositing_amount) {
-                                                    let withdrawer_bank_account = withdrawer.receivinAddress;
-                                                    
+                                            if (typeof withdrawers_list == "object") {
+                                                if (withdrawers_list.length>0) {
+                                                    withdrawers_list.map(function(withdrawer) {
+                                                        if(withdrawer.withdraw_amount==params.depositing_amount) {
+                                                            let withdrawer_bank_account = withdrawer.receivinAddress;
+                                                            
+                                                            let deposit_response_object = {
+                                                                error: false,
+                                                                method: "deposit_asset_request_response",
+                                                                msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                data: receivedTradeInfo
+                                                            };
+                                                            let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
+                                                                "deposit_asset_request_response", deposit_response_object);
+                                                            doSend(deposit_request_response);
+                                                            return true;
+                                                        } else {
+                                                            // Return error to the requester
+                                                            // return {
+                                                            //     error: true,
+                                                            //     method: "deposit_asset_request_response",
+                                                            //     data: "Deposit request failed: We could not find a withdrawer."
+                                                            // };
+                                                        }
+                                                    });       
+                                                } else {
+                                                    //No one is withdrawing so provide your bank details
                                                     let deposit_response_object = {
                                                         error: false,
                                                         method: "deposit_asset_request_response",
-                                                        msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                        msg: `Plese send the money to following bank address: "System determined bank".`,
                                                         data: receivedTradeInfo
                                                     };
                                                     let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
                                                         "deposit_asset_request_response", deposit_response_object);
                                                     doSend(deposit_request_response);
-                                                } else {
-                                                    // Return error to the requester
-                                                    return {
-                                                        error: true,
-                                                        method: "deposit_asset_request_response",
-                                                        data: "Deposit request failed: We could not find a withdrawer."
-                                                    };
+                                                    return true;
                                                 }
-                                            });
+                                            }
                                         });
                                     } catch (error) {
-                                        return {
-                                            error: true,
-                                            method: "deposit_asset_request_response",
-                                            data: "Deposit request failed: We could not find a withdrawer. Come again later."
-                                        };
+                                        console.log(error);
+                                        
+                                        // return {
+                                        //     error: true,
+                                        //     method: "deposit_asset_request_response",
+                                        //     data: "Deposit request failed: We could not find a withdrawer. Come again later."
+                                        // };
                                     }
                                 }
                             } else {
@@ -8376,7 +8396,7 @@
                 }
                 return false;
             },
-            depositAsset(assetType, amount, userFLOaddress, callback) {
+            depositAsset(assetType, amount, userFLOaddress) {
                 if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && !
                     localbitcoinplusplus.master_configurations.validAssets.includes(assetType)) {
                     throw new Error("Invalid asset error");
@@ -8398,10 +8418,7 @@
                 
                 let deposit_request = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
                     "deposit_asset_request", deposit_request_object);
-                console.log(deposit_request);
-                
                 doSend(deposit_request);
-                callback(deposit_request);
             },
             withdrawAsset(assetType, amount, receivinAddress, userFLOaddress, callback) { 
                 if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && !
@@ -8688,8 +8705,8 @@
 
         /* Websocket Code Starts here */
 
-        //var wsUri = "ws://localhost:9000/";
-        var wsUri = "ws://ranchimall.duckdns.org:9000/";
+        var wsUri = "ws://localhost:9000/";
+        //var wsUri = "ws://ranchimall.duckdns.org:9000/";
         var output;
 
         function init() {
@@ -8729,12 +8746,7 @@
             var res_pos = response.indexOf('{');
             if (res_pos >= 0) {
                 var res = response.substr(res_pos);
-                try {
-                    console.log(res);
-
-                    var res_obj = JSON.parse(res);
-                    console.log(res_obj);
-
+                try {var res_obj = JSON.parse(res);
                     if (typeof res_obj.method !== undefined) {
                         let response_from_sever;
                         switch (res_obj.method) {
@@ -8760,18 +8772,18 @@
                             case "deposit_asset_request":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
-                                doSend(JSON.stringify(response_from_sever)); // send response to client
+                                console.log(response_from_sever);
+                                
+                                //doSend(JSON.stringify(response_from_sever)); // send response to client
                             case "deposit_asset_request_response":
                                 console.log(res_obj);
-                                // let deposit_response_object = {
-                            //         error: false,
-                            //         method: "deposit_asset_request_response",
-                            //         msg: `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`,
-                            //         data: receivedTradeInfo
-                            //     };
-                                if (typeof res_obj.error !== "undefined" && !res_obj.error && typeof res_obj.data == "object" && typeof res_obj.msg !== "undefined" && res_obj.msg.length
-                                    && typeof res_obj.data.trader_flo_address !== 'undefined' && res_obj.data.trader_flo_address.length>0 ) {
-                                    addDB('deposit', res_obj.data.deposit_db_object);
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" && typeof res_obj.params[0].data == "object") {
+                                    addDB('deposit', res_obj.params[0].data);
+                                    let counterTraderAccountAddress =
+                                    `<p><strong>Please pay the amount to following address:</strong></p>
+                                    <p>${res_obj.params[0].msg}</p>`;
+                                    let asset_boxx = document.getElementById("asset_box");
+                                    asset_boxx.insertAdjacentHTML('beforeend', counterTraderAccountAddress);
                                 }
                                 break;
                             case "withdraw_request_method":
@@ -9350,17 +9362,7 @@
                     localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
                     typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.validAssets.includes(asset_type)) {
-                    RM_TRADE.depositAsset(asset_type, tradeAmount, userFLOaddress, function (server_response) {
-                        console.log(server_response);
-                        
-                        if (server_response.length > 0) {
-                            updateinDB('deposit', deposit_request_object, userFLOaddress);
-                            let counterTraderAccountAddress =
-                                `<p><strong>Please pay the amount to following address:</strong></p>
-                                 <p>${server_response}</p>`;
-                            asset_box.insertAdjacentHTML('beforeend', counterTraderAccountAddress);
-                        }
-                    });
+                    RM_TRADE.depositAsset(asset_type, tradeAmount, userFLOaddress);
                 } else {
                     throw new Error("Error while depositing your address.");
                 }
@@ -9482,7 +9484,7 @@
                     }
                 });
             });
-        }, 3600000);
+        }, 600000);
     </script>
 </body>
 
