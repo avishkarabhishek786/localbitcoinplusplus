@@ -8158,27 +8158,40 @@
                                                         receivinAddress: bank_details,
                                                         status: 1 // withdraw request called
                                                     }
-                                                    try {
-                                                        // add the request to supernode db
-                                                        addDB("withdraw_cash",
-                                                            withdraw_request_db_object);
-                                                        // return back the response to client 
-                                                        let withdrawal_request_response =
-                                                            localbitcoinplusplus.rpc.prototype.send_rpc
-                                                            .call(this,
-                                                                "withdrawal_request_response",
-                                                                withdraw_request_db_object);
-                                                        doSend(withdrawal_request_response);
-                                                        return true;
-                                                    } catch (error) {
-                                                        console.log(error);
 
-                                                        // return {
-                                                        //     error: true,
-                                                        //     method: "withdrawal_request_response",
-                                                        //     data: "Withdrawal request failed: "+error
-                                                        // };
-                                                    }
+                                                    readDB("localbitcoinUser", "00-01", function(su_data) {
+                                                        if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey == "string" 
+                                                         && su_data.myLocalFLOPublicKey.length>0 && localbitcoinplusplus.master_configurations
+                                                         .supernodesPubKeys.includes(su_data.myLocalFLOPublicKey)) {
+                                                            
+                                                            let withdraw_request_db_object_hash = Crypto.SHA256(JSON.stringify(withdraw_request_db_object));
+                                                            withdraw_request_db_object["withdrawDataHash"] = withdraw_request_db_object_hash;
+                                                            withdraw_request_db_object["order_validator_sign"] = localbitcoinplusplus.wallets.prototype
+                                                            .sign(withdraw_request_db_object_hash, su_data.myLocalFLOPrivateKey);
+                                                            withdraw_request_db_object["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
+
+                                                            try {
+                                                                // add the request to supernode db
+                                                                addDB("withdraw_cash", withdraw_request_db_object);
+                                                                // return back the response to client 
+                                                                let withdrawal_request_response =
+                                                                    localbitcoinplusplus.rpc.prototype.send_rpc
+                                                                    .call(this,
+                                                                        "withdrawal_request_response",
+                                                                        withdraw_request_db_object);
+                                                                doSend(withdrawal_request_response);
+                                                                return true;
+                                                            } catch (error) {
+                                                                console.log(error);
+
+                                                                // return {
+                                                                //     error: true,
+                                                                //     method: "withdrawal_request_response",
+                                                                //     data: "Withdrawal request failed: "+error
+                                                                // };
+                                                            }
+                                                        }
+                                                    });
 
                                                 } else {
                                                     // Return error to the requester
@@ -8955,7 +8968,10 @@
                             case "withdrawal_request_response":
                                 console.log(res_obj);
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    addDB('withdraw_cash', res_obj.params[0]);
+                                    if (localbitcoinplusplus.wallets.prototype
+                                        .verify(res_obj.params[0].withdrawDataHash, res_obj.params[0].order_validator_sign, res_obj.params[0].order_validator_public_key)) { 
+                                        addDB('withdraw_cash', res_obj.params[0]);
+                                    }
                                 }
                                 break;
                             default:
