@@ -7748,13 +7748,6 @@
                 var pubKeyHex = key.getPubKeyHex();
                 var address = key.getBitcoinAddress(publicKeyHex);
 
-                console.log("privateKeyHex: ", privateKeyHex);
-                console.log("privateKeyWIF: ", privateKeyWIF);
-                console.log("publicKeyHex: ", publicKeyHex);
-                console.log("pubKeyHash: ", pubKeyHash);
-                console.log("pubKeyHex: ", pubKeyHex);
-                console.log("address: ", address);
-
                 return {
                     privateKeyWIF,
                     pubKeyHex,
@@ -7922,11 +7915,10 @@
                                 if (typeof params.product !== "undefined" && localbitcoinplusplus.master_configurations
                                     .validAssets.includes(params.product) &&
                                     typeof params.depositing_amount !== "undefined" && typeof localbitcoinplusplus
-                                    .master_configurations
-                                    .validTradingAmount !== 'undefined' &&
+                                    .master_configurations.validTradingAmount !== 'undefined' &&
                                     localbitcoinplusplus.master_configurations.validTradingAmount.includes(
-                                        parseFloat(
-                                            params.depositing_amount)) && typeof params.trader_flo_address ==
+                                        parseFloat(params.depositing_amount)) 
+                                        && typeof params.trader_flo_address ==
                                     "string" && params.trader_flo_address.length > 0
                                 ) {
                                     if (params.product == "BTC") {
@@ -7951,107 +7943,125 @@
                                         params.bitcoinToBePaid = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(
                                             params.depositing_amount);
 
-                                        let receivedTradeInfo = { ...params
-                                        };
+                                        let receivedTradeInfo = { ...params };
 
-                                        try {
-                                            console.log(receivedTradeInfo);
-                                            addDB("deposit", receivedTradeInfo);
-                                        } catch (error) {
-                                            throw new Error(error);
-                                        }
+                                        readDB("localbitcoinUser", "00-01", function(su_data) {
+                                            if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey == "string" 
+                                            && su_data.myLocalFLOPublicKey.length>0 && localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(su_data.myLocalFLOPublicKey)) {
+                                                let receivedTradeInfoHash = Crypto.SHA256(JSON.stringify(receivedTradeInfo));
+                                                
+                                                receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
+                                                receivedTradeInfo["order_validator_sign"] = localbitcoinplusplus.wallets.prototype.sign(receivedTradeInfoHash, su_data.myLocalFLOPrivateKey);
+                                                receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
-                                        // Send the address to the requester
-                                        let deposit_response_object = {
-                                            error: false,
-                                            method: "deposit_asset_request_response",
-                                            msg: `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`,
-                                            data: receivedTradeInfo
-                                        };
+                                                try {
+                                                    addDB("deposit", receivedTradeInfo);
+                                                } catch (error) {
+                                                    throw new Error(error);
+                                                }
 
-                                        let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc
-                                            .call(this,
-                                                "deposit_asset_request_response", deposit_response_object);
-                                        doSend(deposit_request_response);
-                                        return true;
+                                                // Send the address to the requester
+                                                let deposit_response_object = {
+                                                    error: false,
+                                                    method: "deposit_asset_request_response",
+                                                    msg: `Please send the Bitcoin to ${generate_btc_keys_for_requester.address}.`,
+                                                    data: receivedTradeInfo
+                                                };
+
+                                                let deposit_request_response = localbitcoinplusplus.rpc.prototype.send_rpc
+                                                    .call(this,
+                                                        "deposit_asset_request_response", deposit_response_object);
+                                                doSend(deposit_request_response);
+                                                return true;
+                                            }
+                                        });
+
+                                        
+                                        return false;
 
                                     } else if (params.product == "INR") {
                                         params.id = +new Date();
                                         params.status = 1;
-                                        let receivedTradeInfo = { ...params
-                                        };
+                                        let receivedTradeInfo = { ...params };
 
-                                        try {
-                                            addDB("deposit", receivedTradeInfo);
-                                        } catch (error) {
-                                            throw new Error(error);
-                                        }
+                                        readDB("localbitcoinUser", "00-01", function(su_data) {
+                                            if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey == "string" 
+                                            && su_data.myLocalFLOPublicKey.length>0 && localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(su_data.myLocalFLOPublicKey)) {
+                                                let receivedTradeInfoHash = Crypto.SHA256(JSON.stringify(receivedTradeInfo));
+                                                
+                                                receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
+                                                receivedTradeInfo["order_validator_sign"] = localbitcoinplusplus.wallets.prototype.sign(receivedTradeInfoHash, su_data.myLocalFLOPrivateKey);
+                                                receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
-                                        // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NOONE IS WITHDRAWING
-                                        try {
-                                            readDBbyIndex("withdraw_cash", "status", 1, function (
-                                                withdrawers_list) {
-                                                if (typeof withdrawers_list == "object") {
-                                                    if (withdrawers_list.length > 0) {
-                                                        withdrawers_list.map(function (withdrawer) {
-                                                            if (withdrawer.withdraw_amount ==
-                                                                params.depositing_amount) {
-                                                                let withdrawer_bank_account =
-                                                                    withdrawer.receivinAddress;
+                                                // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NOONE IS WITHDRAWING
+                                                try {
+                                                    addDB("deposit", receivedTradeInfo);
+                                                    readDBbyIndex("withdraw_cash", "status", 1, function (
+                                                        withdrawers_list) {
+                                                        if (typeof withdrawers_list == "object") {
+                                                            if (withdrawers_list.length > 0) {
+                                                                withdrawers_list.map(function (withdrawer) {
+                                                                    if (withdrawer.withdraw_amount ==
+                                                                        params.depositing_amount) {
+                                                                        let withdrawer_bank_account =
+                                                                            withdrawer.receivinAddress;
 
+                                                                        let deposit_response_object = {
+                                                                            error: false,
+                                                                            method: "deposit_asset_request_response",
+                                                                            msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                            data: receivedTradeInfo
+                                                                        };
+                                                                        let deposit_request_response =
+                                                                            localbitcoinplusplus.rpc
+                                                                            .prototype.send_rpc.call(
+                                                                                this,
+                                                                                "deposit_asset_request_response",
+                                                                                deposit_response_object
+                                                                            );
+                                                                        doSend(
+                                                                            deposit_request_response
+                                                                        );
+                                                                        return true;
+                                                                    } else {
+                                                                        // Return error to the requester
+                                                                        // return {
+                                                                        //     error: true,
+                                                                        //     method: "deposit_asset_request_response",
+                                                                        //     data: "Deposit request failed: We could not find a withdrawer."
+                                                                        // };
+                                                                    }
+                                                                });
+                                                            } else {
+                                                                //No one is withdrawing so provide your bank details
                                                                 let deposit_response_object = {
                                                                     error: false,
                                                                     method: "deposit_asset_request_response",
-                                                                    msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                    msg: `Plese send the money to following bank address: "System determined bank".`,
                                                                     data: receivedTradeInfo
                                                                 };
                                                                 let deposit_request_response =
-                                                                    localbitcoinplusplus.rpc
-                                                                    .prototype.send_rpc.call(
-                                                                        this,
+                                                                    localbitcoinplusplus.rpc.prototype.send_rpc
+                                                                    .call(this,
                                                                         "deposit_asset_request_response",
-                                                                        deposit_response_object
-                                                                    );
-                                                                doSend(
-                                                                    deposit_request_response
-                                                                );
+                                                                        deposit_response_object);
+                                                                doSend(deposit_request_response);
                                                                 return true;
-                                                            } else {
-                                                                // Return error to the requester
-                                                                // return {
-                                                                //     error: true,
-                                                                //     method: "deposit_asset_request_response",
-                                                                //     data: "Deposit request failed: We could not find a withdrawer."
-                                                                // };
                                                             }
-                                                        });
-                                                    } else {
-                                                        //No one is withdrawing so provide your bank details
-                                                        let deposit_response_object = {
-                                                            error: false,
-                                                            method: "deposit_asset_request_response",
-                                                            msg: `Plese send the money to following bank address: "System determined bank".`,
-                                                            data: receivedTradeInfo
-                                                        };
-                                                        let deposit_request_response =
-                                                            localbitcoinplusplus.rpc.prototype.send_rpc
-                                                            .call(this,
-                                                                "deposit_asset_request_response",
-                                                                deposit_response_object);
-                                                        doSend(deposit_request_response);
-                                                        return true;
-                                                    }
-                                                }
-                                            });
-                                        } catch (error) {
-                                            console.log(error);
+                                                        }
+                                                    });
+                                                } catch (error) {
+                                                    throw new Error(error);
 
-                                            // return {
-                                            //     error: true,
-                                            //     method: "deposit_asset_request_response",
-                                            //     data: "Deposit request failed: We could not find a withdrawer. Come again later."
-                                            // };
-                                        }
+                                                    // return {
+                                                    //     error: true,
+                                                    //     method: "deposit_asset_request_response",
+                                                    //     data: "Deposit request failed: We could not find a withdrawer. Come again later."
+                                                    // };
+                                                }
+
+                                            }
+                                        });
                                     }
                                 } else {
                                     console.log("deposit asset request error");
@@ -8498,19 +8508,6 @@
                     }
                 });
             },
-            findTrader(traderAssetType, traderAssetAmount) {
-                if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' &&
-                    localbitcoinplusplus.master_configurations.validAssets.includes(traderAssetType) &&
-                    typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
-                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(traderAssetAmount)) {
-                    if (traderAssetType == "BTC") {
-                        return "1TRADERBITCOINADDRESS";
-                    } else if (traderAssetType == "INR") {
-                        return "TRADERBANKACCOUNT";
-                    }
-                }
-                return false;
-            },
             depositAsset(assetType, amount, userFLOaddress) {
                 if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' && !
                     localbitcoinplusplus.master_configurations.validAssets.includes(assetType)) {
@@ -8934,19 +8931,20 @@
                             case "deposit_asset_request":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
-                                console.log(response_from_sever);
-
-                                //doSend(JSON.stringify(response_from_sever)); // send response to client
                             case "deposit_asset_request_response":
                                 console.log(res_obj);
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" && typeof res_obj
                                     .params[0].data == "object") {
-                                    addDB('deposit', res_obj.params[0].data);
-                                    let counterTraderAccountAddress =
-                                        `<p><strong>Please pay the amount to following address:</strong></p>
-                                    <p>${res_obj.params[0].msg}</p>`;
-                                    let asset_boxx = document.getElementById("asset_box");
-                                    asset_boxx.insertAdjacentHTML('beforeend', counterTraderAccountAddress);
+                                        let resp = res_obj.params[0];
+                                        if (localbitcoinplusplus.wallets.prototype
+                                        .verify(resp.data.depositDataHash, resp.data.order_validator_sign, resp.data.order_validator_public_key)) {
+                                            addDB('deposit', resp.data);
+                                            let counterTraderAccountAddress =
+                                                `<p><strong>Please pay the amount to following address:</strong></p>
+                                            <p>${resp.msg}</p>`;
+                                            let asset_boxx = document.getElementById("asset_box");
+                                            asset_boxx.insertAdjacentHTML('beforeend', counterTraderAccountAddress);
+                                        }
                                 }
                                 break;
                             case "withdraw_request_method":
@@ -9167,7 +9165,7 @@
             var request = objectStore.get(id);
 
             request.onerror = function (event) {
-                alert("Unable to retrieve data from database!");
+                console.error("Unable to retrieve data from database!");
             };
 
             request.onsuccess = function (event) {
@@ -9185,7 +9183,7 @@
             var objectStore = transaction.objectStore(tablename);
             let response = [];
             objectStore.openCursor().onerror = function (event) {
-                console.err("Error fetching data");
+                console.error("Error fetching data");
             };
             objectStore.openCursor().onsuccess = function (event) {
                 let cursor = event.target.result;
@@ -9223,12 +9221,12 @@
                 .add(dbObject);
 
             request.onsuccess = function (event) {
-                alert("Data has been added to your database.");
+                console.info("Data has been added to your database.");
             };
 
             request.onerror = function (event) {
-                console.error(event);
-                alert("Unable to add data\r\Data aready exists in your database! ");
+                console.log(event);
+                //console.error("Unable to add data\r\Data aready exists in your database! ");
             }
         }
 
@@ -9239,12 +9237,12 @@
                 .put(Obj);
 
             request.onsuccess = function (event) {
-                alert("Data has been updated to your database.");
+                console.info("Data has been updated to your database.");
             };
 
             request.onerror = function (event) {
                 console.error(event);
-                alert("Failed to update data in your database! ");
+                //alert("Failed to update data in your database! ");
             }
         }
 
@@ -9254,8 +9252,12 @@
                 .delete(id);
 
             request.onsuccess = function (event) {
-                alert("Data entry has been removed from your database.");
+                console.info("Data entry has been removed from your database.");
             };
+
+            request.onerror = function (event) {
+                console.error(event);
+            }
         }
     </script>
 
