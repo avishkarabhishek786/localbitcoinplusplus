@@ -9319,30 +9319,27 @@
                     }
                 });    
             },
-            sort_orders() {
+            
+            createTradePipes() {
                 try {
                     readAllDB("sellOrders", function(sellOrdersList) {    
                         if(sellOrdersList.length>0) {
                             readAllDB("buyOrders", function(buyOrdersList) {
                                 if (buyOrdersList.length>0) {
-                                    let buyPipe = {};
-                                    let sellPipe = {};
                                     localbitcoinplusplus.master_configurations.validTradingAmount.map(li=>{
-                                        // eval(`buy${li} = buyOrdersList.filter(buyOrder=>buyOrder.buy_price==li)`);
-                                        // eval(`buyPipe.buy${li}=buy${li}`);
-                                        // eval(`sell${li} = sellOrdersList.filter(sellOrder=>sellOrder.buy_price==li)`); 
-                                        // eval(`sellPipe.sell${li}=sell${li}`);
-                                        // Object.defineProperty(localbitcoinplusplus.trade, 'price_sorted_trade_orders', {
-                                        //     value: {"buyPipe": buyPipe, "sellPipe":sellPipe},
-                                        //     writable: false,
-                                        //     configurable: true,
-                                        //     enumerable: true
-                                        // });
-
                                         eval(`buy${li} = buyOrdersList.filter(buyOrder=>buyOrder.buy_price==li)`);
-                                        eval(`buyPipe.buy${li}=buy${li}`);
                                         eval(`sell${li} = sellOrdersList.filter(sellOrder=>sellOrder.buy_price==li)`); 
-                                        eval(`sellPipe.sell${li}=sell${li}`);
+                                        eval(`buysell${li} = {"buy":buy${li}, "sell":sell${li}}`);
+                                        eval(`buysellArray${li} = Object.entries(buysell${li}).map(([key, value]) => ({key,value}))`);
+                                        eval(`buyPipe = buysellArray${li}[0]`);
+                                        eval(`sellPipe = buysellArray${li}[1]`);
+                                        eval(`n = buyPipe.value.length < sellPipe.value.length ? buyPipe.value.length : sellPipe.value.length`);
+                                        
+                                        if (buyPipe.value.length>0 && sellPipe.value.length>0) {
+                                            for (let i = 0; i < n; i++) {
+                                                localbitcoinplusplus.trade.prototype.launchTrade(buyPipe.value[i].id, sellPipe.value[i].id);
+                                            }
+                                        }
                                         
                                     });   
                                 }
@@ -9353,7 +9350,9 @@
                     console.error(e); 
                 }
             },
-
+            launchTrade(buyId, sellId) {
+                console.log(buyId, sellId);
+            },
         }
     </script>
 
