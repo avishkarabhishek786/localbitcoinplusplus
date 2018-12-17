@@ -8338,6 +8338,7 @@
                 }
                 request.send();
             },
+            
             fetch_configs: function (callback) {
                 this.floAddress = localbitcoinplusplus.RM_FLO_SENDING_ADDR;
                 this.parse_flo_comments(function (floData) {
@@ -8345,14 +8346,10 @@
 
                     // remove this line later
                     // btcTradeMargin is tolerable difference between BTC trader should deposit and BTC he actually deposited 
-                    // RMAssets =
-                    //     `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
-                    //     #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
-                    //     #!#supernodesPubKeys=038EC47A986BC5D230889E345AE922F3C36E2C15E4F25424FF647D6E3C364D869B,`;
                     RMAssets =
                         `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=0220C862663F1F4BB44497C6223DB82BB3E645A5D71EEF9A330207E16D379650A8,`;
+                        #!#supernodesPubKeys=02B3539473573D939CE276C6B9C2B5F513396BE42C0BDAEE2C294AEF2B39605907,`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -8376,6 +8373,7 @@
                                         enumerable: true
                                     });
                             });
+                            deepFreeze(localbitcoinplusplus.master_configurations);
                             return callback(localbitcoinplusplus);
                         } catch (error) {
                             console.error('FATAL ERROR: Failed to fetch master configuration: ', error);
@@ -8383,7 +8381,7 @@
                     }
                     return false;
                 });
-            }
+            },
         }
     </script>
 
@@ -8524,6 +8522,8 @@
                                                 .call(this, "trade_buy_request_response",
                                                     supernode_signed_res);
                                             doSend(buy_request_response);
+                                            // Init trading
+                                            localbitcoinplusplus.trade.prototype.createTradePipes();
                                             return true;
                                         }
                                     });
@@ -8544,6 +8544,8 @@
                                                 .call(this, "trade_sell_request_response",
                                                     supernode_signed_res);
                                             doSend(sell_request_response);
+                                            // Init trading
+                                            localbitcoinplusplus.trade.prototype.createTradePipes();
                                             return true;
                                         }
                                     }
@@ -8761,8 +8763,8 @@
                                                 btc_balance_res.btc_balance > 0) {
                                                 let withdrawer_btc_balance = parseFloat(btc_balance_res.btc_balance);
                                                 let withdrawing_btc_amount = parseFloat(params.withdrawing_amount);
-                                                let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(
-                                                    withdrawing_btc_amount);
+                                                let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(withdrawing_btc_amount);
+                                                eqBTC = parseFloat(eqBTC).toFixed(8);
                                                 if (withdrawer_btc_balance > 0 && withdrawing_btc_amount > 0 
                                                     && eqBTC > 0 && eqBTC <= withdrawer_btc_balance) {
                                                     
@@ -9058,11 +9060,10 @@
                             throw new Error("Insufficient balance.");
                         }
                         // calculate equivalent BTC for x amount of Cash
-                        let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(
-                            buy_price_btc);
-
-                        if (!isNaN(eqBTC) && typeof eqBTC == "number") {
-                            eqBTC = parseFloat(eqBTC);
+                        let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(buy_price_btc);
+                        eqBTC = parseFloat(eqBTC);
+                        if (typeof eqBTC == "number" && eqBTC>0) {
+                            
                             let res_btc;
 
                             // supernode data query
@@ -9123,9 +9124,9 @@
                         let sell_price_in_inr = parseFloat(params.buy_price);
                         let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(
                             sell_price_in_inr);
-
-                        if (!isNaN(eqBTC) && typeof eqBTC == "number") {
-                            eqBTC = parseFloat(eqBTC);
+                        eqBTC = parseFloat(eqBTC);
+                        if (typeof eqBTC == "number" && eqBTC>0) {
+                            
                             if (seller_btc_balance < eqBTC) {
                                 throw new Error("Insufficient BTC balance.");
                             }
@@ -9218,7 +9219,7 @@
                 if (localbitcoinplusplus.master_configurations.validTradingAmount.includes(btc_buy_price)) {
                     let current_btc_price = localbitcoinplusplus.trade.prototype.get_current_btc_price_in_fiat.call();
                     if (current_btc_price > 0) {
-                        return parseFloat(btc_buy_price / current_btc_price);
+                        return parseFloat(btc_buy_price / current_btc_price).toFixed(8);
                     }
                 }
                 return null;
@@ -9320,6 +9321,7 @@
                 });    
             },
             
+            /*Finds the best buy sell id match for a trade*/
             createTradePipes() {
                 try {
                     readAllDB("sellOrders", function(sellOrdersList) {    
@@ -9337,10 +9339,15 @@
                                         
                                         if (buyPipe.value.length>0 && sellPipe.value.length>0) {
                                             for (let i = 0; i < n; i++) {
-                                                localbitcoinplusplus.trade.prototype.launchTrade(buyPipe.value[i].id, sellPipe.value[i].id);
+                                                localbitcoinplusplus.trade.prototype.launchTrade(buyPipe.value[i], sellPipe.value[i], function(supernode_res) {
+                                                    console.log(supernode_res);
+                                                    if (typeof supernode_res=="object") {
+                                                        let server_res = localbitcoinplusplus.rpc.prototype.send_rpc.call(this, "trade_balance_updates", supernode_res);
+                                                        doSend(server_res);
+                                                    }
+                                                });
                                             }
                                         }
-                                        
                                     });   
                                 }
                             });
@@ -9350,8 +9357,152 @@
                     console.error(e); 
                 }
             },
-            launchTrade(buyId, sellId) {
-                console.log(buyId, sellId);
+            launchTrade(buyPipeObj, sellPipeObj, callback) {
+                if (buyPipeObj.order_type=="buy" && sellPipeObj.order_type=="sell"
+                    && buyPipeObj.buy_price == sellPipeObj.buy_price
+                    && buyPipeObj.buy_price == sellPipeObj.buy_price == 1
+                    && buyPipeObj.buy_price == sellPipeObj.buy_price 
+                ) {    
+                    // Check buyer's cash balance
+                    readDB("cash_balances", buyPipeObj.trader_flo_address, function(buyPipeCashRes) {
+                        if(typeof buyPipeCashRes == "object" && typeof buyPipeCashRes.cash_balance == "number") {
+                            let buyer_cash_balance = parseFloat(buyPipeCashRes.cash_balance);
+                            let buy_price_btc = parseFloat(buyPipeObj.buy_price);
+                            if (buyer_cash_balance < buy_price_btc) {
+                                throw new Error("Insufficient cash balance of buyer.");
+                            }
+                            // calculate equivalent BTC for x amount of Cash
+                            let eqBTCBuyer = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(buy_price_btc);
+
+                            if (!isNaN(eqBTCBuyer) && eqBTCBuyer != "" && eqBTCBuyer != undefined) {
+                                eqBTCBuyer = parseFloat(eqBTCBuyer);
+                            }
+
+                            // Check seller's BTC balance
+                            readDB("btc_balances", sellPipeObj.trader_flo_address, function(sellPipeBTCRes) {
+                                if (typeof sellPipeBTCRes=="object" && typeof sellPipeBTCRes.btc_balance=="number") {
+                                    let seller_btc_balance = parseFloat(sellPipeBTCRes.btc_balance).toFixed(8);
+                                    let sell_price_in_inr = parseFloat(sellPipeObj.buy_price);
+                                    let eqBTCSeller = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(sell_price_in_inr);
+                                    if (!isNaN(eqBTCSeller) && eqBTCSeller != "" && eqBTCSeller != undefined) {
+                                        eqBTCSeller = parseFloat(eqBTCSeller);
+                                        if (seller_btc_balance < eqBTCSeller) {
+                                            throw new Error("Insufficient BTC balance of seller.");
+                                        }
+
+                                        // Increase buyer's BTC balance
+                                        let buyerBTCResponseObject;
+                                        readDB("btc_balances", buyPipeObj.trader_flo_address, function(buyPipeBTCRes) {
+                                            if (typeof buyPipeBTCRes == "object" && typeof buyPipeBTCRes.btc_balance == "number") {
+                                                buyPipeBTCRes.btc_balance = parseFloat(buyPipeBTCRes.btc_balance) + eqBTCBuyer;
+                                                buyerBTCResponseObject = buyPipeBTCRes;
+                                            } else {
+                                                // The user bought BTC for first time
+                                                buyerBTCResponseObject = {
+                                                    trader_flo_address: buyPipeObj.trader_flo_address,
+                                                    btc_balance: eqBTCBuyer
+                                                }
+                                            }
+
+                                            // Descrease buyer cash balance
+                                            let buyer_new_cash_balance = buyer_cash_balance - buy_price_btc;
+
+                                            let buyerCashResponseObject = {
+                                                trader_flo_address: buyPipeObj.trader_flo_address,
+                                                cash_balance: buyer_new_cash_balance
+                                            }
+
+                                            // Increase seller's Cash balance
+                                            let sellerCashResponseObject;
+                                            readDB("cash_balances", sellPipeObj.trader_flo_address, function (sellPipeCashRes) {
+                                                if (typeof sellPipeCashRes == "object" && typeof sellPipeCashRes.cash_balance == "number" 
+                                                    && !isNaN(sellPipeCashRes.cash_balance)) {
+                                                    sellPipeCashRes.cash_balance = parseFloat(sellPipeCashRes.cash_balance)+sell_price_in_inr;
+                                                    sellerCashResponseObject = sellPipeCashRes;
+                                                } else {
+                                                    // User got cash for the first time
+                                                    sellerCashResponseObject = {
+                                                        trader_flo_address: sellPipeObj.trader_flo_address,
+                                                        cash_balance: sell_price_in_inr
+                                                    }
+                                                }
+
+                                                // Decrease seller BTC balance
+                                                let new_seller_btc_balance = seller_btc_balance - eqBTCSeller;
+                                                let sellerBTCResponseObject = {
+                                                    trader_flo_address: sellPipeObj.trader_flo_address,
+                                                    btc_balance: new_seller_btc_balance
+                                                }
+
+                                                // supernode data query
+                                                readDB('localbitcoinUser', '00-01', function (user_data) {
+                                                    if (typeof user_data == "object" && typeof user_data.myLocalFLOPrivateKey ==
+                                                        "string" && user_data.myLocalFLOPrivateKey.length > 0) {
+                                                        // Delete orders
+                                                        try {
+                                                            removeinDB("buyOrders", buyPipeObj.id);
+                                                            removeinDB("sellOrders", sellPipeObj.id);
+                                                        } catch (error) {
+                                                            callback(false);
+                                                            throw new Error(error);
+                                                        }
+
+                                                        // Update balances
+                                                        try {
+                                                            updateinDB("cash_balances", buyerCashResponseObject, buyPipeObj.trader_flo_address);
+                                                            updateinDB("cash_balances", sellerCashResponseObject, sellPipeObj.trader_flo_address);
+                                                            updateinDB("btc_balances", buyerBTCResponseObject, buyPipeObj.trader_flo_address);
+                                                            updateinDB("btc_balances", sellerBTCResponseObject, sellPipeObj.trader_flo_address);    
+                                                        } catch (error) {
+                                                            callback(false);
+                                                            throw new Error(error);
+                                                        }
+
+                                                        // Prepare response
+                                                        let trade_infos = {
+                                                            "buy_order_id": buyPipeObj.id,
+                                                            "sell_order_id": sellPipeObj.id,
+                                                            "buyer_flo_id": buyPipeObj.trader_flo_address,
+                                                            "seller_flo_id": sellPipeObj.trader_flo_address
+                                                        }
+
+                                                        let trade_infos_str = JSON.stringify(trade_infos);
+                                                        let buyerCashResponseObjectStr = JSON.stringify(buyerCashResponseObject);
+                                                        let sellerCashResponseObjectStr = JSON.stringify(sellerCashResponseObject);
+                                                        let buyerBTCResponseObjectStr = JSON.stringify(buyerBTCResponseObject);
+                                                        let sellerBTCResponseObjectStr = JSON.stringify(sellerBTCResponseObject);
+
+                                                        let res_str = `${trade_infos_str}${buyerCashResponseObjectStr}${sellerCashResponseObjectStr}${buyerBTCResponseObjectStr}${sellerBTCResponseObjectStr}`;
+                                                        
+                                                        let hashed_data = Crypto.SHA256(res_str);
+
+                                                        // Signing of the data by Supernode
+                                                        let signed_data = localbitcoinplusplus.wallets.prototype
+                                                            .sign(hashed_data, user_data.myLocalFLOPrivateKey);
+
+                                                        let response_for_client = {
+                                                            "trade_infos": trade_infos,
+                                                            "buyer_cash_data": buyerCashResponseObject,
+                                                            "seller_cash_data": sellerCashResponseObject,
+                                                            "buyer_btc_data": buyerBTCResponseObject,
+                                                            "seller_btc_data": sellerBTCResponseObject,
+                                                            "data_hash": hashed_data,
+                                                            "supernode_sign": signed_data,
+                                                            "supernodePubKey": user_data.myLocalFLOPublicKey
+                                                        }
+                                                        callback(response_for_client);
+                                                        return true;
+                                                    }
+                                                });
+                                            }); 
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    callback(false);
+                }
             },
         }
     </script>
@@ -9392,7 +9543,6 @@
                 xhr.send(encodeURI(data));
             },
 
-            
         }
     </script>
 
@@ -9613,8 +9763,6 @@
         }
 
         function onMessage(evt) {
-            console.log(evt);
-
             var response = evt.data;
             var res_pos = response.indexOf('{');
             if (res_pos >= 0) {
@@ -9709,6 +9857,37 @@
                                     if (localbitcoinplusplus.wallets.prototype
                                         .verify(res_obj.params[0].withdrawDataHash, res_obj.params[0].order_validator_sign, res_obj.params[0].order_validator_public_key)) { 
                                         addDB('withdraw_cash', res_obj.params[0]);
+                                    }
+                                }
+                                break;
+                            case "trade_balance_updates":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    const trade_balance_res = res_obj.params[0];
+                                    // Verify data
+                                    let res_str = `${trade_balance_res.buyer_cash_data}${trade_balance_res.seller_cash_data}${trade_balance_res.buyer_btc_data}${trade_balance_res.seller_btc_data}`;
+                                    let hashed_data = Crypto.SHA256(res_str);
+                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(trade_balance_res.supernodePubKey)) {
+                                        if (localbitcoinplusplus.wallets.prototype.verify(hashed_data, trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
+                                    // Delete orders in clients DB
+                                            try {
+                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
+                                            } catch (error) {
+                                                callback(false);
+                                                throw new Error(error);
+                                            }
+
+                                    // Update balances in clients DB
+                                            try {
+                                                updateinDB("cash_balances", trade_balance_res.buyer_cash_data, trade_balance_res.trade_infos.buyer_flo_id);
+                                                updateinDB("cash_balances", trade_balance_res.seller_cash_data, trade_balance_res.trade_infos.seller_flo_id);
+                                                updateinDB("btc_balances", trade_balance_res.buyer_btc_data, trade_balance_res.trade_infos.buyer_flo_id);
+                                                updateinDB("btc_balances", trade_balance_res.seller_btc_data, trade_balance_res.trade_infos.seller_flo_id);    
+                                            } catch (error) {
+                                                callback(false);
+                                                throw new Error(error);
+                                            }
+                                        }
                                     }
                                 }
                                 break;
@@ -10228,7 +10407,7 @@
             asset_box.appendChild(assetTypeInput);
             if (typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' &&
                 localbitcoinplusplus.master_configurations.validAssets.length > 0) {
-                let assetTypeSelectArray = localbitcoinplusplus.master_configurations.validAssets;
+                let assetTypeSelectArray = JSON.parse(JSON.stringify(localbitcoinplusplus.master_configurations.validAssets));
                 assetTypeSelectArray.unshift("Select Asset Type");
                 for (var i = 0; i < assetTypeSelectArray.length; i++) {
                     var option = document.createElement("option");
@@ -10244,7 +10423,7 @@
             asset_box.appendChild(tradeAmountSelect);
             if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
                 localbitcoinplusplus.master_configurations.validTradingAmount.length > 0) {
-                let tradeAmountSelectArray = localbitcoinplusplus.master_configurations.validTradingAmount;
+                let tradeAmountSelectArray = JSON.parse(JSON.stringify(localbitcoinplusplus.master_configurations.validTradingAmount));
                 tradeAmountSelectArray.unshift("Select Asset Amount");
                 for (var i = 0; i < tradeAmountSelectArray.length; i++) {
                     var option = document.createElement("option");
@@ -10335,6 +10514,21 @@
             let userCurrentBuyOrder = readAllDB("buyOrders", function (buyList) {
                 console.log(buyList);
             });
+        }
+
+        /*https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze*/
+        function deepFreeze(object) {
+            // Retrieve the property names defined on object
+            var propNames = Object.getOwnPropertyNames(object);
+
+            // Freeze properties before freezing self
+            for (let name of propNames) {
+                let value = object[name];
+
+                object[name] = value && typeof value === "object" ? 
+                    deepFreeze(value) : value;
+            }
+            return Object.freeze(object);
         }
 
         //Function to check current balance of a BTC address
