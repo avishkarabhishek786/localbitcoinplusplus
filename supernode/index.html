@@ -8925,7 +8925,7 @@
                     RMAssets =
                         `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=02B3539473573D939CE276C6B9C2B5F513396BE42C0BDAEE2C294AEF2B39605907,`;
+                        #!#supernodesPubKeys=02B3539473573D939CE276C6B9C2B5F513396BE42C0BDAEE2C294AEF2B39605907,031316888597FC88DF8326078CDFC2CC276137DAADB6EBF6EE032C9C1A839BB3F2,039F39FA71B15AC5689E0424432A3506DAB89E7FC3C510503CA2DBB1BCAF9DD081`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -9610,7 +9610,7 @@
                             });
 
                             break;
-
+                            
                         default:
                             alert("Unknown method called for execution.");
                             break;
@@ -10343,29 +10343,29 @@
             },
 
             // Create unique id
-            unique_id: function() {
+            unique_id: function () {
                 return `${+new Date()}_${Math.random().toString(36).substr(2, 9)}`;
             },
 
             // Create Shamir's secret shares
-            createShamirsSecretShares: function(str, total_shares, threshold_limit) {
-                if (str.length>0) {
-            
+            createShamirsSecretShares: function (str, total_shares, threshold_limit) {
+                if (str.length > 0) {
+
                     // convert the text into a hex string
-                   var strHex = secrets.str2hex(str);
-            
+                    var strHex = secrets.str2hex(str);
+
                     // split into total_shares shares, with a threshold of threshold_limit
                     var shares = secrets.share(strHex, total_shares, threshold_limit);
-            
+
                     return shares;
                 }
                 return false;
             },
 
             // Decode Shamir's secret
-            verifyShamirsSecret: function(sharesArray, str) {
+            verifyShamirsSecret: function (sharesArray, str) {
                 // combine sharesArray:
-                var comb = secrets.combine( sharesArray );
+                var comb = secrets.combine(sharesArray);
 
                 //convert back to UTF string:
                 comb = secrets.hex2str(comb);
@@ -10558,8 +10558,8 @@
 
         /* Websocket Code Starts here */
 
-        //var wsUri = "ws://localhost:9000/";
-        var wsUri = "ws://ranchimall.duckdns.org:9000/";
+        var wsUri = "ws://localhost:9000/";
+        //var wsUri = "ws://ranchimall.duckdns.org:9000/";
         var output;
 
         function init() {
@@ -10734,6 +10734,27 @@
                                     }
                                 }
                                 break;
+                            case "store_shamirs_secret_supernode_pvtkey":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    addDB("supernode_private_key_chunks", res_obj.params[0]);
+                                }
+                                break;
+                            case "send_back_shamirs_secret_supernode_pvtkey":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val, function(res) {
+                                        let send_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                                            .send_rpc
+                                            .call(this, "retrieve_shamirs_secret_supernode_pvtkey",
+                                            {private_key_chunk:res});
+                                        doSend(send_pvtkey_req);
+                                    });
+                                }
+                                break;
+                            case "retrieve_shamirs_secret_supernode_pvtkey":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    let pk_chunks = res_obj.params[0].privateKeyChunks;
+                                }
+                                break;
                             default:
                                 break;
                         }
@@ -10850,9 +10871,18 @@
             trader_flo_address: null,
         }
 
+        const my_supernode_private_key_chunks = {
+            id: ''
+        }
+        
+        const supernode_private_key_chunks = {
+            id: '',
+            privateKeyChunks: null
+        }
+
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 2);
+        var request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -10931,6 +10961,16 @@
                 });
                 objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
                     unique: false
+                });
+            }
+            if (!db.objectStoreNames.contains('my_supernode_private_key_chunks')) {
+                var objectStore = db.createObjectStore("my_supernode_private_key_chunks", {
+                    keyPath: 'id'
+                });
+            }
+            if (!db.objectStoreNames.contains('supernode_private_key_chunks')) {
+                var objectStore = db.createObjectStore("supernode_private_key_chunks", {
+                    keyPath: 'id'
                 });
             }
         }
@@ -11344,6 +11384,71 @@
                 }
             }
         })();
+
+        // Register as supernode
+        let register_as_supernode_btn = document.createElement("button");
+        let register_as_supernode_btn_text = document.createTextNode("Register Supernode");
+        register_as_supernode_btn.appendChild(register_as_supernode_btn_text);
+        register_as_supernode_btn.onclick = function() {
+            
+            readDB("localbitcoinUser", "00-01", function(res) {
+                if (typeof res == "object" && res.myLocalFLOPrivateKey.length>0) {
+                    let my_supernode_private_key = res.myLocalFLOPrivateKey;
+                    let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys;
+                    let pvt_key_shamirs_secret_shares = helper_functions.createShamirsSecretShares(my_supernode_private_key, 10, 5);
+                    console.log(pvt_key_shamirs_secret_shares);
+                    if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
+                        
+                        // Add suprnode's own private keys to DB
+                        let supernode_transaction_key = Crypto.util.randomBytes(64);
+                        let pvt_key_shamirs_secret_shares_array = pvt_key_shamirs_secret_shares.map(chunks=>{
+                            let chunk_ids = Crypto.util.bytesToHex(Crypto.util.randomBytes(64));
+                            let chunk_array = {
+                                "id": chunk_ids,
+                                "privateKeyChunks": Crypto.AES.encrypt(chunks, supernode_transaction_key)  
+                            };
+                            try {
+                                addDB("my_supernode_private_key_chunks", chunk_ids);
+                            } catch (error) {
+                                throw new Error(error);
+                            }
+                            return chunk_array;
+                        });
+
+                        // Send chunks of privat keys to other supernodes 
+                        pvt_key_shamirs_secret_shares_array.map(shares=>{
+                            let store_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                                .send_rpc
+                                .call(this, "store_shamirs_secret_supernode_pvtkey",
+                                shares);
+                            doSend(store_pvtkey_req);
+                            }
+                        );
+                    }
+                }
+            });
+            
+        } 
+        document.body.appendChild(register_as_supernode_btn);
+
+        // Retrieve the private keys from other supernodes
+        let retrieve_pvt_key_btn = document.createElement("button");
+        let retrieve_pvt_key_btn_str = document.createTextNode("Retrieve Private Key");
+        retrieve_pvt_key_btn.appendChild(retrieve_pvt_key_btn_str);
+
+        let chunk_str = document.createElement("input");
+        document.body.appendChild(retrieve_pvt_key_btn);
+        document.body.appendChild(chunk_str);
+
+        retrieve_pvt_key_btn.onclick = function(res) {
+            let chunk_val = chunk_str.value;
+            let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                .send_rpc
+                .call(this, "send_back_shamirs_secret_supernode_pvtkey",
+                {chunk_val:chunk_val});
+            doSend(retrieve_pvtkey_req);
+        }
+
     </script>
 
     <!-- Misc functions -->
@@ -11372,6 +11477,17 @@
                     deepFreeze(value) : value;
             }
             return Object.freeze(object);
+        }
+
+        function randomNoRepeats(array) {
+            var copy = array.slice(0);
+            return function() {
+                if (copy.length < 1) { copy = array.slice(0); }
+                var index = Math.floor(Math.random() * copy.length);
+                var item = copy[index];
+                copy.splice(index, 1);
+                return item;
+            };
         }
 
         //Function to check current balance of a BTC address
