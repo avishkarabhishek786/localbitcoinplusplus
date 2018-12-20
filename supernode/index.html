@@ -8964,8 +8964,10 @@
     <!-- Keys Object Operations (Generate, Sign and Verify) -->
     <script>
         var wallets = localbitcoinplusplus.wallets = function (wallets) {
-            //
+            
         };
+        const MY_PRIVATE_KEY_SHAMIRS_SHARES = localbitcoinplusplus.wallets.private_key_shamirs_secrets_shares = [];
+        
         wallets.prototype = {
             ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
 
@@ -9020,7 +9022,50 @@
                 var verify = Bitcoin.ECDSA.verifyRaw(messageHashBigInteger, signature.r, signature.s,
                     publicKeyPoint);
                 return verify;
-            }
+            },
+            createShamirsSecretShares: function (str, total_shares, threshold_limit) {
+                if (str.length > 0) {
+                    // convert the text into a hex string
+                    var strHex = secrets.str2hex(str);
+                    // split into total_shares shares, with a threshold of threshold_limit
+                    var shares = secrets.share(strHex, total_shares, threshold_limit);
+                    return shares;
+                }
+                return false;
+            },
+            verifyShamirsSecret: function (sharesArray, str) {
+                // combine sharesArray:
+                var comb = secrets.combine(sharesArray);
+                //convert back to UTF string:
+                comb = secrets.hex2str(comb);
+                return comb === str;
+            }, 
+            retrieveShamirSecret: function (sharesArray) {
+                if (sharesArray.length>0) {
+                    // combine sharesArray:
+                    var comb = secrets.combine(sharesArray.slice(0, sharesArray.length));
+                    //convert back to UTF string:
+                    comb = secrets.hex2str(comb);
+                    console.log(comb);
+                    
+                    return comb;
+                }
+                return false;
+            },
+            rebuild_my_private_key: function(transactionKey) {
+                let decoded_shares = MY_PRIVATE_KEY_SHAMIRS_SHARES.map(encryptedShares=>{
+                  return Crypto.AES.decrypt(encryptedShares,transactionKey);
+                });
+                let my_pvt_key = this.retrieveShamirSecret(decoded_shares);
+
+                Object.defineProperty(localbitcoinplusplus.wallets, 'MY_SUPERNODE_PRIVATE_KEY', {
+                    value: my_pvt_key,
+                    writable: false,
+                    configurable: false,
+                    enumerable: true
+                });
+            }    
+            
         }
     </script>
 
@@ -10347,32 +10392,6 @@
                 return `${+new Date()}_${Math.random().toString(36).substr(2, 9)}`;
             },
 
-            // Create Shamir's secret shares
-            createShamirsSecretShares: function (str, total_shares, threshold_limit) {
-                if (str.length > 0) {
-
-                    // convert the text into a hex string
-                    var strHex = secrets.str2hex(str);
-
-                    // split into total_shares shares, with a threshold of threshold_limit
-                    var shares = secrets.share(strHex, total_shares, threshold_limit);
-
-                    return shares;
-                }
-                return false;
-            },
-
-            // Decode Shamir's secret
-            verifyShamirsSecret: function (sharesArray, str) {
-                // combine sharesArray:
-                var comb = secrets.combine(sharesArray);
-
-                //convert back to UTF string:
-                comb = secrets.hex2str(comb);
-
-                return comb === str;
-            }
-
         }
     </script>
 
@@ -10751,8 +10770,15 @@
                                 }
                                 break;
                             case "retrieve_shamirs_secret_supernode_pvtkey":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    let pk_chunks = res_obj.params[0].privateKeyChunks;
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object"
+                                    && typeof res_obj.params[0].private_key_chunk=="object") {
+                                        let share = res_obj.params[0].private_key_chunk.privateKeyChunks;
+                                        if (typeof share !== "undefined" && !MY_PRIVATE_KEY_SHAMIRS_SHARES.includes(share)) {
+                                            MY_PRIVATE_KEY_SHAMIRS_SHARES.push(share);
+                                        }
+                                        if (MY_PRIVATE_KEY_SHAMIRS_SHARES.length==5) {
+                                            localbitcoinplusplus.wallets.prototype.rebuild_my_private_key(localbitcoinplusplus.wallets.supernode_transaction_key);
+                                        }
                                 }
                                 break;
                             default:
@@ -10872,7 +10898,8 @@
         }
 
         const my_supernode_private_key_chunks = {
-            id: ''
+            id: '',
+            supernode_transaction_key: null
         }
         
         const supernode_private_key_chunks = {
@@ -10882,7 +10909,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 5);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -10966,6 +10993,9 @@
             if (!db.objectStoreNames.contains('my_supernode_private_key_chunks')) {
                 var objectStore = db.createObjectStore("my_supernode_private_key_chunks", {
                     keyPath: 'id'
+                });
+                objectStore.createIndex('supernode_transaction_key', 'supernode_transaction_key', {
+                    unique: false
                 });
             }
             if (!db.objectStoreNames.contains('supernode_private_key_chunks')) {
@@ -11137,8 +11167,32 @@
 
                                     updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
                                 }
-                            }
+                            }   
                         }
+
+                        // rebuild private key
+                        let supernode_transaction_key_arr = [];
+                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
+                            readAllDB("my_supernode_private_key_chunks", function(chunks) {
+                                if (typeof chunks == "object" && chunks.length>0) {
+                                    let txKey = chunks.map(chunk=>{
+                                        let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                                            .send_rpc
+                                            .call(this, "send_back_shamirs_secret_supernode_pvtkey",
+                                            {chunk_val:chunk.id});
+                                        doSend(retrieve_pvtkey_req);
+                                        supernode_transaction_key_arr.push(chunk.supernode_transaction_key);
+                                        return supernode_transaction_key_arr;
+                                    }).filter(function (e, i, c) { 
+                                        return c.indexOf(e) === i;
+                                    });
+
+                                    const TRANSACTION_KEY = localbitcoinplusplus.wallets.supernode_transaction_key = txKey[0][0];
+                    
+                                }    
+                            });
+                        }
+
                         //localbitcoinuserdiv
                         document.getElementById("localbitcoinuserdiv").innerHTML =
                             `<p>Address: ${idbData.myLocalFLOAddress}<p>
@@ -11395,7 +11449,7 @@
                 if (typeof res == "object" && res.myLocalFLOPrivateKey.length>0) {
                     let my_supernode_private_key = res.myLocalFLOPrivateKey;
                     let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys;
-                    let pvt_key_shamirs_secret_shares = helper_functions.createShamirsSecretShares(my_supernode_private_key, 10, 5);
+                    let pvt_key_shamirs_secret_shares = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(my_supernode_private_key, 10, 5);
                     console.log(pvt_key_shamirs_secret_shares);
                     if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
                         
@@ -11408,7 +11462,7 @@
                                 "privateKeyChunks": Crypto.AES.encrypt(chunks, supernode_transaction_key)  
                             };
                             try {
-                                addDB("my_supernode_private_key_chunks", chunk_ids);
+                                addDB("my_supernode_private_key_chunks", {id:chunk_ids, supernode_transaction_key:supernode_transaction_key});
                             } catch (error) {
                                 throw new Error(error);
                             }
@@ -11432,22 +11486,40 @@
         document.body.appendChild(register_as_supernode_btn);
 
         // Retrieve the private keys from other supernodes
-        let retrieve_pvt_key_btn = document.createElement("button");
-        let retrieve_pvt_key_btn_str = document.createTextNode("Retrieve Private Key");
-        retrieve_pvt_key_btn.appendChild(retrieve_pvt_key_btn_str);
+        // let retrieve_pvt_key_btn = document.createElement("button");
+        // let retrieve_pvt_key_btn_str = document.createTextNode("Retrieve Private Key");
+        // retrieve_pvt_key_btn.appendChild(retrieve_pvt_key_btn_str);
 
-        let chunk_str = document.createElement("input");
-        document.body.appendChild(retrieve_pvt_key_btn);
-        document.body.appendChild(chunk_str);
+        // let chunk_str = document.createElement("input");
+        // document.body.appendChild(retrieve_pvt_key_btn);
+        // document.body.appendChild(chunk_str);
 
-        retrieve_pvt_key_btn.onclick = function(res) {
-            let chunk_val = chunk_str.value;
-            let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
-                .send_rpc
-                .call(this, "send_back_shamirs_secret_supernode_pvtkey",
-                {chunk_val:chunk_val});
-            doSend(retrieve_pvtkey_req);
-        }
+        // retrieve_pvt_key_btn.onclick = function(res) {
+        //     let chunk_val = chunk_str.value;
+        //     let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
+        //         .send_rpc
+        //         .call(this, "send_back_shamirs_secret_supernode_pvtkey",
+        //         {chunk_val:chunk_val});
+        //     doSend(retrieve_pvtkey_req);
+        // }
+
+        // Re-build Private Key
+        // (function() {
+        //     readAllDB("my_supernode_private_key_chunks", function(chunks) {
+        //         if (typeof chunks == "object" && chunks.length>0) {
+        //             let txKey = chunks.map(chunk=>{
+        //                 let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
+        //                     .send_rpc
+        //                     .call(this, "send_back_shamirs_secret_supernode_pvtkey",
+        //                     {chunk_val:chunk.id});
+        //                 doSend(retrieve_pvtkey_req);
+        //                 return chunk.supernode_transaction_key;
+        //             }).map(tx_key=>tx_key[0]);
+                    
+        //             console.log(txKey);
+        //         }    
+        //     });
+        // })();
 
     </script>
 
