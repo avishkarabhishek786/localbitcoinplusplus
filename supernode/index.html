@@ -101,7 +101,7 @@
             }
             return arr1.join('');
         }
-
+        
         //ripemd160.js
         /*
         CryptoJS v3.1.2
@@ -7321,8 +7321,10 @@
             var bitjs = window.bitjs = function () {};
 
             /* public vars */
-            bitjs.pub = 0x23; // flochange - changed the prefix to FLO Mainnet PublicKey Prefix 0x23
-            bitjs.priv = 0xa3; //flochange - changed the prefix to FLO Mainnet Private key prefix 0xa3
+            //bitjs.pub = 0x23; // flochange - changed the prefix to FLO Mainnet PublicKey Prefix 0x23
+            //bitjs.priv = 0xa3; //flochange - changed the prefix to FLO Mainnet Private key prefix 0xa3
+            bitjs.pub = 0x73; // flochange - changed the prefix to FLO Testnet PublicKey Prefix 0x23
+            bitjs.priv = 0xef; //flochange - changed the prefix to FLO Testnet Private key prefix 0xa3
             bitjs.compressed = false;
 
             /* provide a privkey and return an WIF  */
@@ -7773,15 +7775,9 @@
                     } else {
                         floDataCountString = "Character Limit Exceeded";
                     }
-
-
                     return Crypto.util.bytesToHex(buffer) + floDataCountString + flohex; // flochange -- Addition of floDataCountString and floData in serialization
                 }
-
-
-
                 return btrx;
-
             }
 
             bitjs.numToBytes = function (num, bytes) {
@@ -8925,7 +8921,7 @@
                     RMAssets =
                         `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=02B3539473573D939CE276C6B9C2B5F513396BE42C0BDAEE2C294AEF2B39605907,031316888597FC88DF8326078CDFC2CC276137DAADB6EBF6EE032C9C1A839BB3F2,039F39FA71B15AC5689E0424432A3506DAB89E7FC3C510503CA2DBB1BCAF9DD081`;
+                        #!#supernodesPubKeys=0314413409B26B7FA6A7BA4A5AC73D13F206638F88AFDF7DAB82F69B384FD3A1CB,`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -9046,8 +9042,6 @@
                     var comb = secrets.combine(sharesArray.slice(0, sharesArray.length));
                     //convert back to UTF string:
                     comb = secrets.hex2str(comb);
-                    console.log(comb);
-                    
                     return comb;
                 }
                 return false;
@@ -9064,8 +9058,7 @@
                     configurable: false,
                     enumerable: true
                 });
-            }    
-            
+            }              
         }
     </script>
 
@@ -9126,6 +9119,28 @@
                     //         }
                     //     }
                     // });
+
+                    // Check if user id is in deposit or withdraw. If true prevent him from  trading
+                    try {
+                        readAllDB('withdraw_cash', function(res) {
+                            let check_deposit_withdraw_id_array = res.filter(f=>f.status===2)
+                                .map(m=>{
+                                    if (m.trader_flo_address==respective_trader_id||m.deposit_withdraw_id_array==respective_trader_id) {
+                                        let server_msg = `Trader id ${respective_trader_id} is not clear for trade currently.
+                                            You must finish your previous pending deposit/withdraw action to qualify again to trade.`;
+
+                                            let server_response = localbitcoinplusplus.rpc.prototype
+                                                .send_rpc
+                                                .call(this, "supernode_message",
+                                                    {"trader_flo_id":respective_trader_id, "server_msg":server_msg});
+                                            doSend(server_response);
+                                            throw new Error("User has not finished previous pending actions.");
+                                    }
+                                });
+                        });
+                    } catch (error) {
+                        throw new Error(error);
+                    }
 
                     switch (method) {
                         case "trade_buy":
@@ -9313,20 +9328,28 @@
                                                                             if (withdrawer.withdraw_amount ==
                                                                                 params.depositing_amount
                                                                             ) {
+
+                                                                                withdrawer.status = 2; // A depositor has been asked to deposit money
+                                                                                withdrawer.depositor_found_at = + new Date();
+                                                                                withdrawer.depositor_flo_id = receivedTradeInfo.trader_flo_address;
+                                                                                updateinDB("withdraw_cash", withdrawer, withdrawer.trader_flo_address); 
+
+                                                                                receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
+                                                                                updateinDB("deposit", receivedTradeInfo, receivedTradeInfo.trader_flo_address);
+
                                                                                 let
                                                                                     withdrawer_bank_account =
                                                                                     withdrawer
                                                                                     .receivinAddress;
 
-                                                                                let
-                                                                                    deposit_response_object = {
+                                                                                let deposit_response_object = {
                                                                                         error: false,
                                                                                         method: "deposit_asset_request_response",
                                                                                         msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
-                                                                                        data: receivedTradeInfo
+                                                                                        data: receivedTradeInfo,
+                                                                                        withdrawer_data: withdrawer
                                                                                     };
-                                                                                let
-                                                                                    deposit_request_response =
+                                                                                let deposit_request_response =
                                                                                     localbitcoinplusplus
                                                                                     .rpc
                                                                                     .prototype
@@ -9336,9 +9359,8 @@
                                                                                         "deposit_asset_request_response",
                                                                                         deposit_response_object
                                                                                     );
-                                                                                doSend(
-                                                                                    deposit_request_response
-                                                                                );
+                                                                            
+                                                                                doSend(deposit_request_response);
                                                                                 return true;
                                                                             } else {
                                                                                 // Return error to the requester
@@ -9364,9 +9386,11 @@
                                                                             "deposit_asset_request_response",
                                                                             deposit_response_object
                                                                         );
-                                                                    doSend(
-                                                                        deposit_request_response
-                                                                    );
+
+                                                                    receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
+                                                                    updateinDB("deposit", receivedTradeInfo, receivedTradeInfo.trader_flo_address);
+
+                                                                    doSend(deposit_request_response);
                                                                     return true;
                                                                 }
                                                             }
@@ -9445,24 +9469,17 @@
                                                         if (typeof deposit_list == "object" &&
                                                             deposit_list.length > 0) {
                                                             deposit_list = deposit_list.filter(
-                                                                deposits => deposits.status ==
-                                                                2 && deposits.product ==
-                                                                "BTC");
+                                                                deposits => deposits.status == 2 
+                                                                && deposits.product == "BTC");
                                                             for (const dl in deposit_list) {
-                                                                if (deposit_list.hasOwnProperty(
-                                                                        dl)) {
-                                                                    const deposit =
-                                                                        deposit_list[dl];
-                                                                    sum_total_btc +=
-                                                                        deposit.bitcoinToBePaid;
-                                                                    if (eqBTC <=
-                                                                        sum_total_btc) {
-                                                                        valid_utxo_list.push(
-                                                                            deposit);
+                                                                if (deposit_list.hasOwnProperty(dl)) {
+                                                                    const deposit = deposit_list[dl];
+                                                                    sum_total_btc += deposit.bitcoinToBePaid;
+                                                                    if (eqBTC <= sum_total_btc) {
+                                                                        valid_utxo_list.push(deposit);
                                                                         break;
                                                                     } else {
-                                                                        valid_utxo_list.push(
-                                                                            deposit);
+                                                                        valid_utxo_list.push(deposit);
                                                                     }
                                                                 }
                                                             }
@@ -9472,38 +9489,20 @@
                                                                     localbitcoinplusplus
                                                                         .trade.prototype
                                                                         .sendTransaction(
-                                                                            deposit_arr
-                                                                            .btc_address,
-                                                                            deposit_arr
-                                                                            .btc_private_key,
+                                                                            deposit_arr.btc_address,
+                                                                            deposit_arr.btc_private_key,
                                                                             receiverBTCAddress,
                                                                             withdrawing_btc_amount,
-                                                                            deposit_arr
-                                                                            .btc_address,
-                                                                            function (
-                                                                                txid
-                                                                            ) {
+                                                                            deposit_arr.btc_address,
+                                                                            function (txid) {
+                                                                                console.log(txid);
 
-                                                                                console
-                                                                                    .log(
-                                                                                        txid
-                                                                                    );
+                                                                                deposit_arr.bitcoinToBePaid -= eqBTC;
 
-                                                                                deposit_arr
-                                                                                    .bitcoinToBePaid -=
-                                                                                    eqBTC;
-
-                                                                                if (
-                                                                                    deposit_arr
-                                                                                    .bitcoinToBePaid >
-                                                                                    0
-                                                                                ) {
+                                                                                if (deposit_arr.bitcoinToBePaid >0) {
                                                                                     // update deposits in db
-                                                                                    deposit_arr
-                                                                                        .status =
-                                                                                        3;
-                                                                                    updateinDB
-                                                                                        (
+                                                                                    deposit_arr.status = 3;
+                                                                                    updateinDB(
                                                                                             "deposit",
                                                                                             deposit_arr,
                                                                                             deposit_arr
@@ -9622,9 +9621,7 @@
                                                                         "withdrawal_request_response",
                                                                         withdraw_request_db_object
                                                                     );
-                                                                doSend(
-                                                                    withdrawal_request_response
-                                                                );
+                                                                doSend(withdrawal_request_response);
                                                                 return true;
                                                             } catch (error) {
                                                                 console.log(error);
@@ -9983,23 +9980,10 @@
                     }
                 });
             },
-
             sendTransaction(utxo_addr, utxo_addr_wif, receiver_address, receiving_amount, change_adress, callback) {
                 let url = `${localbitcoinplusplus.flocha}/api/addr/${utxo_addr}/utxo`;
                 helper_functions.ajaxGet(url, function (res) {
-                    // [
-                    //     {
-                    //         "address":"oeBMuWPiUPiG8xvF9Bx1PQcd2oz5Mu71Eb",
-                    //         "txid":"6a85444de41ee21cce2834db1f888f9cf7ca7c795f794fafe250965dc30f11ba",
-                    //         "vout":1,
-                    //         "scriptPubKey":"76a914e9c1db081eba5b467a49ff27931883f9809247d288ac",
-                    //         "amount":100,
-                    //         "satoshis":10000000000,
-                    //         "height":311673,
-                    //         "confirmations":2
-                    //     }
-                    // ]
-
+                    
                     if (res.length > 0) {
                         try {
                             receiving_amount = parseInt(receiving_amount * 100000000);
@@ -10040,10 +10024,10 @@
 
                                 console.log(signedTxHash);
 
-                                helper_functions.ajaxPost(tx_send_url, params, function (txid) {
-                                    console.log(txid);
-                                    callback(txid);
-                                });
+                                // helper_functions.ajaxPost(tx_send_url, params, function (txid) {
+                                //     console.log(txid);
+                                //     callback(txid);
+                                // });
 
                             } catch (error) {
                                 throw new Error(error);
@@ -10055,7 +10039,6 @@
                     }
                 });
             },
-
             /*Finds the best buy sell id match for a trade*/
             createTradePipes() {
                 try {
@@ -10577,8 +10560,8 @@
 
         /* Websocket Code Starts here */
 
-        var wsUri = "ws://localhost:9000/";
-        //var wsUri = "ws://ranchimall.duckdns.org:9000/";
+        //var wsUri = "ws://localhost:9000/";
+        var wsUri = "ws://ranchimall.duckdns.org:9000/";
         var output;
 
         function init() {
@@ -10621,6 +10604,25 @@
                     if (typeof res_obj.method !== undefined) {
                         let response_from_sever;
                         switch (res_obj.method) {
+                            case "supernode_message":
+                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    let received_resp = res_obj.params[0];
+                                    try {
+                                        if (received_resp.trader_flo_id.length>0 && received_resp.server_msg.length>0) {
+                                            readDB("localbitcoinUser", "00-01", function(res) {
+                                                if (typeof res=="object" && res.myLocalFLOAddress.length>0) {
+                                                    if (res.myLocalFLOAddress===received_resp.trader_flo_id) {
+                                                        alert(received_resp.server_msg);
+                                                        return false;
+                                                    }
+                                                }
+                                            });       
+                                        }
+                                    } catch (error) {
+                                        throw new Error('');
+                                    }
+                                }
+                            break;
                             case "trade_buy":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
@@ -10681,6 +10683,9 @@
                                         .verify(resp.data.depositDataHash, resp.data.order_validator_sign, resp.data.order_validator_public_key)
                                     ) {
                                         addDB('deposit', resp.data);
+                                        if (typeof resp.withdrawer_data=="object") {
+                                            updateinDB("withdraw_cash", withdrawer_data, withdrawer_data.trader_flo_address);
+                                        }
                                         readDB("localbitcoinUser", "00-01", function (user) {
                                             if (typeof user == "object" && user.myLocalFLOAddress == resp.data.trader_flo_address) {
                                                 let counterTraderAccountAddress =
@@ -11107,6 +11112,7 @@
         }
     </script>
 
+    <!-- Initialization of objects -->
     <script>
         var RM_WALLET = new localbitcoinplusplus.wallets;
         var RM_TRADE = new localbitcoinplusplus.trade;
@@ -11406,6 +11412,7 @@
                 }
 
                 let asset_type = assetTypeInput.value;
+                
                 let tradeAmount = parseFloat(tradeAmountSelect.value);
                 if (typeof userFLOaddress == undefined || userFLOaddress.trim().length < 1) {
                     throw new Error("Invalid or empty user FLO address.");
@@ -11478,48 +11485,28 @@
                             doSend(store_pvtkey_req);
                             }
                         );
+
+
+                        // Alert user if he/she has to inform about deposit/withdraw events 
+                        
+                        // get data from server than user
+                        
+                        
+                        // readAllDB('withdraw_cash', function(res) {
+                        //     let check_deposit_withdraw_id_array = res.filter(f=>f.status===2)
+                        //         .map(m=>{
+                        //             if (m.trader_flo_address==res.myLocalFLOAddress||m.deposit_withdraw_id_array==res.myLocalFLOAddress) {
+
+                        //             }
+                        //         });
+                        // }); 
+
                     }
                 }
             });
             
         } 
         document.body.appendChild(register_as_supernode_btn);
-
-        // Retrieve the private keys from other supernodes
-        // let retrieve_pvt_key_btn = document.createElement("button");
-        // let retrieve_pvt_key_btn_str = document.createTextNode("Retrieve Private Key");
-        // retrieve_pvt_key_btn.appendChild(retrieve_pvt_key_btn_str);
-
-        // let chunk_str = document.createElement("input");
-        // document.body.appendChild(retrieve_pvt_key_btn);
-        // document.body.appendChild(chunk_str);
-
-        // retrieve_pvt_key_btn.onclick = function(res) {
-        //     let chunk_val = chunk_str.value;
-        //     let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
-        //         .send_rpc
-        //         .call(this, "send_back_shamirs_secret_supernode_pvtkey",
-        //         {chunk_val:chunk_val});
-        //     doSend(retrieve_pvtkey_req);
-        // }
-
-        // Re-build Private Key
-        // (function() {
-        //     readAllDB("my_supernode_private_key_chunks", function(chunks) {
-        //         if (typeof chunks == "object" && chunks.length>0) {
-        //             let txKey = chunks.map(chunk=>{
-        //                 let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
-        //                     .send_rpc
-        //                     .call(this, "send_back_shamirs_secret_supernode_pvtkey",
-        //                     {chunk_val:chunk.id});
-        //                 doSend(retrieve_pvtkey_req);
-        //                 return chunk.supernode_transaction_key;
-        //             }).map(tx_key=>tx_key[0]);
-                    
-        //             console.log(txKey);
-        //         }    
-        //     });
-        // })();
 
     </script>
 
