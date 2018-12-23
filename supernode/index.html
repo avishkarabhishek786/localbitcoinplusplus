@@ -8954,6 +8954,46 @@
                     return false;
                 });
             },
+
+            sync_with_supernode: function(trader_flo_address) {
+                let sync_request = localbitcoinplusplus.rpc.prototype.send_rpc.call(this,
+                    "sync_with_supernode", {
+                        "trader_flo_address": trader_flo_address,
+                        "job": "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB"
+                    });
+                doSend(sync_request);
+            },
+
+            get_sharable_db_data: function(callback) {
+                let sharable_data = {};
+
+                readAllDB("buyOrders", function(buyOrdersres) {
+                    sharable_data.buyOrders = buyOrdersres;
+
+                    readAllDB("sellOrders", function(sellOrdersres) {
+                        sharable_data.sellOrders = sellOrdersres;
+
+                        readAllDB("btc_balances", function(btc_balancesres) {
+                            sharable_data.btc_balances = btc_balancesres;
+
+                            readAllDB("cash_balances", function(cash_balancesres) {
+                                sharable_data.cash_balances = cash_balancesres;
+
+                                readAllDB("deposit", function(depositres) {
+                                    sharable_data.deposit = depositres;
+
+                                    readAllDB("withdraw_cash", function(withdraw_cashres) {
+                                        sharable_data.withdraw_cash = withdraw_cashres;
+                                        return callback(sharable_data);
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+                
+            }
+
         }
     </script>
 
@@ -9188,20 +9228,22 @@
                                 );
                             });
                             break;
-                        case "broadcastBlockDataToAll":
-                            // TODO: Make a separate class for syncing
-                            if (typeof params.blockOwnerFLOAddress !== undefined) {
-                                request.response = updateinDB("datablocks", params, params.id);
-
-                                // Update client nodes HTML for dataBlocks DB
-                                readDB("datablocks", "00-01", function (blockData) {
-                                    document.getElementById("datablocksdiv").innerHTML =
-                                        `<p>Version: ${blockData.version}</p>
-                                        <p>Block Owner FLO Address: ${blockData.blockOwnerFLOAddress}</p>
-                                        <p>Block Signature: ${blockData.blockSignature}</p>
-                                        <p>Blockhash: ${blockData.blockhash}</p>`
-                                });
-                            }
+                        case "sync_with_supernode":
+                            localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
+                                if (is_valid_request === true && params.job=="SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length>0) {
+                                    localbitcoinplusplus.actions.get_sharable_db_data(function(su_db_data) {
+                                        if (typeof su_db_data == "object") {
+                                            let server_sync_response = localbitcoinplusplus.rpc.prototype
+                                                .send_rpc
+                                                .call(this, "server_sync_response",
+                                                    su_db_data);
+                                            doSend(server_sync_response);
+                                            return;
+                                        }
+                                    });
+                                }
+                            });
+                            
                             break;
                         case "deposit_asset_request":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
@@ -10666,11 +10708,29 @@
                                     }
                                 }
                                 break;
-                            case "broadcastBlockDataToAll":
+                            case "sync_with_supernode":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
-                                console.log(response_from_sever);
-                                //doSend(response_from_sever); // send response to client
+                                break;
+                            case "server_sync_response":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        let su_db_data = res_obj.params[0];
+                                        for (var tableStoreName in su_db_data) {
+                                            // skip loop if the property is from prototype
+                                            if (!su_db_data.hasOwnProperty(tableStoreName)) continue;
+
+                                            var obj = su_db_data[tableStoreName];
+                                            
+                                             removeAllinDB(tableStoreName, function(res) {
+                                                if (res!==false) { 
+                                                    for (var prop in obj) {
+                                                        if(!obj.hasOwnProperty(prop)) continue;
+                                                            addDB(tableStoreName, obj[prop]);
+                                                   }
+                                                }
+                                             });
+                                        }
+                                }
                                 break;
                             case "deposit_asset_request":
                                 response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
@@ -11110,6 +11170,22 @@
                 console.error(event);
             }
         }
+
+        function removeAllinDB(tablename, callback) {
+            var request = db.transaction([tablename], "readwrite")
+            var objectStore = request.objectStore(tablename);
+            var objectStoreRequest = objectStore.clear();
+            objectStoreRequest.onsuccess = function (event) {
+                console.info("All the data entry has been removed from your database "+tablename);
+                callback(tablename);
+                //callback(true);
+            };
+
+            objectStoreRequest.onerror = function (event) {
+                console.error(event);
+                callback(false);
+            }
+        }
     </script>
 
     <!-- Initialization of objects -->
@@ -11165,7 +11241,7 @@
                                     undefined) {
                                     localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
                                     localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
-                                    localbitcoinplusplusObj.myLocalFLOPrivateKey = newKeys.privateKeyWIF;
+                                    //localbitcoinplusplusObj.myLocalFLOPrivateKey = newKeys.privateKeyWIF;
                                     localbitcoinplusplusObj.mySelfDeclaredBalance = 0;
                                     localbitcoinplusplusObj.mySelfDeclaredBalanceFLO = 0;
                                     localbitcoinplusplusObj.mySelfdeclaredBalanceBitcoin = 0;
@@ -11175,6 +11251,9 @@
                                 }
                             }   
                         }
+
+                        // Declare the user flo address
+                        const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
 
                         // rebuild private key
                         let supernode_transaction_key_arr = [];
@@ -11198,6 +11277,8 @@
                                 }    
                             });
                         }
+
+                        localbitcoinplusplus.actions.sync_with_supernode(MY_LOCAL_FLO_ADDRESS);
 
                         //localbitcoinuserdiv
                         document.getElementById("localbitcoinuserdiv").innerHTML =
@@ -11273,69 +11354,6 @@
                 // Further operation here
                 console.log("Hello! You are doing great.");
             });
-        }
-    </script>
-
-    <!-- Sync Nodes Database -->
-    <script>
-        window.onload = function () {
-            let syncButton = document.createElement('button');
-            let syncButtonText = document.createTextNode('Sync');
-            syncButton.appendChild(syncButtonText);
-            let syncNodes = document.getElementById("syncNodes");
-            syncNodes.appendChild(syncButton);
-
-            let blockVersion = Math.floor(Math.random(1, 100) * 100);
-            let blockOwnerFLOAddress = "oY1qc4jbY15Vzc3s7eaqicuPZZjav97aFG";
-            let data = {
-                sample2: "lorem ipsum doler conn...",
-                sample1: "kfhdjkfhjkdhfjkhj"
-            };
-            if (Object.keys(data).length === 0 && data.constructor === Object) {
-                throw new Error("Data cannot be empty.");
-            }
-            let datastr = JSON.stringify(data);
-            let blockHashMsg = `${blockVersion}${blockOwnerFLOAddress}${datastr}`;
-            let blockHash = Crypto.SHA256(blockHashMsg);
-            let blockSignature = RM_WALLET.sign(blockHash);
-
-            let updatedDataBlock = {
-                id: "00-01",
-                version: blockVersion,
-                data: data,
-                blockOwnerFLOAddress: blockOwnerFLOAddress,
-                blockhash: blockHash,
-                blockSignature: blockSignature
-            }
-
-            syncButton.onclick = function () {
-                try {
-                    // Update the data in current node
-                    updateinDB("datablocks", updatedDataBlock, "00-01");
-                    try {
-                        // Broadcast to other nodes
-                        let sendBlockDataToAll = RM_RPC.send_rpc("broadcastBlockDataToAll", updatedDataBlock);
-                        doSend(sendBlockDataToAll);
-                        console.log(updatedDataBlock);
-
-                        // Update HTML of current page
-                        readDB("datablocks", "00-01", function (blockData) {
-                            document.getElementById("datablocksdiv").innerHTML =
-                                `<p>Version: ${blockData.version}</p>
-                            <p>Block Owner FLO Address: ${blockData.blockOwnerFLOAddress}</p>
-                            <p>Block Signature: ${blockData.blockSignature}</p>
-                            <p>Blockhash: ${blockData.blockhash}</p>`
-                        });
-                    } catch (error) {
-                        throw new Error("ERROR: Failed to broadcast to other nodes.");
-                    }
-                } catch (error) {
-                    throw new Error(
-                        "ERROR: Failed to update the datablocks database. You are unable to trade at the moment."
-                    );
-                }
-
-            }
         }
     </script>
 
