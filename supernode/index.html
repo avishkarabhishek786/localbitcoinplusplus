@@ -9088,10 +9088,7 @@
                 return false;
             },
             rebuild_my_private_key: function(transactionKey) {
-                let decoded_shares = MY_PRIVATE_KEY_SHAMIRS_SHARES.map(encryptedShares=>{
-                  return Crypto.AES.decrypt(encryptedShares,transactionKey);
-                });
-                let my_pvt_key = this.retrieveShamirSecret(decoded_shares);
+                let my_pvt_key = localbitcoinplusplus.wallets.prototype.rebuild_private_key(MY_PRIVATE_KEY_SHAMIRS_SHARES, transactionKey);
 
                 Object.defineProperty(localbitcoinplusplus.wallets, 'MY_SUPERNODE_PRIVATE_KEY', {
                     value: my_pvt_key,
@@ -9099,7 +9096,14 @@
                     configurable: false,
                     enumerable: true
                 });
-            }              
+            },
+            rebuild_private_key: function(private_key_shamirs_shares, transactionKey) {
+                let decoded_shares = private_key_shamirs_shares.map(encryptedShares=>{
+                  return Crypto.AES.decrypt(encryptedShares,transactionKey);
+                });
+                let my_pvt_key = this.retrieveShamirSecret(decoded_shares);
+                return my_pvt_key;
+            }                
         }
     </script>
 
@@ -9285,8 +9289,7 @@
                                         params.bitcoinToBePaid = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(
                                             params.depositing_amount);
 
-                                        let receivedTradeInfo = { ...params
-                                        };
+                                        let receivedTradeInfo = { ...params };
 
                                         readDB("localbitcoinUser", "00-01", function (su_data) {
                                             if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey ==
@@ -9294,8 +9297,7 @@
                                                 su_data.myLocalFLOPublicKey.length > 0 &&
                                                 localbitcoinplusplus.master_configurations.supernodesPubKeys
                                                 .includes(su_data.myLocalFLOPublicKey)) {
-                                                let receivedTradeInfoHash = Crypto.SHA256(JSON.stringify(
-                                                    receivedTradeInfo));
+                                                let receivedTradeInfoHash = Crypto.SHA256(JSON.stringify(receivedTradeInfo));
 
                                                 receivedTradeInfo["depositDataHash"] =
                                                     receivedTradeInfoHash;
@@ -9305,12 +9307,6 @@
                                                     );
                                                 receivedTradeInfo["order_validator_public_key"] =
                                                     su_data.myLocalFLOPublicKey;
-
-                                                try {
-                                                    addDB("deposit", receivedTradeInfo);
-                                                } catch (error) {
-                                                    throw new Error(error);
-                                                }
 
                                                 // Send the address to the requester
                                                 let deposit_response_object = {
@@ -9326,6 +9322,35 @@
                                                         "deposit_asset_request_response",
                                                         deposit_response_object);
                                                 doSend(deposit_request_response);
+
+                                                const this_btc_pvt_key = generate_btc_keys_for_requester.privateKeyWIF;
+                                                const this_btc_tx_key = Crypto.util.randomBytes(64);
+                                                const this_btc_pvt_key_shamirs_secret = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(this_btc_pvt_key, 10, 5); 
+                                                if (typeof this_btc_pvt_key_shamirs_secret=="object" && this_btc_pvt_key_shamirs_secret.length>0) {
+                                                    
+                                                    let this_btc_pvt_key_shamirs_secret_array = this_btc_pvt_key_shamirs_secret.map(chunks=>{
+                                                        let chunk_ids = Crypto.util.bytesToHex(Crypto.util.randomBytes(64));
+                                                        let chunk_array = {
+                                                            "privateKeyChunks": Crypto.AES.encrypt(chunks, this_btc_tx_key)  
+                                                        };
+                                                        return chunk_array;
+                                                    }); 
+
+                                                    if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string" 
+                                                        && typeof localbitcoinplusplus.wallets.my_local_flo_public_key == "string"
+                                                        && typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object"
+                                                        && localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                                                        try {
+                                                            let this_btc_pvt_key_shamirs_secret_shares_array = this_btc_pvt_key_shamirs_secret_array.map(i=>i.privateKeyChunks);
+                                                            receivedTradeInfo.btc_private_key_shamirs_id = this_btc_pvt_key_shamirs_secret_shares_array;
+                                                            receivedTradeInfo.supernode_transaction_key = this_btc_tx_key;
+                                                            
+                                                            updateinDB("deposit", receivedTradeInfo, receivedTradeInfo.trader_flo_address);
+                                                        } catch (error) {
+                                                            throw new Error(error);
+                                                        }
+                                                    }
+                                                }
                                                 return true;
                                             }
                                         });
@@ -9335,8 +9360,7 @@
                                     } else if (params.product == "INR") {
                                         params.id = helper_functions.unique_id();
                                         params.status = 1;
-                                        let receivedTradeInfo = { ...params
-                                        };
+                                        let receivedTradeInfo = { ...params };
 
                                         readDB("localbitcoinUser", "00-01", function (su_data) {
                                             if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey ==
@@ -9526,43 +9550,70 @@
                                                                     }
                                                                 }
                                                             }
-
+                                                            
                                                             valid_utxo_list.map(deposit_arr => {
                                                                 try {
+                                                                    let btc_resp_pvt_key = localbitcoinplusplus.wallets.prototype.rebuild_private_key(deposit_arr.btc_private_key_shamirs_id, deposit_arr.supernode_transaction_key);
+                                                                    console.log(btc_resp_pvt_key);
+                                                                    
                                                                     localbitcoinplusplus
                                                                         .trade.prototype
                                                                         .sendTransaction(
                                                                             deposit_arr.btc_address,
-                                                                            deposit_arr.btc_private_key,
+                                                                            btc_resp_pvt_key,
                                                                             receiverBTCAddress,
                                                                             withdrawing_btc_amount,
                                                                             deposit_arr.btc_address,
-                                                                            function (txres) {
-                                                                                console.log(txres);
-                                                                                if (typeof txres !== "object" || typeof txres.result!=="string") return;
-                                                                                
-                                                                                const txid = txres.result;
-                                                                                deposit_arr.bitcoinToBePaid -= eqBTC;
+                                                                            function (txresponse) {
+                                                                                if (typeof txresponse == "string" && txresponse.length>0) {
+                                                                                    try {
+                                                                                        const txres = JSON.parse(txresponse);        
+                                                                                        if (typeof txres !== "object" || typeof txres.txid.result!=="string") return;
+                                                                                        
+                                                                                        const txid = txres.txid.result;
+                                                                                        deposit_arr.bitcoinToBePaid -= eqBTC;
 
-                                                                                if (deposit_arr.bitcoinToBePaid >0) {
-                                                                                    // update deposits in db
-                                                                                    deposit_arr.status = 3;
-                                                                                    updateinDB(
-                                                                                        "deposit",
-                                                                                        deposit_arr,
-                                                                                        deposit_arr
-                                                                                        .trader_flo_address
-                                                                                    );
-                                                                                    return true;
-                                                                                } else {
-                                                                                    // delete entry in deposits in db
-                                                                                    removeinDB
-                                                                                        (
-                                                                                            "deposit",
-                                                                                            deposit_arr
-                                                                                            .trader_flo_address
-                                                                                        );
-                                                                                    return true;
+                                                                                        if (deposit_arr.bitcoinToBePaid > 0) {
+                                                                                            // update deposits in db
+                                                                                            deposit_arr.status = 3;
+                                                                                            updateinDB(
+                                                                                                "deposit",
+                                                                                                deposit_arr,
+                                                                                                deposit_arr
+                                                                                                .trader_flo_address
+                                                                                            );
+                                                                                            return true;
+                                                                                        } else {
+                                                                                            // delete entry in deposits in db
+                                                                                            removeinDB
+                                                                                                (
+                                                                                                    "deposit",
+                                                                                                    deposit_arr
+                                                                                                    .trader_flo_address
+                                                                                                );
+                                                                                            return true;
+                                                                                        }
+
+                                                                                        // Update withdrawer BTC balance
+                                                                                        let withdrawer_new_btc_balance_obj = {
+                                                                                            "trader_flo_address": params.trader_flo_address,
+                                                                                            "btc_balance": withdrawer_new_btc_balance
+                                                                                        } 
+                                                                                        updateinDB("btc_balances", withdrawer_new_btc_balance_obj, params.trader_flo_address);
+
+                                                                                        // Send withdrawer tx id
+                                                                                        let server_msg = `Your withdrawal request for BTC has been processed successfully. 
+                                                                                            Please check this transaction id for more details: ${txid}`;
+                                                                                        let server_response = localbitcoinplusplus.rpc.prototype
+                                                                                            .send_rpc
+                                                                                            .call(this, "supernode_message",
+                                                                                                {"trader_flo_id":respective_trader_id, "server_msg":server_msg});
+                                                                                        doSend(server_response);
+                                                                                        return true;
+
+                                                                                    } catch (error) {
+                                                                                        throw new Error(error);
+                                                                                    }
                                                                                 }
                                                                             });
 
@@ -9570,7 +9621,8 @@
                                                                     throw new Error(
                                                                         error);
                                                                 }
-                                                            });
+                                                                });
+                                                            
                                                         }
                                                     });
 
@@ -10079,9 +10131,6 @@
                                     if (http.readyState == 4 && http.status == 200) {
                                         console.log(http.responseText);
                                         callback(http.responseText);
-                                    } else {
-                                        // console.log(http.responseText);
-                                        // callback(null);
                                     }
                                 }
                                 http.send(params);
@@ -10993,7 +11042,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 5);
+        var request = window.indexedDB.open(DBName, 6);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -11273,6 +11322,7 @@
 
                         // Declare the user flo address
                         const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
+                        const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
 
                         // rebuild private key
                         let supernode_transaction_key_arr = [];
