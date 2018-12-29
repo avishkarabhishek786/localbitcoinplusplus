@@ -8996,6 +8996,40 @@
                 
             },
 
+            claim_deposit_withdraw: function(claim_id) {
+                if (typeof claim_id=="string" && claim_id.length>0) {
+                    try {
+                        let deposit_withdraw_user_claim_obj = {
+                            claim_id:claim_id
+                        }
+
+                        let deposit_withdraw_user_claim_str = JSON.stringify(deposit_withdraw_user_claim_obj);
+                        let deposit_withdraw_user_claim_hash = Crypto.SHA256(deposit_withdraw_user_claim_str);
+                        let deposit_withdraw_user_claim_sign = localbitcoinplusplus.wallets.prototype.sign(deposit_withdraw_user_claim_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+
+                        deposit_withdraw_user_claim_obj.userPubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                        deposit_withdraw_user_claim_obj.hash = deposit_withdraw_user_claim_hash;
+                        deposit_withdraw_user_claim_obj.sign = deposit_withdraw_user_claim_sign;
+
+                        let deposit_withdraw_claim =
+                            localbitcoinplusplus
+                            .rpc
+                            .prototype
+                            .send_rpc
+                            .call(
+                                this,
+                                "deposit_withdraw_user_claim",
+                                deposit_withdraw_user_claim_obj
+                            );
+                    
+                        doSend(deposit_withdraw_claim);
+                        
+                    } catch (error) {
+                        console.log(error);
+                    }
+                }
+            },
+
             build_deposit_withdraw_table: function(withdraw_data) {
                 if (typeof withdraw_data == "object" && withdraw_data.length>0) {
                     let action_req = ``;
@@ -9008,13 +9042,14 @@
                                     </tr>`;
                     withdraw_data.filter(wdf=>wdf.status==2).map(wd=>{
                         if(typeof localbitcoinplusplus.wallets.my_local_flo_address=="string") {
+                            let claim_id = `${wd.id}!!${localbitcoinplusplus.wallets.my_local_flo_address}`;
                             if (localbitcoinplusplus.wallets.my_local_flo_address==wd.trader_flo_address) {
                                 action_req += `<p>Please click the button below only if you received the cash.</p>`;
-                                action_req += `<button id='${wd.id}'>I received the money.</button>`;
+                                action_req += `<button onclick="localbitcoinplusplus.actions.claim_deposit_withdraw('${claim_id}')">I received the money.</button>`;
                             } else if(localbitcoinplusplus.wallets.my_local_flo_address==wd.depositor_flo_id) {
                                 action_req += `<p>Please click the button below only if you actually deposited the money. 
                                                     Any fake claim can cause a heavy penalty.</p>`;
-                                action_req += `<button id='${wd.id}'>I deposited the money.</button>`;
+                                action_req += `<button onclick="localbitcoinplusplus.actions.claim_deposit_withdraw('${claim_id}')" >I deposited the money.</button>`;
                             } 
                         }
                         t += `      <tr>
@@ -11093,6 +11128,56 @@
                                     `); 
                                 }
                                 break;
+                            case "deposit_withdraw_user_claim":
+                            localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
+                                if (is_valid_request !== true) {
+                                    return false;
+                                }
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    let user_claim_request = res_obj.params[0];
+                                    let user_claim_id = user_claim_request.claim_id.split('!!');
+                                    let withdraw_order_id = user_claim_id[0];
+                                    let user_id = user_claim_id[1];
+
+                                    let deposit_withdraw_user_claim_obj = {
+                                        claim_id:user_claim_request.claim_id
+                                    }                 
+
+                                    let deposit_withdraw_user_claim_str = JSON.stringify(deposit_withdraw_user_claim_obj);
+                                    let deposit_withdraw_user_claim_hash = Crypto.SHA256(deposit_withdraw_user_claim_str);
+
+                                    if (deposit_withdraw_user_claim_hash==user_claim_request.hash &&
+                                        localbitcoinplusplus.wallets.prototype.verify(deposit_withdraw_user_claim_hash,
+                                        user_claim_request.sign, user_claim_request.userPubKey)) {
+                                        //If the request is valid, find out if the requester is depositor or withdrawer
+                                        console.log(withdraw_order_id);
+                                        
+                                        readDB("withdraw_cash", withdraw_order_id, function(withdraw_data) {
+                                            if (typeof withdraw_data=="object") {
+                                                if (withdraw_data.depositor_flo_id==user_id) {
+                                                    // Depositor claimed to deposit the cash
+                                                    withdraw_data.status = 3;
+                                                    updateinDB('withdraw_cash', withdraw_data, withdraw_data.id);
+                                                } else if (withdraw_data.trader_flo_address==user_id) {
+                                                    // Withdrawer confirmed the payment
+                                                    readDBbyIndex('cash_balances', 'trader_flo_address', withdraw_data.depositor_flo_id, function(depositor_cash_data) {
+                                                        if (typeof depositor_cash_data=="object") {
+                                                            depositor_cash_data.cash_balance += parseFloat(withdraw_data.withdraw_amount);
+                                                            updateinDB('cash_balances', depositor_cash_data);
+                                                            removeByIndex('deposit', withdraw_data.depositor_flo_id);
+                                                            removeinDB('withdraw_cash', withdraw_data.id);
+                                                        }
+                                                    }); 
+                                                }
+                                                return true;
+                                            }
+                                        });
+                                    }
+
+                                }
+
+                            });
+                                break;
                             default:
                                 break;
                         }
@@ -11433,6 +11518,21 @@
             }
         }
 
+        function removeByIndex(tablename, indexName, indexValue, callback) {
+            var request = db.transaction([tablename], "readwrite")
+                .objectStore(tablename);
+            var index       = request.index(indexName);
+            var request     = index.openCursor(IDBKeyRange.only(indexValue));
+            request.onsuccess = function() {
+            var cursor = request.result;
+
+                if (cursor) {
+                    cursor.delete();
+                    cursor.continue();
+                }
+            };
+        }
+
         function removeAllinDB(tablename, callback) {
             var request = db.transaction([tablename], "readwrite")
             var objectStore = request.objectStore(tablename);
@@ -11514,7 +11614,7 @@
 
                         // rebuild private key
                         let supernode_transaction_key_arr = [];
-                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
+                        //if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
                             readAllDB("my_supernode_private_key_chunks", function(chunks) {
                                 if (typeof chunks == "object" && chunks.length>0) {
                                     let txKey = chunks.map(chunk=>{
@@ -11531,7 +11631,7 @@
                                     const TRANSACTION_KEY = localbitcoinplusplus.wallets.supernode_transaction_key = txKey[0][0];
                                 }    
                             });
-                        }
+                        //}
 
                         localbitcoinplusplus.actions.sync_with_supernode(MY_LOCAL_FLO_ADDRESS);
 
@@ -11696,14 +11796,14 @@
             }
         })();
 
-        // Register as supernode
+        // Distribute the private keys
         const register_as_supernode_div = document.createElement('div');
         
         const register_as_supernode_input = document.createElement('input');
         register_as_supernode_input.type = 'text';
 
         let register_as_supernode_btn = document.createElement("button");
-        let register_as_supernode_btn_text = document.createTextNode("Register Supernode");
+        let register_as_supernode_btn_text = document.createTextNode("Shamir Secretify My Private Key");
         register_as_supernode_btn.appendChild(register_as_supernode_btn_text);
         register_as_supernode_btn.onclick = function() {
 
@@ -11720,11 +11820,11 @@
                 throw new Error(error);
             } 
 
-            let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys;
+            // let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys;
 
-            if (!su_list.includes(publicKey_for_users_entered_private_key)) {
-                throw new Error(`The public key ${publicKey_for_users_entered_private_key} is not registered as supernode yet.`);
-            }
+            // if (!su_list.includes(publicKey_for_users_entered_private_key)) {
+            //     throw new Error(`The public key ${publicKey_for_users_entered_private_key} is not registered as supernode yet.`);
+            // }
             
             let pvt_key_shamirs_secret_shares = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(users_entered_private_key, 10, 5);
             if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
