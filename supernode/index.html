@@ -34,7 +34,7 @@
 
     <div class="container">
 
-        <div id="output_div"></div>
+        <div id="withdraw_deposit_table"></div>  
 
         <h5>Indexed DB</h5>
         <div class="box">
@@ -81,6 +81,8 @@
                 </ul>
             </div>
         </div>
+
+        <div id="output_div"></div>
 
     </div>
 
@@ -8992,6 +8994,42 @@
                     });
                 });
                 
+            },
+
+            build_deposit_withdraw_table: function(withdraw_data) {
+                if (typeof withdraw_data == "object" && withdraw_data.length>0) {
+                    let action_req = ``;
+                    let t = `<table>
+                                    <tr>
+                                        <th>Withdrawer Flo Id</th>
+                                        <th>Depositor Flo Id</th>
+                                        <th>Amount</th>
+                                        <th>Action required</th>
+                                    </tr>`;
+                    withdraw_data.filter(wdf=>wdf.status==2).map(wd=>{
+                        if(typeof localbitcoinplusplus.wallets.my_local_flo_address=="string") {
+                            if (localbitcoinplusplus.wallets.my_local_flo_address==wd.trader_flo_address) {
+                                action_req += `<p>Please click the button below only if you received the cash.</p>`;
+                                action_req += `<button id='${wd.id}'>I received the money.</button>`;
+                            } else if(localbitcoinplusplus.wallets.my_local_flo_address==wd.depositor_flo_id) {
+                                action_req += `<p>Please click the button below only if you actually deposited the money. 
+                                                    Any fake claim can cause a heavy penalty.</p>`;
+                                action_req += `<button id='${wd.id}'>I deposited the money.</button>`;
+                            } 
+                        }
+                        t += `      <tr>
+                                        <td>${wd.trader_flo_address}</td>
+                                        <td>${wd.depositor_flo_id}</td>
+                                        <td>${wd.withdraw_amount}</td>
+                                        <td>${action_req}</td>`;
+                        t += `      </tr>`;
+                    });
+                                    
+                        t += `      </table>`;
+
+                    let withdraw_deposit_table = document.getElementById('withdraw_deposit_table');
+                    withdraw_deposit_table.innerHTML = t;
+                }
             }
 
         }
@@ -9664,8 +9702,7 @@
                                                 .trader_flo_address == "string" &&
                                                 typeof cash_balances_res.cash_balance == "number" &&
                                                 cash_balances_res.cash_balance > 0) {
-                                                let withdrawer_cash_balance = parseFloat(
-                                                    cash_balances_res.cash_balance);
+                                                let withdrawer_cash_balance = parseFloat(cash_balances_res.cash_balance);
                                                 let withdrawing_cash_amount = parseFloat(params.withdrawing_amount);
                                                 let bank_details = params.receivinAddress.trim();
                                                 if (withdrawer_cash_balance > 0 &&
@@ -10896,6 +10933,14 @@
                                                 console.log(error);
                                             }
                                         }
+
+                                        // Pass data to build_deposit_withdraw_table function
+                                        try {
+                                            localbitcoinplusplus.actions.build_deposit_withdraw_table(su_db_data.withdraw_cash);    
+                                        } catch (error) {
+                                            console.error(error);
+                                        }
+
                                 }
                                 break;
                             case "deposit_asset_request":
@@ -11540,8 +11585,6 @@
                     );
                 }
 
-                // Further operation here
-                console.log("Hello! You are doing great.");
             });
         }
     </script>
@@ -11684,7 +11727,6 @@
             }
             
             let pvt_key_shamirs_secret_shares = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(users_entered_private_key, 10, 5);
-            console.log(pvt_key_shamirs_secret_shares);
             if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
                 
                 // Add suprnode's own private keys to DB
