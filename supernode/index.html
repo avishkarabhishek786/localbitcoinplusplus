@@ -11130,9 +11130,8 @@
                                 break;
                             case "deposit_withdraw_user_claim":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
-                                if (is_valid_request !== true) {
-                                    return false;
-                                }
+                                if (is_valid_request !== true) return false;
+                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=="undefined") throw new Error("Supernode Private Keys is undefind.");
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let user_claim_request = res_obj.params[0];
                                     let user_claim_id = user_claim_request.claim_id.split('!!');
@@ -11150,7 +11149,6 @@
                                         localbitcoinplusplus.wallets.prototype.verify(deposit_withdraw_user_claim_hash,
                                         user_claim_request.sign, user_claim_request.userPubKey)) {
                                         //If the request is valid, find out if the requester is depositor or withdrawer
-                                        console.log(withdraw_order_id);
                                         
                                         readDB("withdraw_cash", withdraw_order_id, function(withdraw_data) {
                                             if (typeof withdraw_data=="object") {
@@ -11158,14 +11156,52 @@
                                                     // Depositor claimed to deposit the cash
                                                     withdraw_data.status = 3;
                                                     updateinDB('withdraw_cash', withdraw_data, withdraw_data.id);
+                                                    let update_withdraw_cash_obj_data = {
+                                                        depositor_claim:withdraw_data
+                                                    };
+                                                    let update_withdraw_cash_obj_data_str = JSON.stringify(update_withdraw_cash_obj_data);
+                                                    let update_withdraw_cash_obj_data_hash = Crypto.SHA256(update_withdraw_cash_obj_data_str);
+                                                    let update_withdraw_cash_obj_data_sign = localbitcoinplusplus.wallets.prototype
+                                                        .sign(update_withdraw_cash_obj_data_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+                                                    update_withdraw_cash_obj_data.hash = update_withdraw_cash_obj_data_hash;
+                                                    update_withdraw_cash_obj_data.sign = update_withdraw_cash_obj_data_sign;
+                                                    update_withdraw_cash_obj_data.publicKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                    let update_withdraw_cash_obj = localbitcoinplusplus.rpc.prototype
+                                                        .send_rpc
+                                                        .call(this, "update_all_withdraw_cash_depositor_claim",
+                                                        update_withdraw_cash_obj_data);
+                                                    doSend(update_withdraw_cash_obj);
                                                 } else if (withdraw_data.trader_flo_address==user_id) {
                                                     // Withdrawer confirmed the payment
                                                     readDBbyIndex('cash_balances', 'trader_flo_address', withdraw_data.depositor_flo_id, function(depositor_cash_data) {
                                                         if (typeof depositor_cash_data=="object") {
+                                                            if (depositor_cash_data.length==0) {
+                                                                depositor_cash_data = {cash_balance:0, trader_flo_address:withdraw_data.depositor_flo_id};
+                                                                addDB('cash_balances', depositor_cash_data);
+                                                            }
                                                             depositor_cash_data.cash_balance += parseFloat(withdraw_data.withdraw_amount);
                                                             updateinDB('cash_balances', depositor_cash_data);
-                                                            removeByIndex('deposit', withdraw_data.depositor_flo_id);
+                                                            removeByIndex('deposit', 'trader_flo_address', depositor_cash_data.trader_flo_address, function() {});
                                                             removeinDB('withdraw_cash', withdraw_data.id);
+
+                                                            let update_cash_balance_obj = {
+                                                                depositor_cash_data:depositor_cash_data
+                                                            }
+                                                            let update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
+                                                            let update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
+                                                            let update_cash_balance_sign = localbitcoinplusplus.wallets.prototype
+                                                                .sign(update_cash_balance_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY); 
+                                                            
+                                                            update_cash_balance_obj.publicKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                            update_cash_balance_obj.sign = update_cash_balance_sign;
+                                                            update_cash_balance_obj.hash = update_cash_balance_hash;
+                                                            update_cash_balance_obj.withdraw_id = withdraw_data.id;
+
+                                                            let update_cash_balance_req = localbitcoinplusplus.rpc.prototype
+                                                                .send_rpc
+                                                                .call(this, "update_all_deposit_withdraw_success",
+                                                                update_cash_balance_obj);
+                                                            doSend(update_cash_balance_req);
                                                         }
                                                     }); 
                                                 }
@@ -11178,6 +11214,45 @@
 
                             });
                                 break;
+                            case "update_all_withdraw_cash_depositor_claim":
+                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                let depositor_claim_response_object = res_obj.params[0];
+                                let update_withdraw_cash_obj_data_res = {
+                                    depositor_claim:depositor_claim_response_object.depositor_claim
+                                };
+                                let update_withdraw_cash_obj_data_res_str = JSON.stringify(update_withdraw_cash_obj_data_res);
+                                let depositor_claim_response_data_hash = Crypto.SHA256(update_withdraw_cash_obj_data_res_str);
+                                let depositor_claim_response_object_verification = localbitcoinplusplus.wallets.prototype
+                                    .verify(depositor_claim_response_data_hash, depositor_claim_response_object.sign, depositor_claim_response_object.publicKey);
+                                
+                                if ((depositor_claim_response_data_hash==depositor_claim_response_object.hash) && (depositor_claim_response_object_verification==true)) {
+                                    updateinDB('withdraw_cash', depositor_claim_response_object.depositor_claim, depositor_claim_response_object.depositor_claim.id);
+                                    return true;
+                                }
+                                return false;
+                            }
+                                break;
+                            case "update_all_deposit_withdraw_success":
+                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                let withdraw_success_response = res_obj.params[0];
+                                let update_cash_balance_obj_res = {
+                                    depositor_cash_data:withdraw_success_response.depositor_cash_data
+                                }
+                                let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
+                                let update_cash_balance_obj_res_hash = Crypto.SHA256(update_cash_balance_obj_res_str);
+                                let update_cash_balance_obj_res_verification = localbitcoinplusplus.wallets.prototype
+                                    .verify(update_cash_balance_obj_res_hash, withdraw_success_response.sign, withdraw_success_response.publicKey);
+
+                                if ((update_cash_balance_obj_res_hash==withdraw_success_response.hash) && update_cash_balance_obj_res_verification==true) {
+                                    updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
+                                    removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data.trader_flo_address, function() {});
+                                    removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
+                                    return true;
+                                }
+                                return false;
+                            }
+                                break;
+                            
                             default:
                                 break;
                         }
