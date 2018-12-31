@@ -8476,6 +8476,207 @@
         })(typeof module !== 'undefined' && module['exports'] ? module['exports'] : (window['shamirSecretShare'] = {}),
             typeof global !== 'undefined' ? global : window);
     </script>
+    <script language="JavaScript">
+
+        /*
+        var person = {
+          firstName: "John",
+          lastName : "Doe",
+          id       : 5566,
+          fullName : function() {
+            return this.firstName + " " + this.lastName;
+          }
+        };
+        
+        */
+        
+        /*
+        if (typeof ellipticCurveEncryption == "undefined" || !ellipticCurveEncryption) {
+          (function () {
+        
+        
+            // Global Crypto object
+            var ellipticCurveEncryption = window.ellipticCurveEncryption = {};
+        */
+        
+        (function (ellipticCurveType) {
+        
+        //Defining Elliptic Encryption Object  
+        var ellipticEncryption = window.ellipticCurveEncryption = function () { };
+        
+        ellipticEncryption.rng = new SecureRandom();
+        
+        
+           
+        ellipticEncryption.getCurveParameters = function(curveName) {
+        
+          //Default is secp256k1
+          curveName = typeof curveName !== 'undefined' ? curveName : "secp256k1";
+          
+          var c = EllipticCurve.getSECCurveByName(curveName);
+          var curveDetails = {Q:"",A:"",B:"",GX:"",GY:"",N:""};
+        
+          curveDetails.Q = c.getCurve().getQ().toString();
+          curveDetails.A = c.getCurve().getA().toBigInteger().toString();
+          curveDetails.B = c.getCurve().getB().toBigInteger().toString();
+          curveDetails.GX = c.getG().getX().toBigInteger().toString();
+          curveDetails.GY = c.getG().getY().toBigInteger().toString();
+          curveDetails.N = c.getN().toString();
+        
+          return curveDetails;  
+        
+        }
+        
+        ellipticEncryption.selectedCurve = ellipticEncryption.getCurveParameters(ellipticCurveType);
+        
+        
+        ellipticEncryption.get_curve = function() {
+          return new EllipticCurve.CurveFp(new BigInteger(this.selectedCurve.Q),
+            new BigInteger(this.selectedCurve.A),
+            new BigInteger(this.selectedCurve.B));
+        }
+        
+        ellipticEncryption.get_G = function(curve) {
+          return new EllipticCurve.PointFp(curve,
+            curve.fromBigInteger(new BigInteger(this.selectedCurve.GX)),
+            curve.fromBigInteger(new BigInteger(this.selectedCurve.GY)));
+        }
+        
+        
+        ellipticEncryption.pick_rand = function() {
+          var n = new BigInteger(this.selectedCurve.N);
+          var n1 = n.subtract(BigInteger.ONE);
+          var r = new BigInteger(n.bitLength(), this.rng);
+          return r.mod(n1).add(BigInteger.ONE);
+        }
+        
+        
+        ellipticEncryption.senderRandom = function(){
+          var r = this.pick_rand();
+          return r.toString();
+        };
+        
+        
+        
+        ellipticEncryption.receiverRandom = function(){
+        
+          //This is receivers private key. For now we will use random. CHANGE IT LATER
+          var r = this.pick_rand();
+          return r.toString();
+        }
+        
+        
+        
+        ellipticEncryption.senderPublicString = function(senderPrivateKey){
+        
+          var senderKeyECData = {};
+        
+          var curve = this.get_curve();
+          var G = this.get_G(curve);
+          var a = new BigInteger(senderPrivateKey);
+          var P = G.multiply(a);
+          senderKeyECData.XValuePublicString = P.getX().toBigInteger().toString();
+          senderKeyECData.YValuePublicString= P.getY().toBigInteger().toString();
+        
+          return senderKeyECData;
+          }
+        
+        //In real life ellipticEncryption.receiverPublicString is the public key of the receiver.
+        //you don't have to run receiverRandom and the bottom function 
+        ellipticEncryption.receiverPublicString = function(receiverPublicKey){
+        
+          var receiverKeyECData = {};
+        
+          var curve = this.get_curve();
+          var G = this.get_G(curve);
+          var a = new BigInteger(receiverPublicKey);
+          var P = G.multiply(a);
+          receiverKeyECData.XValuePublicString = P.getX().toBigInteger().toString();
+          receiverKeyECData.YValuePublicString= P.getY().toBigInteger().toString();
+          
+          return receiverKeyECData;
+          }
+        
+        ellipticEncryption.senderSharedKeyDerivation = function(receiverPublicStringXValue,receiverPublicStringYValue,senderPrivateKey) {
+        
+          var senderDerivedKey = {}; 
+          var curve = this.get_curve();
+          var P = new EllipticCurve.PointFp(curve,
+            curve.fromBigInteger(new BigInteger(receiverPublicStringXValue)),
+            curve.fromBigInteger(new BigInteger(receiverPublicStringYValue)));
+          var a = new BigInteger(senderPrivateKey);
+          var S = P.multiply(a);
+          
+          senderDerivedKey.XValue= S.getX().toBigInteger().toString();
+          senderDerivedKey.YValue= S.getY().toBigInteger().toString();
+          
+          return senderDerivedKey;
+        }
+        
+        
+        ellipticEncryption.receiverSharedKeyDerivation = function(senderPublicStringXValue,senderPublicStringYValue,receiverPrivateKey) {
+        
+          var receiverDerivedKey = {}; 
+          var curve = this.get_curve();
+          var P = new EllipticCurve.PointFp(curve,
+            curve.fromBigInteger(new BigInteger(senderPublicStringXValue)),
+            curve.fromBigInteger(new BigInteger(senderPublicStringYValue)));
+          var a = new BigInteger(receiverPrivateKey);
+          var S = P.multiply(a);
+          
+          receiverDerivedKey.XValue= S.getX().toBigInteger().toString();
+          receiverDerivedKey.YValue= S.getY().toBigInteger().toString();
+          
+          return receiverDerivedKey;
+        }
+        
+        })("secp256k1"); // End of EllipticCurveEncryption Object
+        
+        
+        
+        //ACTUAL CODE
+        //Initializations -- common for both sender and receiver
+        exportData = {};
+        
+        (function(){
+        
+        //Part 1: Sender side
+        
+        var senderECKeyData = {};
+        var senderDerivedKey = {XValue:"",YValue:""};
+        var senderPublicKeyString = {};
+        
+        senderECKeyData.privateKey = ellipticCurveEncryption.senderRandom();
+        senderPublicKeyString = ellipticCurveEncryption.senderPublicString(senderECKeyData.privateKey);
+        
+        
+        //First get the receivers public key string. Here we will assume some public key string
+        //In real life this will be done by receiver
+        
+        //Part 2: Receiver Side
+        
+        var receiverDerivedKey = {XValue:"",YValue:""};
+        var receiverECKeyData = {};
+        var receiverPublicKeyString = {};
+        
+        receiverECKeyData.privateKey = ellipticCurveEncryption.receiverRandom();
+        receiverPublicKeyString = ellipticCurveEncryption.receiverPublicString(receiverECKeyData.privateKey);
+        
+        //Part 3: Back to sender side to derive shared key
+        senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(receiverPublicKeyString.XValuePublicString,receiverPublicKeyString.YValuePublicString,senderECKeyData.privateKey);
+        
+        //Part 4: The receiver will use the same method to derive the shared key
+        receiverDerivedKey = ellipticCurveEncryption.receiverSharedKeyDerivation(senderPublicKeyString.XValuePublicString,senderPublicKeyString.YValuePublicString,receiverECKeyData.privateKey);
+        
+        exportData.senderPublicKeyString = senderPublicKeyString;
+        exportData.receiverPublicKeyString = receiverPublicKeyString;
+        exportData.senderDerivedKey = senderDerivedKey;
+        exportData.receiverDerivedKey = receiverDerivedKey;
+        
+        //Check on console. senderDerivedKey should be same as receiverDerivedKey
+        })();
+        
+        </script>
 
     <!---------------------------------------------------------------------------------- 
                                 localbitcoinplusplus Code starts 
@@ -9070,7 +9271,7 @@
         }
     </script>
 
-    <!-- Keys Object Operations (Generate, Sign and Verify) -->
+    <!-- Wallet Operations (Generate, Sign and Verify) -->
     <script>
         var wallets = localbitcoinplusplus.wallets = function (wallets) {
             
@@ -9175,7 +9376,14 @@
                 });
                 let my_pvt_key = this.retrieveShamirSecret(decoded_shares);
                 return my_pvt_key;
-            }              
+            },
+            getUserPublicKey: function(flo_address, callback) {
+                readDB('userPublicData', flo_address, function(res) {
+                    if (typeof res=="object") {
+                        return callback(res.trader_flo_pubKey); 
+                    }
+                });
+            },              
         }
     </script>
 
@@ -9326,10 +9534,8 @@
                         case "deposit_asset_request":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
 
-                                if (is_valid_request !== true) {
-                                    return false;
-                                }
-
+                                if (is_valid_request !== true) return false;
+                                
                                 // This code will only run for supernodes
                                 if (typeof params.product !== "undefined" && localbitcoinplusplus.master_configurations
                                     .validAssets.includes(params.product) &&
@@ -9340,7 +9546,14 @@
                                     typeof params.trader_flo_address ==
                                     "string" && params.trader_flo_address.length > 0
                                 ) {
-                                    if (params.product == "BTC") {
+                                    localbitcoinplusplus.wallets.prototype.getUserPublicKey(params.trader_flo_address, 
+                                    function(requester_public_key) {
+                                        if (requester_public_key==undefined||requester_public_key==null) {
+                                            throw new Error('Failed to get public key of the user.');
+                                        }
+                                        params.depositor_public_key = requester_public_key;
+
+                                                                            if (params.product == "BTC") {
                                         /**************************************************************************
                                         // YOU HAVE TO PROVIDE BTC KEYS HERE. CHANGE IT LATER
                                         ****************************************************************************/
@@ -9476,8 +9689,7 @@
                                     } else if (params.product == "INR") {
                                         params.id = helper_functions.unique_id();
                                         params.status = 1;
-                                        let receivedTradeInfo = { ...params
-                                        };
+                                        let receivedTradeInfo = { ...params };
 
                                         readDB("localbitcoinUser", "00-01", function (su_data) {
                                             if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey ==
@@ -9497,7 +9709,7 @@
                                                 receivedTradeInfo["order_validator_public_key"] =
                                                     su_data.myLocalFLOPublicKey;
 
-                                                // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NOONE IS WITHDRAWING
+                                                // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NO ONE IS WITHDRAWING
                                                 try {
                                                     addDB("deposit", receivedTradeInfo);
                                                     readDBbyIndex("withdraw_cash", "status", 1,
@@ -9592,6 +9804,8 @@
                                             }
                                         });
                                     }
+                                    });
+
                                 } else {
                                     console.log("deposit asset request error");
                                 }
@@ -9914,6 +10128,27 @@
 
                         });
                             break;
+
+                        case "superNodeSignedAddUserPublicData":
+                            if (typeof params=="object" && typeof params.data=="object") {
+                                if (typeof params.su_pubKey=="string" && localbitcoinplusplus
+                                .master_configurations.supernodesPubKeys.includes(params.su_pubKey)) {
+                                    let res_data_obj = {
+                                            trader_flo_address: params.data.trader_flo_address,
+                                            trader_flo_pubKey: params.data.trader_flo_pubKey,
+                                            trader_status: params.data.trader_status,
+                                            timestamp: params.data.timestamp
+                                        };
+                                    let res_data_hash = Crypto.SHA256(JSON.stringify(res_data_obj));
+                                    let res_data_verification = localbitcoinplusplus.wallets.prototype
+                                        .verify(res_data_hash, params.sign, params.su_pubKey);
+                                    if ((res_data_verification==true) && res_data_hash==params.data_hash) {
+                                        addDB('userPublicData', params.data);
+                                        return true;
+                                    }
+                                }
+                            }
+                            break;
                             
                         default:
                             alert("Unknown method called for execution.");
@@ -10164,6 +10399,8 @@
                 } else if (parseFloat(amount) <= 0) {
                     throw new Error("Invalid amount error.");
                 } else if (userFLOaddress.length < 0) {
+                    throw new Error("User address required.");
+                } else if (userFloPublicKey.length < 0) {
                     throw new Error("User address required.");
                 }
 
@@ -11252,6 +11489,58 @@
                                 return false;
                             }
                                 break;
+
+                            case "add_user_public_data":
+                            localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
+                                if (is_valid_request !== true) return false;
+
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                let req_data = res_obj.params[0].public_data;
+                                try {
+                                    //let flo_address = localbitcoinplusplus.publicKey.getBitcoinAddressFromByteArray(req_data.trader_flo_pubKey);
+
+                                    if (req_data.trader_flo_address.length) {
+
+                                        let public_req_object = {
+                                            trader_flo_address: req_data.trader_flo_address,
+                                            trader_flo_pubKey: req_data.trader_flo_pubKey,
+                                            trader_status: 0,
+                                            timestamp: + new Date()
+                                        }
+
+                                        addDB('userPublicData', public_req_object);
+
+                                        let public_req_object_str = JSON.stringify(public_req_object);
+                                        let public_req_object_hash = Crypto.SHA256(public_req_object_str);
+                                        let public_req_object_sign = localbitcoinplusplus.wallets.prototype.sign(public_req_object_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+                                        
+                                        let userPublicDataResponseObject = {
+                                            data: public_req_object,
+                                            data_hash: public_req_object_hash,
+                                            sign: public_req_object_sign,
+                                            su_pubKey: localbitcoinplusplus.wallets.my_local_flo_public_key
+                                        }
+                                        
+                                        let send_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                                            .send_rpc
+                                            .call(this, "superNodeSignedAddUserPublicData",
+                                            userPublicDataResponseObject);
+
+                                        doSend(send_pvtkey_req);
+                                        
+                                    }
+                                } catch (error) {
+                                    throw new Error('Invalid public key and flo address combination.');
+                                } 
+                            }
+                            });
+                            break;
+
+                            case "superNodeSignedAddUserPublicData":
+                                response_from_sever = localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this,
+                                        JSON.stringify(res_obj));
+                                doSend(JSON.stringify(response_from_sever)); // send response to client
+                            break;
                             
                             default:
                                 break;
@@ -11317,6 +11606,13 @@
             myAddressTrustLevel: 1
         };
 
+        const userPublicData = {
+            trader_flo_address: null,
+            trader_flo_pubKey: null,
+            trader_status: null,
+            timestamp: null
+        };
+
         const deposit = {
             id: "",
             trader_flo_address: null,
@@ -11379,7 +11675,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 3);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -11486,6 +11782,17 @@
                     unique: false
                 });
                 objectStore.createIndex('receiverBTCAddress', 'receiverBTCAddress', {
+                    unique: false
+                });
+            }
+            if (!db.objectStoreNames.contains('userPublicData')) {
+                var objectStore = db.createObjectStore("userPublicData", {
+                    keyPath: 'trader_flo_address'
+                });
+                objectStore.createIndex('trader_flo_pubKey', 'trader_flo_pubKey', {
+                    unique: true
+                });
+                objectStore.createIndex('trader_status', 'trader_status', {
                     unique: false
                 });
             }
@@ -11625,6 +11932,13 @@
         }
     </script>
 
+    <!-- Encryption object -->
+    <script>
+        const Encrypter = localbitcoinplusplus.encryption = {
+
+        };
+    </script>
+
     <!-- Initialization of objects -->
     <script>
         var RM_WALLET = new localbitcoinplusplus.wallets;
@@ -11686,6 +12000,23 @@
                         // Declare the user flo address
                         const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
                         const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
+
+                        readDB('userPublicData', MY_LOCAL_FLO_ADDRESS, function(pubic_data_response) {
+                            if (typeof pubic_data_response !== "object") {
+                                let user_public_data_object = {
+                                    trader_flo_address: MY_LOCAL_FLO_ADDRESS,
+                                    trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
+                                    trader_status: 0,
+                                    timestamp: + new Date()
+                                }
+                                //addDB('userPublicData', user_public_data_object);
+                                let add_user_public_data_req = localbitcoinplusplus.rpc.prototype
+                                    .send_rpc
+                                    .call(this, "add_user_public_data",
+                                    {public_data:user_public_data_object});
+                                doSend(add_user_public_data_req);
+                            }
+                        });
 
                         // rebuild private key
                         let supernode_transaction_key_arr = [];
@@ -11766,7 +12097,7 @@
 
     <!-- Deposit/Withdraw asset -->
     <script>
-        const depositWithdrawAsset = function (userFLOaddress) {
+        const depositWithdrawAsset = function (userFLOaddress, userFloPublicKey) {
             let asset_box = document.getElementById("asset_box");
 
             // Create a select input for asset type
@@ -11817,11 +12148,14 @@
                 if (typeof userFLOaddress == undefined || userFLOaddress.trim().length < 1) {
                     throw new Error("Invalid or empty user FLO address.");
                 }
+                if (typeof userFloPublicKey == undefined || userFloPublicKey.trim().length < 1) {
+                    throw new Error("Invalid or empty user FLO public key.");
+                }
                 if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
                     typeof localbitcoinplusplus.master_configurations.validAssets !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.validAssets.includes(asset_type)) {
-                    RM_TRADE.depositAsset(asset_type, tradeAmount, userFLOaddress);
+                    RM_TRADE.depositAsset(asset_type, tradeAmount, userFLOaddress, userFloPublicKey);
                 } else {
                     throw new Error("Error while depositing your address.");
                 }
