@@ -9145,35 +9145,46 @@
                 doSend(sync_request);
             },
 
-            get_sharable_db_data: function(callback) {
-                let sharable_data = {};
-
-                readAllDB("buyOrders", function(buyOrdersres) {
-                    sharable_data.buyOrders = buyOrdersres;
-
-                    readAllDB("sellOrders", function(sellOrdersres) {
-                        sharable_data.sellOrders = sellOrdersres;
-
-                        readAllDB("btc_balances", function(btc_balancesres) {
-                            sharable_data.btc_balances = btc_balancesres;
-
-                            readAllDB("cash_balances", function(cash_balancesres) {
-                                sharable_data.cash_balances = cash_balancesres;
-
-                                readAllDB("deposit", function(depositres) {
-                                    sharable_data.deposit = depositres;
-
-                                    readAllDB("withdraw_cash", function(withdraw_cashres) {
-                                        sharable_data.withdraw_cash = withdraw_cashres;
-                                        return callback(sharable_data);
-                                    });
-                                });
-                            });
-                        });
-                    });
-                });
-                
+            get_sharable_db_data: async function() {
+                let promises = await Promise.all([
+                    readAllDB("buyOrders"),
+                    readAllDB("sellOrders"),
+                    readAllDB("btc_balances"),
+                    readAllDB("cash_balances"),
+                    readAllDB("deposit"),
+                    readAllDB("withdraw_cash") 
+                ]);
+                return promises;
             },
+            // get_sharable_db_data: function(callback) {
+            //     let sharable_data = {};
+
+            //     readAllDB("buyOrders", function(buyOrdersres) {
+            //         sharable_data.buyOrders = buyOrdersres;
+
+            //         readAllDB("sellOrders", function(sellOrdersres) {
+            //             sharable_data.sellOrders = sellOrdersres;
+
+            //             readAllDB("btc_balances", function(btc_balancesres) {
+            //                 sharable_data.btc_balances = btc_balancesres;
+
+            //                 readAllDB("cash_balances", function(cash_balancesres) {
+            //                     sharable_data.cash_balances = cash_balancesres;
+
+            //                     readAllDB("deposit", function(depositres) {
+            //                         sharable_data.deposit = depositres;
+
+            //                         readAllDB("withdraw_cash", function(withdraw_cashres) {
+            //                             sharable_data.withdraw_cash = withdraw_cashres;
+            //                             return callback(sharable_data);
+            //                         });
+            //                     });
+            //                 });
+            //             });
+            //         });
+            //     });
+                
+            // },
 
             claim_deposit_withdraw: function(claim_id) {
                 if (typeof claim_id=="string" && claim_id.length>0) {
@@ -11166,7 +11177,7 @@
                                             if (tableStoreName=='trader_flo_address' || !su_db_data.hasOwnProperty(tableStoreName)) continue;
 
                                             try {
-                                                removeAllinDB(tableStoreName, function(res) {
+                                                removeAllinDB(tableStoreName).then(function(res) {
                                                     if (res!==false) {
                                                         var obj = su_db_data[res]; 
                                                         if (obj.length>0) {
@@ -11775,23 +11786,15 @@
 
         }
 
-        function readDB(tablename, id, callback) {
-            var transaction = db.transaction([tablename]);
-            var objectStore = transaction.objectStore(tablename);
-            var request = objectStore.get(id);
-
-            request.onerror = function (event) {
-                console.error("Unable to retrieve data from database!");
-            };
-
-            request.onsuccess = function (event) {
-                if (request.result) {
-                    callback(request.result);
-                } else {
-                    console.info("Data couldn't be found in your database!");
-                    callback();
-                }
-            };
+        async function readDB(tablename, key) {
+            try {
+                let tx = db.transaction(tablename, 'readonly')
+                let store = tx.objectStore(tablename)
+                let promise = await store.get(key)
+                return promise;
+            } catch (error) {
+                return new Error(error);
+            }
         }
 
         function readDBbyIndex(tablename, index, indexValue, callback) {
@@ -11800,6 +11803,7 @@
             let response = [];
             objectStore.openCursor().onerror = function (event) {
                 console.error("Error fetching data");
+                return new Error(event);
             };
             objectStore.openCursor().onsuccess = function (event) {
                 let cursor = event.target.result;
@@ -11814,105 +11818,78 @@
             };
         }
 
-        function readAllDB(tablename, callback) {
-            var objectStore = db.transaction(tablename).objectStore(tablename);
-            let response = [];
-            objectStore.openCursor().onerror = function (event) {
-                console.error("Error fetching data");
-            };
-            objectStore.openCursor().onsuccess = function (event) {
-                let cursor = event.target.result;
-                if (cursor) {
-                    response.push(cursor.value);
-                    cursor.continue();
-                } else {
-                    callback(response);
-                }
-            };
+        async function readAllDB(tablename) {
+            let tx = db.transaction(tablename, 'readonly')
+            let store = tx.objectStore(tablename)
+            let allSavedItems = await store.getAll()
+            return allSavedItems;
         }
 
-        function addDB(tablename, dbObject) {
-            var request = db.transaction([tablename], "readwrite")
-                .objectStore(tablename)
-                .add(dbObject);
-
-            request.onsuccess = function (event) {
-                console.info("Data has been added to your database.");
-            };
-
-            request.onerror = function (event) {
-                console.log(event);
-                //console.error("Unable to add data\r\Data aready exists in your database! ");
+        async function addDB(tablename, dbObject) {
+            try {
+                var request = db.transaction([tablename], "readwrite")
+                let store = request.objectStore(tablename)
+                await store.add(dbObject);
+                await request.complete;
+                return dbObject;
+            } catch (error) {
+                return new Error(error);
             }
         }
 
-        function updateinDB(tablename, Obj, key) {
-
-            var request = db.transaction([tablename], "readwrite")
-                .objectStore(tablename)
-                .put(Obj);
-
-            request.onsuccess = function (event) {
-                console.info("Data has been updated to your database.");
-            };
-
-            request.onerror = function (event) {
-                console.error(event);
-                //alert("Failed to update data in your database! ");
+        async function updateinDB(tablename, Obj, key) {
+            try {
+                var request = db.transaction([tablename], "readwrite")
+                let store = request.objectStore(tablename)
+                await store.put(Obj);
+                await request.complete;
+                return Obj;
+            } catch (error) {
+                return new Error(error);
             }
         }
 
-        function removeinDB(tablename, id) {
-            var request = db.transaction([tablename], "readwrite")
-                .objectStore(tablename)
-                .delete(id);
-
-            request.onsuccess = function (event) {
-                console.info("Data entry has been removed from your database.");
-            };
-
-            request.onerror = function (event) {
-                console.error(event);
+        async function removeinDB(tablename, id) {
+            try {
+                var request = db.transaction([tablename], "readwrite")
+                let store = request.objectStore(tablename)
+                await store.delete(id);
+                await request.complete;
+                return id;
+            } catch (error) {
+                return new Error(error);
             }
         }
 
         function removeByIndex(tablename, indexName, indexValue, callback) {
             var request = db.transaction([tablename], "readwrite")
                 .objectStore(tablename);
-            var index       = request.index(indexName);
-            var request     = index.openCursor(IDBKeyRange.only(indexValue));
+            var index = request.index(indexName);
+            var request = index.openCursor(IDBKeyRange.only(indexValue));
             request.onsuccess = function() {
-            var cursor = request.result;
-
+                var cursor = request.result;
                 if (cursor) {
                     cursor.delete();
                     cursor.continue();
                 }
             };
-        }
-
-        function removeAllinDB(tablename, callback) {
-            var request = db.transaction([tablename], "readwrite")
-            var objectStore = request.objectStore(tablename);
-            var objectStoreRequest = objectStore.clear();
-            objectStoreRequest.onsuccess = function (event) {
-                console.info("All the data entry has been removed from your database "+tablename);
-                callback(tablename);
-                //callback(true);
-            };
-
-            objectStoreRequest.onerror = function (event) {
-                console.error(event);
-                callback(false);
+            request.onerror = function(e) {
+                return new Error(e);
             }
         }
-    </script>
 
-    <!-- Encryption object -->
-    <script>
-        const Encrypter = localbitcoinplusplus.encryption = {
-
-        };
+        async function removeAllinDB(tablename) {
+            try {
+                var request = db.transaction([tablename], "readwrite")
+                var objectStore = request.objectStore(tablename);
+                var objectStoreRequest = await objectStore.clear();
+                await request.complete;
+                console.info("All the data entry has been removed from your database "+tablename);
+                return tablename;
+            } catch (error) {
+                return new Error(error);
+            }
+        }
     </script>
 
     <!-- Initialization of objects -->
