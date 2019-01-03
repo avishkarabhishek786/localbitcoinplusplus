@@ -9156,35 +9156,6 @@
                 ]);
                 return promises;
             },
-            // get_sharable_db_data: function(callback) {
-            //     let sharable_data = {};
-
-            //     readAllDB("buyOrders", function(buyOrdersres) {
-            //         sharable_data.buyOrders = buyOrdersres;
-
-            //         readAllDB("sellOrders", function(sellOrdersres) {
-            //             sharable_data.sellOrders = sellOrdersres;
-
-            //             readAllDB("btc_balances", function(btc_balancesres) {
-            //                 sharable_data.btc_balances = btc_balancesres;
-
-            //                 readAllDB("cash_balances", function(cash_balancesres) {
-            //                     sharable_data.cash_balances = cash_balancesres;
-
-            //                     readAllDB("deposit", function(depositres) {
-            //                         sharable_data.deposit = depositres;
-
-            //                         readAllDB("withdraw_cash", function(withdraw_cashres) {
-            //                             sharable_data.withdraw_cash = withdraw_cashres;
-            //                             return callback(sharable_data);
-            //                         });
-            //                     });
-            //                 });
-            //             });
-            //         });
-            //     });
-                
-            // },
 
             claim_deposit_withdraw: function(claim_id) {
                 if (typeof claim_id=="string" && claim_id.length>0) {
@@ -9367,8 +9338,8 @@
                 return my_pvt_key;
             },
             getUserPublicKey: function(flo_address, callback) {
-                readDB('userPublicData', flo_address, function(res) {
-                    if (typeof res=="object") {
+                readDB('userPublicData', flo_address).then(function(res) {
+                    if (typeof res=="object" && typeof res.trader_flo_pubKey=="string") {
                         return callback(res.trader_flo_pubKey); 
                     }
                 });
@@ -9421,23 +9392,26 @@
 
                     /** CHECK HERE IF USER IS INDULGED IN ANY MORE TRADE. 
                         IF TRUE RETURN ERROR */
-                    // readAllDB("deposit", function(res) {
-                    //     if (typeof res == "object" && res.length>0) {
-                    //         let canUserTrade = res.map(function(user) {
-                    //             return respective_trader_id == user.trader_flo_address;
-                    //         });
-                    //         if (canUserTrade.includes(true)) {
-                    //             request.response = `Trader id ${respective_trader_id} is not clear for trade currently.
-                    //             You must finish your previous pending orders to qualify again to trade.`;
-                    //             return false;
-                    //         }
-                    //     }
-                    // });
+                    readAllDB("deposit").then(function(response) {
+                        let res = response.result;
+                        if (typeof res == "object" && res.length>0) {
+                            let canUserTrade = res.map(function(user) {
+                                return respective_trader_id == user.trader_flo_address;
+                            });
+                            if (canUserTrade.includes(true)) {
+                                request.response = `Trader id ${respective_trader_id} is not clear for trade currently.
+                                You must finish your previous pending orders to qualify again to trade.`;
+                                return false;
+                            }
+                        }
+                    });
 
                     // Check if user id is in deposit or withdraw. If true prevent him from  trading
                     try {
-                        readAllDB('withdraw_cash', function(res) {
-                            let check_deposit_withdraw_id_array = res.filter(f=>f.status===2)
+                        readAllDB('withdraw_cash').then(function(respnse) {
+                            let res = response.result;
+                            if (typeof res=="object") {
+                                let check_deposit_withdraw_id_array = res.filter(f=>f.status===2)
                                 .map(m=>{
                                     if (m.trader_flo_address==respective_trader_id||m.deposit_withdraw_id_array==respective_trader_id) {
                                         let server_msg = `Trader id ${respective_trader_id} is not clear for trade currently.
@@ -9450,7 +9424,8 @@
                                         doSend(server_response);
                                         throw new Error("User has not finished previous pending actions.");
                                     }
-                                });
+                                });   
+                            }
                         });
                     } catch (error) {
                         throw new Error(error);
@@ -9570,12 +9545,13 @@
                                             throw new Error('Failed to determine Super node signing key.');
                                         }
 
-                                        readDB("localbitcoinUser", "00-01", function (su_data) {
+                                        readDB("localbitcoinUser", "00-01").then(function (su_data) {
                                             if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey ==
                                                 "string" &&
                                                 su_data.myLocalFLOPublicKey.length > 0 &&
                                                 localbitcoinplusplus.master_configurations.supernodesPubKeys
                                                 .includes(su_data.myLocalFLOPublicKey)) {
+                                                    
                                                 let receivedTradeInfoHash = Crypto.SHA256(JSON.stringify(
                                                     receivedTradeInfo));
 
@@ -9680,7 +9656,7 @@
                                         params.status = 1;
                                         let receivedTradeInfo = { ...params };
 
-                                        readDB("localbitcoinUser", "00-01", function (su_data) {
+                                        readDB("localbitcoinUser", "00-01").then(function (su_data) {
                                             if (typeof su_data == "object" && typeof su_data.myLocalFLOPublicKey ==
                                                 "string" &&
                                                 su_data.myLocalFLOPublicKey.length > 0 &&
@@ -9701,7 +9677,7 @@
                                                 // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NO ONE IS WITHDRAWING
                                                 try {
                                                     addDB("deposit", receivedTradeInfo);
-                                                    readDBbyIndex("withdraw_cash", "status", 1,
+                                                    readDBbyIndex("withdraw_cash", "status", 1).then(
                                                         function (
                                                             withdrawers_list) {
                                                             if (typeof withdrawers_list ==
@@ -9822,7 +9798,7 @@
                                     params.status = 1;
                                     if (params.product == "BTC") {
                                         // Check how much Bitcoins the user can withdraw
-                                        readDB("btc_balances", params.trader_flo_address, function (
+                                        readDB("btc_balances", params.trader_flo_address).then(function (
                                             btc_balance_res) {
                                             if (typeof btc_balance_res == "object" && typeof btc_balance_res
                                                 .trader_flo_address == "string" &&
@@ -9849,7 +9825,8 @@
                                                     let receiverBTCAddress = params.receivinAddress
                                                         .trim();
 
-                                                    readAllDB("deposit", function (deposit_list) {
+                                                    readAllDB("deposit").then(function (deposit_list_res) {
+                                                        let deposit_list = deposit_list_res.result;
                                                         if (typeof deposit_list == "object" &&
                                                             deposit_list.length > 0) {
                                                             deposit_list = deposit_list.filter(
@@ -9889,7 +9866,7 @@
                       
                                                             // doSend btc_private_key_shamirs_id from system_btc_reserves_private_keys
                                                             valid_btc_list.map(vbl=>{
-                                                                readDBbyIndex('system_btc_reserves_private_keys', 'btc_address', vbl.deposited_btc_address, function(res) {
+                                                                readDBbyIndex('system_btc_reserves_private_keys', 'btc_address', vbl.deposited_btc_address).then(function(res) {
                                                                     let retrieve_pvtkey_req_id = res[0].id;
                                                                     res[0].btc_private_key_shamirs_id.map(bpks=>{
                                                                         let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
@@ -9931,7 +9908,7 @@
                                           AND RECEIVER HAS CONFIRMED WITHDRAW*/
 
                                         // Check how much Cash user can withdraw
-                                        readDB("cash_balances", params.trader_flo_address, function (
+                                        readDB("cash_balances", params.trader_flo_address).then(function (
                                             cash_balances_res) {
                                             if (typeof cash_balances_res == "object" && typeof cash_balances_res
                                                 .trader_flo_address == "string" &&
@@ -9954,7 +9931,7 @@
                                                         status: 1 // withdraw request called
                                                     }
 
-                                                    readDB("localbitcoinUser", "00-01", function (
+                                                    readDB("localbitcoinUser", "00-01").then(function (
                                                         su_data) {
                                                         if (typeof su_data == "object" &&
                                                             typeof su_data.myLocalFLOPublicKey ==
@@ -10045,9 +10022,9 @@
                                     if(typeof pkChunks.private_key_chunk !== "undefined") return pkChunks.private_key_chunk.privateKeyChunks;
                                 }).filter(val => val !== undefined);
 
-                                readDB('withdraw_btc', withdraw_id, function(withdraw_res) {
+                                readDB('withdraw_btc', withdraw_id).then(function(withdraw_res) {
                                     if (typeof withdraw_res == "object") {
-                                        readDB('system_btc_reserves_private_keys', retrieve_pvtkey_req_id, function(btc_reserves) {
+                                        readDB('system_btc_reserves_private_keys', retrieve_pvtkey_req_id).then(function(btc_reserves) {
                                             if (typeof btc_reserves == "object") {
                                                 let transaction_key = btc_reserves.supernode_transaction_key;
                                                 if (transaction_key.length>0) {
@@ -10073,7 +10050,7 @@
 
 
 
-                                                        readDBbyIndex('deposit', 'btc_address', withdraw_res.utxo_addr, function(deposit_arr) {
+                                                        readDBbyIndex('deposit', 'btc_address', withdraw_res.utxo_addr).then(function(deposit_arr) {
                                                             if (typeof deposit_arr=="object") {
                                                                 let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(withdraw_res.receiverBTCEquivalentInCash);
                                                                 eqBTC = parseFloat(eqBTC);
@@ -10266,7 +10243,7 @@
                 }
 
                 //Check buyer's INR balance
-                readDB("cash_balances", params.trader_flo_address, function (res) {
+                readDB("cash_balances", params.trader_flo_address).then(function (res) {
                     if (typeof res !== "undefined" && typeof res.cash_balance == "number" && !isNaN(res.cash_balance)) {
                         let buyer_cash_balance = parseFloat(res.cash_balance);
                         let buy_price_btc = parseFloat(params.buy_price);
@@ -10282,7 +10259,7 @@
                             let res_btc;
 
                             // supernode data query
-                            readDB('localbitcoinUser', '00-01', function (user_data) {
+                            readDB('localbitcoinUser', '00-01').then(function (user_data) {
                                 if (typeof user_data == "object" && typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
                                     "string" && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length >
                                     0) {
@@ -10331,7 +10308,7 @@
                 }
 
                 // Check BTC balance of the seller
-                readDB("btc_balances", params.trader_flo_address, function (res) {
+                readDB("btc_balances", params.trader_flo_address).then(function (res) {
                     if (typeof res !== "undefined" && typeof res.trader_flo_address == "string" && res.trader_flo_address
                         .length > 0 &&
                         typeof res.btc_balance == "number" && res.btc_balance > 0) {
@@ -10347,7 +10324,7 @@
                             }
 
                             // supernode data query
-                            readDB('localbitcoinUser', '00-01', function (user_data) {
+                            readDB('localbitcoinUser', '00-01').then(function (user_data) {
                                 if (typeof user_data == "object" && typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
                                     "string" && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length > 0) {
 
@@ -10537,9 +10514,11 @@
             /*Finds the best buy sell id match for a trade*/
             createTradePipes() {
                 try {
-                    readAllDB("sellOrders", function (sellOrdersList) {
+                    readAllDB("sellOrders").then(function (sellOrdersListRes) {
+                        let sellOrdersList = sellOrdersListRes.result;
                         if (sellOrdersList.length > 0) {
-                            readAllDB("buyOrders", function (buyOrdersList) {
+                            readAllDB("buyOrders").then(function (buyOrdersListRes) {
+                                let buyOrdersList = buyOrdersListRes.result;
                                 if (buyOrdersList.length > 0) {
                                     localbitcoinplusplus.master_configurations.validTradingAmount.map(
                                         li => {
@@ -10596,7 +10575,7 @@
                     buyPipeObj.buy_price == sellPipeObj.buy_price
                 ) {
                     // Check buyer's cash balance
-                    readDB("cash_balances", buyPipeObj.trader_flo_address, function (buyPipeCashRes) {
+                    readDB("cash_balances", buyPipeObj.trader_flo_address).then(function (buyPipeCashRes) {
                         if (typeof buyPipeCashRes == "object" && typeof buyPipeCashRes.cash_balance ==
                             "number") {
                             let buyer_cash_balance = parseFloat(buyPipeCashRes.cash_balance);
@@ -10613,7 +10592,7 @@
                             }
 
                             // Check seller's BTC balance
-                            readDB("btc_balances", sellPipeObj.trader_flo_address, function (sellPipeBTCRes) {
+                            readDB("btc_balances", sellPipeObj.trader_flo_address).then(function (sellPipeBTCRes) {
                                 if (typeof sellPipeBTCRes == "object" && typeof sellPipeBTCRes.btc_balance ==
                                     "number") {
                                     let seller_btc_balance = parseFloat(sellPipeBTCRes.btc_balance)
@@ -10630,7 +10609,7 @@
 
                                         // Increase buyer's BTC balance
                                         let buyerBTCResponseObject;
-                                        readDB("btc_balances", buyPipeObj.trader_flo_address,
+                                        readDB("btc_balances", buyPipeObj.trader_flo_address).then(
                                             function (buyPipeBTCRes) {
                                                 if (typeof buyPipeBTCRes == "object" && typeof buyPipeBTCRes
                                                     .btc_balance == "number") {
@@ -10657,7 +10636,7 @@
 
                                                 // Increase seller's Cash balance
                                                 let sellerCashResponseObject;
-                                                readDB("cash_balances", sellPipeObj.trader_flo_address,
+                                                readDB("cash_balances", sellPipeObj.trader_flo_address).then(
                                                     function (sellPipeCashRes) {
                                                         if (typeof sellPipeCashRes ==
                                                             "object" && typeof sellPipeCashRes
@@ -10689,7 +10668,7 @@
                                                         }
 
                                                         // supernode data query
-                                                        readDB('localbitcoinUser', '00-01',
+                                                        readDB('localbitcoinUser', '00-01').then(
                                                             function (user_data) {
                                                                 if (typeof user_data ==
                                                                     "object" && typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
@@ -11105,7 +11084,7 @@
                                     let received_resp = res_obj.params[0];
                                     try {
                                         if (received_resp.trader_flo_id.length>0 && received_resp.server_msg.length>0) {
-                                            readDB("localbitcoinUser", "00-01", function(res) {
+                                            readDB("localbitcoinUser", "00-01").then(function(res) {
                                                 if (typeof res=="object" && res.myLocalFLOAddress.length>0) {
                                                     if (res.myLocalFLOAddress===received_resp.trader_flo_id) {
                                                         writeToScreen(received_resp.server_msg);
@@ -11216,7 +11195,7 @@
                                         if (typeof resp.withdrawer_data=="object") {
                                             updateinDB("withdraw_cash", resp.withdrawer_data, resp.withdrawer_data.trader_flo_address);
                                         }
-                                        readDB("localbitcoinUser", "00-01", function (user) {
+                                        readDB("localbitcoinUser", "00-01").then(function (user) {
                                             if (typeof user == "object" && user.myLocalFLOAddress == resp.data.trader_flo_address) {
                                                 let counterTraderAccountAddress =
                                                     `<p><strong>Please pay the amount to following address:</strong></p>
@@ -11294,7 +11273,7 @@
                                 break;
                             case "send_back_shamirs_secret_supernode_pvtkey":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val, function(res) {
+                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function(res) {
                                         let send_pvtkey_req = localbitcoinplusplus.rpc.prototype
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_supernode_pvtkey",
@@ -11318,9 +11297,7 @@
                                 break;
                             case "send_back_shamirs_secret_btc_pvtkey":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val, function(res) {
-                                        console.log(res);
-                                        
+                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function(res) {
                                         let send_pvtkey_req = localbitcoinplusplus.rpc.prototype
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_btc_pvtkey",
@@ -11374,7 +11351,7 @@
                                         user_claim_request.sign, user_claim_request.userPubKey)) {
                                         //If the request is valid, find out if the requester is depositor or withdrawer
                                         
-                                        readDB("withdraw_cash", withdraw_order_id, function(withdraw_data) {
+                                        readDB("withdraw_cash", withdraw_order_id).then(function(withdraw_data) {
                                             if (typeof withdraw_data=="object") {
                                                 if (withdraw_data.depositor_flo_id==user_id) {
                                                     // Depositor claimed to deposit the cash
@@ -11397,7 +11374,7 @@
                                                     doSend(update_withdraw_cash_obj);
                                                 } else if (withdraw_data.trader_flo_address==user_id) {
                                                     // Withdrawer confirmed the payment
-                                                    readDBbyIndex('cash_balances', 'trader_flo_address', withdraw_data.depositor_flo_id, function(depositor_cash_data) {
+                                                    readDBbyIndex('cash_balances', 'trader_flo_address', withdraw_data.depositor_flo_id).then(function(depositor_cash_data) {
                                                         if (typeof depositor_cash_data=="object") {
                                                             if (depositor_cash_data.length==0) {
                                                                 depositor_cash_data = {cash_balance:0, trader_flo_address:withdraw_data.depositor_flo_id};
@@ -11405,7 +11382,7 @@
                                                             }
                                                             depositor_cash_data.cash_balance += parseFloat(withdraw_data.withdraw_amount);
                                                             updateinDB('cash_balances', depositor_cash_data);
-                                                            removeByIndex('deposit', 'trader_flo_address', depositor_cash_data.trader_flo_address, function() {});
+                                                            removeByIndex('deposit', 'trader_flo_address', depositor_cash_data.trader_flo_address);
                                                             removeinDB('withdraw_cash', withdraw_data.id);
 
                                                             let update_cash_balance_obj = {
@@ -11469,7 +11446,7 @@
 
                                 if ((update_cash_balance_obj_res_hash==withdraw_success_response.hash) && update_cash_balance_obj_res_verification==true) {
                                     updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
-                                    removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data.trader_flo_address, function() {});
+                                    removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data.trader_flo_address);
                                     removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
                                     return true;
                                 }
@@ -11786,43 +11763,66 @@
 
         }
 
-        async function readDB(tablename, key) {
-            try {
-                let tx = db.transaction(tablename, 'readonly')
-                let store = tx.objectStore(tablename)
-                let promise = await store.get(key)
-                return promise;
-            } catch (error) {
-                return new Error(error);
-            }
-        }
+        function readDB(tablename, id) {
+            return new Promise((resolve, reject)=>{
+                var transaction = db.transaction([tablename]);
+                var objectStore = transaction.objectStore(tablename);
+                var request = objectStore.get(id);
 
-        function readDBbyIndex(tablename, index, indexValue, callback) {
-            var transaction = db.transaction([tablename]);
-            var objectStore = transaction.objectStore(tablename);
-            let response = [];
-            objectStore.openCursor().onerror = function (event) {
-                console.error("Error fetching data");
-                return new Error(event);
-            };
-            objectStore.openCursor().onsuccess = function (event) {
-                let cursor = event.target.result;
-                if (cursor) {
-                    if (cursor.value[index] == indexValue) {
-                        response.push(cursor.value);
+                request.onerror = function (event) {
+                    reject("Unable to retrieve data from database!");
+                };
+
+                request.onsuccess = function (event) {
+                    if (request.result) {
+                        resolve(request.result);
+                    } else {
+                        reject("Data couldn't be found in your database!");
                     }
-                    cursor.continue();
-                } else {
-                    callback(response);
-                }
-            };
+                };
+            });
         }
 
-        async function readAllDB(tablename) {
-            let tx = db.transaction(tablename, 'readonly')
-            let store = tx.objectStore(tablename)
-            let allSavedItems = await store.getAll()
-            return allSavedItems;
+        function readDBbyIndex(tablename, index, indexValue) {
+            return new Promise((resolve, reject)=>{
+                var transaction = db.transaction([tablename]);
+                var objectStore = transaction.objectStore(tablename);
+                let response = [];
+                objectStore.openCursor().onerror = function (event) {
+                    console.error("Error fetching data");
+                    reject(event);
+                };
+                objectStore.openCursor().onsuccess = function (event) {
+                    let cursor = event.target.result;
+                    if (cursor) {
+                        if (cursor.value[index] == indexValue) {
+                            response.push(cursor.value);
+                        }
+                        cursor.continue();
+                    } else {
+                        resolve(response);
+                    }
+                };
+            });
+        }
+
+        function readAllDB(tablename) {
+            return new Promise((resolve, reject)=>{
+                var objectStore = db.transaction(tablename).objectStore(tablename);
+                let response = [];
+                objectStore.openCursor().onerror = function (event) {
+                    reject("Error fetching data");
+                };
+                objectStore.openCursor().onsuccess = function (event) {
+                    let cursor = event.target.result;
+                    if (cursor) {
+                        response.push(cursor.value);
+                        cursor.continue();
+                    } else {
+                        resolve(response);
+                    }
+                };
+            });
         }
 
         async function addDB(tablename, dbObject) {
@@ -11861,21 +11861,25 @@
             }
         }
 
-        function removeByIndex(tablename, indexName, indexValue, callback) {
-            var request = db.transaction([tablename], "readwrite")
+        function removeByIndex(tablename, indexName, indexValue) {
+            return new Promise((resolve, reject)=>{
+                var request = db.transaction([tablename], "readwrite")
                 .objectStore(tablename);
-            var index = request.index(indexName);
-            var request = index.openCursor(IDBKeyRange.only(indexValue));
-            request.onsuccess = function() {
-                var cursor = request.result;
-                if (cursor) {
-                    cursor.delete();
-                    cursor.continue();
+                var index = request.index(indexName);
+                var request = index.openCursor(IDBKeyRange.only(indexValue));
+                request.onsuccess = function() {
+                    var cursor = request.result;
+                    if (cursor) {
+                        cursor.delete();
+                        cursor.continue();
+                    } else {
+                        resolve(true);
+                    }
+                };
+                request.onerror = function(e) {
+                    reject(e);
                 }
-            };
-            request.onerror = function(e) {
-                return new Error(e);
-            }
+            })
         }
 
         async function removeAllinDB(tablename) {
@@ -11926,21 +11930,21 @@
             ask_flo_addr_btn.addEventListener('click', function () {
                 let ask_flo_addr = document.getElementById('ask_flo_addr');
                 let ask_flo_addr_val = ask_flo_addr.value.trim();
-
+    
                 if (ask_flo_addr_val == null || typeof ask_flo_addr_val == undefined || ask_flo_addr_val ==
                     "") {
                     throw new Error('Empty or invalid FLO address.');
                 }
-
+    
                 try {
-                    readDB("localbitcoinUser", "00-01", function (idbData) {
+                    readDB("localbitcoinUser", "00-01").then(function (idbData) {
                         if (typeof idbData.myLocalFLOPublicKey == undefined || idbData.myLocalFLOPublicKey
                             .trim() == '') {
                             let user_pvt_key = prompt("Please Enter your private key");
                             if (user_pvt_key.trim() !== "") {
-
+    
                                 let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
-
+    
                                 if (typeof newKeys == 'object' && typeof newKeys.address !==
                                     undefined) {
                                     localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
@@ -11949,12 +11953,12 @@
                                 }
                             }   
                         }
-
+    
                         // Declare the user flo address
                         const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
                         const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
-
-                        readDB('userPublicData', MY_LOCAL_FLO_ADDRESS, function(pubic_data_response) {
+    
+                        readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function(pubic_data_response) {
                             if (typeof pubic_data_response !== "object") {
                                 let user_public_data_object = {
                                     trader_flo_address: MY_LOCAL_FLO_ADDRESS,
@@ -11970,42 +11974,41 @@
                                 doSend(add_user_public_data_req);
                             }
                         });
-
+    
                         // rebuild private key
                         let supernode_transaction_key_arr = [];
-                        //if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
-                            readAllDB("my_supernode_private_key_chunks", function(chunks) {
-                                if (typeof chunks == "object" && chunks.length>0) {
-                                    let txKey = chunks.map(chunk=>{
-                                        let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
-                                            .send_rpc
-                                            .call(this, "send_back_shamirs_secret_supernode_pvtkey",
-                                            {chunk_val:chunk.id});
-                                        doSend(retrieve_pvtkey_req);
-                                        supernode_transaction_key_arr.push(chunk.supernode_transaction_key);
-                                        return supernode_transaction_key_arr;
-                                    }).filter(function (e, i, c) { 
-                                        return c.indexOf(e) === i;
-                                    });
-                                    const TRANSACTION_KEY = localbitcoinplusplus.wallets.supernode_transaction_key = txKey[0][0];
-                                }    
-                            });
-                        //}
-
+                        readAllDB("my_supernode_private_key_chunks").then(function(chunks_res) {
+                            let chunks = chunks_res.result;
+                            if (typeof chunks == "object" && chunks.length>0) {
+                                let txKey = chunks.map(chunk=>{
+                                    let retrieve_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                                        .send_rpc
+                                        .call(this, "send_back_shamirs_secret_supernode_pvtkey",
+                                        {chunk_val:chunk.id});
+                                    doSend(retrieve_pvtkey_req);
+                                    supernode_transaction_key_arr.push(chunk.supernode_transaction_key);
+                                    return supernode_transaction_key_arr;
+                                }).filter(function (e, i, c) { 
+                                    return c.indexOf(e) === i;
+                                });
+                                const TRANSACTION_KEY = localbitcoinplusplus.wallets.supernode_transaction_key = txKey[0][0];
+                            }    
+                        });
+    
                         localbitcoinplusplus.actions.sync_with_supernode(MY_LOCAL_FLO_ADDRESS);
-
+    
                         //localbitcoinuserdiv
                         document.getElementById("localbitcoinuserdiv").innerHTML = `<p>Address: ${idbData.myLocalFLOAddress}<p>`;
-
+    
                         /* Give user the facillity to trade */
                         var buyul = document.getElementById('buyul');
                         var sellul = document.getElementById('sellul');
-
+    
                         function getEventTarget(e) {
                             e = e || window.event; // for browsers compatibility
                             return e.target || e.srcElement;
                         }
-
+    
                         buyul.onclick = function (event) {
                             let target = getEventTarget(event);
                             let intAmount = parseFloat(target.innerHTML.match(/\d+/)[0]); // Amount of INR/BTC/whatever in integer
@@ -12019,7 +12022,7 @@
                                 "BTC", "INR", intAmount);
                             doSend(buytrade);
                         }
-
+    
                         sellul.onclick = function (event) {
                             let target = getEventTarget(event);
                             if (typeof idbData.myLocalFLOAddress == undefined || idbData.myLocalFLOAddress
@@ -12033,17 +12036,17 @@
                                 "BTC", "INR", intAmount);
                             doSend(selltrade);
                         }
-
+    
                         // Deposit / Withdraw asset
                         depositWithdrawAsset(idbData.myLocalFLOAddress);
                     });
-
+    
                 } catch (e) {
                     throw new Error(
                         "ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment."
                     );
                 }
-
+    
             });
         }
     </script>
@@ -12232,13 +12235,6 @@
             return Math.floor(Math.random(a, b) * multiple);
         }
 
-        //Function to check if user is currently involved in any operation
-        function isUserAlreadyTrading(usersFloAddress) {
-            let userCurrentBuyOrder = readAllDB("buyOrders", function (buyList) {
-                console.log(buyList);
-            });
-        }
-
         /*https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze*/
         function deepFreeze(object) {
             // Retrieve the property names defined on object
@@ -12295,7 +12291,7 @@
                             trader_deposits.status = 2;
                             updateinDB("deposit", trader_deposits, trader_deposits.trader_flo_address);
 
-                            readDBbyIndex('system_btc_reserves_private_keys', 'btc_address', trader_deposits.btc_address, function(reserve_res) {
+                            readDBbyIndex('system_btc_reserves_private_keys', 'btc_address', trader_deposits.btc_address).then(function(reserve_res) {
                                 if (typeof reserve_res=="object") {
                                     reserve_res.balance = balance;
                                     updateinDB('system_btc_reserves_private_keys', reserve_res, reserve_res.id);
@@ -12306,10 +12302,10 @@
                                 trader_flo_address: trader_deposits.trader_flo_address,
                                 btc_balance: balance
                             }
-                            readDB('btc_balances', trader_deposits.trader_flo_address, function (res_btc_balances) {
-                                if (typeof res_btc_balances == "object" && typeof res_btc_balances.btc_balance ==
-                                    "number") {
-                                    updatedBTCbalances.btc_balance += parseFloat(res_btc_balances.btc_balance);
+                            readDB('btc_balances', trader_deposits.trader_flo_address).then(function (res_btc_balances) {
+                                if (typeof res_btc_balances == "object" && typeof res_btc_balances.result ==
+                                    "object" && typeof res_btc_balances.result.btc_balance=="number") {
+                                    updatedBTCbalances.btc_balance += parseFloat(res_btc_balances.result.btc_balance);
                                 }
                                 // Update BTC balance of user in btc_balances
                                 updateinDB("btc_balances", updatedBTCbalances, trader_deposits.btc_address);
@@ -12323,7 +12319,7 @@
         }
 
         setInterval(function () {
-            readDBbyIndex("deposit", 'status', 1, function (res) {
+            readDBbyIndex("deposit", 'status', 1).then(function (res) {
                 res.map(function (deposit_trade) {
                     if (deposit_trade.product == "BTC") {
                         validateDepositedBTCBalance(deposit_trade);
