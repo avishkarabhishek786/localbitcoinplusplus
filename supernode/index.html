@@ -8612,47 +8612,47 @@
         
         
         
-        //ACTUAL CODE
-        //Initializations -- common for both sender and receiver
-        exportData = {};
+        // //ACTUAL CODE
+        // //Initializations -- common for both sender and receiver
+        // exportData = {};
         
-        (function(){
+        // (function(){
         
-        //Part 1: Sender side
+        // //Part 1: Sender side
         
-        var senderECKeyData = {};
-        var senderDerivedKey = {XValue:"",YValue:""};
-        var senderPublicKeyString = {};
+        // var senderECKeyData = {};
+        // var senderDerivedKey = {XValue:"",YValue:""};
+        // var senderPublicKeyString = {};
         
-        senderECKeyData.privateKey = ellipticCurveEncryption.senderRandom();
-        senderPublicKeyString = ellipticCurveEncryption.senderPublicString(senderECKeyData.privateKey);
+        // senderECKeyData.privateKey = ellipticCurveEncryption.senderRandom();
+        // senderPublicKeyString = ellipticCurveEncryption.senderPublicString(senderECKeyData.privateKey);
         
         
-        //First get the receivers public key string. Here we will assume some public key string
-        //In real life this will be done by receiver
+        // //First get the receivers public key string. Here we will assume some public key string
+        // //In real life this will be done by receiver
         
-        //Part 2: Receiver Side
+        // //Part 2: Receiver Side
         
-        var receiverDerivedKey = {XValue:"",YValue:""};
-        var receiverECKeyData = {};
-        var receiverPublicKeyString = {};
+        // var receiverDerivedKey = {XValue:"",YValue:""};
+        // var receiverECKeyData = {};
+        // var receiverPublicKeyString = {};
         
-        receiverECKeyData.privateKey = ellipticCurveEncryption.receiverRandom();
-        receiverPublicKeyString = ellipticCurveEncryption.receiverPublicString(receiverECKeyData.privateKey);
+        // receiverECKeyData.privateKey = ellipticCurveEncryption.receiverRandom();
+        // receiverPublicKeyString = ellipticCurveEncryption.receiverPublicString(receiverECKeyData.privateKey);
         
-        //Part 3: Back to sender side to derive shared key
-        senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(receiverPublicKeyString.XValuePublicString,receiverPublicKeyString.YValuePublicString,senderECKeyData.privateKey);
+        // //Part 3: Back to sender side to derive shared key
+        // senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(receiverPublicKeyString.XValuePublicString,receiverPublicKeyString.YValuePublicString,senderECKeyData.privateKey);
         
-        //Part 4: The receiver will use the same method to derive the shared key
-        receiverDerivedKey = ellipticCurveEncryption.receiverSharedKeyDerivation(senderPublicKeyString.XValuePublicString,senderPublicKeyString.YValuePublicString,receiverECKeyData.privateKey);
+        // //Part 4: The receiver will use the same method to derive the shared key
+        // receiverDerivedKey = ellipticCurveEncryption.receiverSharedKeyDerivation(senderPublicKeyString.XValuePublicString,senderPublicKeyString.YValuePublicString,receiverECKeyData.privateKey);
         
-        exportData.senderPublicKeyString = senderPublicKeyString;
-        exportData.receiverPublicKeyString = receiverPublicKeyString;
-        exportData.senderDerivedKey = senderDerivedKey;
-        exportData.receiverDerivedKey = receiverDerivedKey;
+        // exportData.senderPublicKeyString = senderPublicKeyString;
+        // exportData.receiverPublicKeyString = receiverPublicKeyString;
+        // exportData.senderDerivedKey = senderDerivedKey;
+        // exportData.receiverDerivedKey = receiverDerivedKey;
         
-        //Check on console. senderDerivedKey should be same as receiverDerivedKey
-        })();
+        // //Check on console. senderDerivedKey should be same as receiverDerivedKey
+        // })();
         
         </script>
 
@@ -9227,6 +9227,143 @@
         }
     </script>
 
+    <!-- Encryption -->
+    <script>
+        localbitcoinplusplus.encrypt = {
+
+            p: BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16),
+            
+            exponent1: function() {
+                return localbitcoinplusplus.encrypt.p.add(BigInteger.ONE).divide(BigInteger("4"))
+            },
+
+            calculateY: function(x) {
+                let p = localbitcoinplusplus.encrypt.p;
+                let exp = localbitcoinplusplus.encrypt.exponent1();
+                // x is x value of public key in BigInteger format without 02 or 03 or 04 prefix
+                return x.modPow(BigInteger("3"),p).add(BigInteger("7")).mod(p).modPow(exp,p)
+            },
+
+            // Insert a compressed public key
+            getUncompressedPublicKey: function(compressedPublicKey) {
+
+                const p = localbitcoinplusplus.encrypt.p;
+
+                // Fetch x from compressedPublicKey
+                let pubKeyBytes = Crypto.util.hexToBytes(compressedPublicKey);
+                const prefix = pubKeyBytes.shift()  // remove prefix
+                let prefix_modulus = prefix%2;
+                pubKeyBytes.unshift(0)  // add prefix 0
+                let x = new BigInteger(pubKeyBytes)
+                let xDecimalValue = x.toString()
+
+                // Fetch y
+                let y = localbitcoinplusplus.encrypt.calculateY(x);
+                let yDecimalValue = y.toString();
+                
+                // verify y value
+                let resultBigInt = y.mod(BigInteger("2"));
+
+                let check = resultBigInt.toString() % 2;
+                
+                if (prefix_modulus!==check) {
+                    yDecimalValue = y.negate().mod(p).toString();
+                }
+                
+                return {x:xDecimalValue, y:yDecimalValue};
+            },
+
+            getSenderPublicKeyString: function() {
+                privateKey = ellipticCurveEncryption.senderRandom();
+                senderPublicKeyString = ellipticCurveEncryption.senderPublicString(privateKey);
+                return {privateKey:privateKey, senderPublicKeyString:senderPublicKeyString}    
+            },
+
+            deriveSharedKeySender: function(receiverCompressedPublicKey, senderPrivateKey) {
+                try {
+                    let receiverPublicKeyString = localbitcoinplusplus.encrypt.getUncompressedPublicKey(receiverCompressedPublicKey);
+                    var senderDerivedKey = {XValue:"",YValue:""};
+                    senderDerivedKey = ellipticCurveEncryption.senderSharedKeyDerivation(receiverPublicKeyString.x,
+                    receiverPublicKeyString.y, senderPrivateKey);
+                    return senderDerivedKey;
+                } catch (error) {
+                    return new Error(error);
+                }
+            },
+
+            deriveReceiverSharedKey: function(senderPublicKeyString, receiverPrivateKey) {
+                return ellipticCurveEncryption.receiverSharedKeyDerivation(
+                    senderPublicKeyString.XValuePublicString,senderPublicKeyString.YValuePublicString, receiverPrivateKey);
+            },
+
+            getReceiverPublicKeyString: function(privateKey) {
+                return ellipticCurveEncryption.receiverPublicString(privateKey);
+            },
+
+            deriveSharedKeyReceiver: function(senderPublicKeyString, receiverPrivateKey) {
+                try {
+                    return ellipticCurveEncryption.receiverSharedKeyDerivation(senderPublicKeyString.XValuePublicString,
+                        senderPublicKeyString.YValuePublicString,receiverPrivateKey);
+                              
+                } catch (error) {
+                    return new Error(error);
+                }
+            },
+
+            encryptMessage: function(data, receiverCompressedPublicKey) {
+                var senderECKeyData = localbitcoinplusplus.encrypt.getSenderPublicKeyString();
+                var senderDerivedKey = {XValue:"",YValue:""};
+                var senderPublicKeyString = {};
+                senderDerivedKey = localbitcoinplusplus.encrypt.deriveSharedKeySender(receiverCompressedPublicKey, senderECKeyData.privateKey);
+                console.log("senderDerivedKey", senderDerivedKey);
+                let senderKey = senderDerivedKey.XValue+senderDerivedKey.YValue;
+                let secret = Crypto.AES.encrypt(data, senderKey);
+                return {secret:secret, senderPublicKeyString:senderECKeyData.senderPublicKeyString};
+            },
+
+            decryptMessage: function(secret, senderPublicKeyString) {
+                var receiverDerivedKey = {XValue:"",YValue:""};
+                var receiverECKeyData = {};
+
+                let myPrivateKey = localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY;
+                if (typeof myPrivateKey!=="string") throw new Error("No private key found.");
+                
+                let privateKey = localbitcoinplusplus.wallets.prototype.wifToDecimal(myPrivateKey, true);
+                if(typeof privateKey.privateKeyDecimal !== "string") throw new Error("Failed to detremine your private key.");
+                receiverECKeyData.privateKey = privateKey.privateKeyDecimal;
+
+                receiverDerivedKey = localbitcoinplusplus.encrypt.deriveReceiverSharedKey(senderPublicKeyString, receiverECKeyData.privateKey);
+                console.log("receiverDerivedKey", receiverDerivedKey);
+                
+                let receiverKey = receiverDerivedKey.XValue+receiverDerivedKey.YValue;                    
+                let decryptMsg = Crypto.AES.decrypt(secret, receiverKey);
+                return decryptMsg;
+            },
+
+            // This function is only useful when sender and receiver are both online.
+            // If receiver is not online he might never get the message
+            testMessageBroadcasting: function(message, flo_id) {
+                readDB('userPublicData', flo_id).then((res)=>{
+                    pubKey = res.trader_flo_pubKey;
+                    let foo = localbitcoinplusplus.encrypt.encryptMessage(message, pubKey);
+                    let bar = localbitcoinplusplus.rpc.prototype
+                        .send_rpc
+                        .call(this, "testMessageBroadcasting", foo);
+                    
+                    doSend(bar);
+                });
+            },
+
+            transmitMessageToMiddleMan: function(dataToBeSentToReceiver, receiverFloAddress) {
+                let bar = localbitcoinplusplus.rpc.prototype
+                    .send_rpc
+                    .call(this, "MessageForMiddleman", dataToBeSentToReceiver);
+                doSend(bar);
+            }
+
+        }
+    </script>
+
     <!-- Wallet Operations (Generate, Sign and Verify) -->
     <script>
         var wallets = localbitcoinplusplus.wallets = function (wallets) {};
@@ -9338,7 +9475,18 @@
                         return callback(res.trader_flo_pubKey); 
                     }
                 });
-            },              
+            },
+            wifToDecimal(pk_wif, isPubKeyCompressed=false) {
+                let pk = Bitcoin.Base58.decode(pk_wif)
+                pk.shift()
+                pk.splice(-4, 4)
+                //If the private key corresponded to a compressed public key, also drop the last byte (it should be 0x01).
+                if(isPubKeyCompressed==true) pk.pop()
+                pk.unshift(0)
+                privateKeyDecimal = BigInteger(pk).toString()
+                privateKeyHex = Crypto.util.bytesToHex(pk)
+                return {privateKeyDecimal:privateKeyDecimal, privateKeyHex:privateKeyHex}
+            }              
         }
     </script>
 
@@ -9425,9 +9573,8 @@
                         case "trade_buy":
 
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
-                                if (is_valid_request !== true) {
-                                    return false;
-                                }
+                                if (is_valid_request !== true) return false;
+                                
                                 request.response = localbitcoinplusplus.trade.prototype.trade_buy.call(this,
                                     ...request.params,
                                     function (supernode_signed_res) {
@@ -9507,7 +9654,7 @@
                                         }
                                         params.depositor_public_key = requester_public_key;
 
-                                                                            if (params.product == "BTC") {
+                                        if (params.product == "BTC") {
                                         /**************************************************************************
                                         // YOU HAVE TO PROVIDE BTC KEYS HERE. CHANGE IT LATER
                                         ****************************************************************************/
@@ -9768,10 +9915,8 @@
                         case "withdraw_request_method":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
 
-                                if (is_valid_request !== true) {
-                                    return false;
-                                }
-
+                                if (is_valid_request !== true) return false;
+                                
                                 if (typeof params.product !== "undefined" &&
                                     localbitcoinplusplus.master_configurations.validAssets.includes(params.product) &&
                                     typeof params.withdrawing_amount !== "undefined" &&
@@ -10108,8 +10253,6 @@
                             break;
                     }
                 }
-
-                //request.response = request.method(); // if successful
                 return request.toString(); // return to client
             },
 
@@ -10221,7 +10364,6 @@
 
                 for (var key in params) {
                     if (params.hasOwnProperty(key)) {
-                        //console.log(key + " -> " + params[key]);
                         if (typeof key == undefined || key.trim() == "" || key == null) {
                             throw new Error("Incomplete or invalid request!");
                         }
@@ -11493,6 +11635,24 @@
                                         JSON.stringify(res_obj));
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                             break;
+
+
+                            case "testMessageBroadcasting":
+                                console.log(res_obj);
+                                try {
+                                    let data = res_obj.params[0];
+                                    let msg = localbitcoinplusplus.encrypt.decryptMessage(data.secret, data.senderPublicKeyString);
+                                    console.log(msg);
+                                    
+                                } catch (error) {
+                                    console.error(error);
+                                    
+                                }
+                            break;
+
+                            case "MessageForMiddleman":
+                                console.log(res_obj);
+                            break;
                             
                             default:
                                 break;
@@ -11810,47 +11970,6 @@
                 };
             });
         }
-        // async function readAllDB(tablename) {
-        //     var objectStore = db.transaction(tablename).objectStore(tablename);
-        //         let response = [];
-
-        //         return new Promise((resolve, reject) => {
-        //             var open_cursor = objectStore.openCursor();
-        //             resolve(open_cursor);
-        //         }).then((result)=>{
-        //             result.onerror = function (event) {
-        //                 throw new Error("Error fetching data");
-        //             };
-        //             result.onsuccess = function (event) {
-        //                 let cursor = event.target.result;
-        //                 if (cursor) {
-        //                     response.push(cursor.value);
-        //                     cursor.continue();
-        //                 } else {
-        //                     return response;
-        //                 }
-        //             };
-        //         });
-           
-        // }
-        // function readAllDB(tablename) {
-        //     return new Promise((resolve, reject)=>{
-        //         var objectStore = db.transaction(tablename).objectStore(tablename);
-        //         let response = [];
-        //         objectStore.openCursor().onerror = function (event) {
-        //             reject("Error fetching data");
-        //         };
-        //         objectStore.openCursor().onsuccess = function (event) {
-        //             let cursor = event.target.result;
-        //             if (cursor) {
-        //                 response.push(cursor.value);
-        //                 cursor.continue();
-        //             } else {
-        //                 resolve(response);
-        //             }
-        //         };
-        //     });
-        // }
 
         async function addDB(tablename, dbObject) {
             try {
