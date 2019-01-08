@@ -9571,7 +9571,6 @@
 
                     switch (method) {
                         case "trade_buy":
-
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
                                 if (is_valid_request !== true) return false;
                                 
@@ -9910,7 +9909,6 @@
                                 }
 
                             });
-
                             break;
                         case "withdraw_request_method":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
@@ -11785,9 +11783,15 @@
             timestamp: null
         }
 
+        const d3js = {
+            version: null,
+            filehash: null,
+            content: null
+        }
+
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 3);
+        var request = window.indexedDB.open(DBName, 5);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -11798,6 +11802,7 @@
 
         request.onsuccess = function (event) {
             db = request.result;
+            runInitialDBOperations();
         };
 
         request.onupgradeneeded = function (event) {
@@ -11906,6 +11911,11 @@
                 });
                 objectStore.createIndex('trader_status', 'trader_status', {
                     unique: false
+                });
+            }
+            if (!db.objectStoreNames.contains('d3js')) {
+                var objectStore = db.createObjectStore("d3js", {
+                    keyPath: 'filehash'
                 });
             }
 
@@ -12070,6 +12080,22 @@
 
     <!-- Database operations -->
     <script>
+        // These DB functions run as soon as th page and indexed db loads
+        let runInitialDBOperations = function() {
+            try {
+                readDB('d3js', "c235778161d2408053efdc97fcab9094d44555eaa029e2046d1d454e8edbed0a").then(fileContent=>{
+                    if (typeof fileContent=="object" && typeof fileContent.content=="string") {
+                         var oScript = document.createElement("script");
+                         var oScriptText = document.createTextNode(fileContent.content);
+                         oScript.appendChild(oScriptText);
+                         document.body.appendChild(oScript);
+                    }
+                });
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
         // localbitcoinUser Databse
         const dataBaseOperations = function () {
             let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
@@ -12470,6 +12496,60 @@
             });
         }, 600000);
     </script>
+
+
+
+
+
+
+    <input type="file" id="files" name="file" /> Pick a JS file, and it will be attached to body: 
+    <span class="readBytesButtons">
+    <button>entire file</button>
+    </span>
+
+    <script>
+        function readBlob() {
+
+        var files = document.getElementById('files').files;
+        if (!files.length) {
+        alert('Please select a file!');
+        return;
+        }
+
+        var file = files[0];
+        var start = 0;
+        var stop = file.size - 1;
+
+        var reader = new FileReader();
+
+        // If we use onloadend, we need to check the readyState.
+        reader.onloadend = function(evt) {
+        if (evt.target.readyState == FileReader.DONE) { // DONE == 2
+            let data = evt.target.result;
+             let hash = Crypto.SHA256(data);
+            // let aes = Crypto.AES.encrypt(data, "secret");
+            // console.log("hash", hash);
+            // console.log("aes", aes);
+            addDB("d3js", {
+                content: data,
+                filehash: hash,
+                version: 2
+            });
+        };
+
+        };
+
+        var blob = file.slice(start, stop + 1);
+            reader.readAsBinaryString(blob);
+        }
+
+        document.querySelector('.readBytesButtons').addEventListener('click', function(evt) {
+            if (evt.target.tagName.toLowerCase() == 'button') {
+                readBlob();
+            }
+        }, false);
+    </script>
+
 </body>
 
 </html>
