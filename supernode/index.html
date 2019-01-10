@@ -9102,7 +9102,7 @@
                     RMAssets =
                         `validAssets=BTC,INR#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=022277F3236B42B478040E65974D2E6E93ACA7989370CAB051CFC3F9602B0B25EB,`;
+                        #!#supernodesPubKeys=029FDA7EA817F7A035F81C8A6B35AA53649690DF741E13C0B3DB99B06360F14385,#!#d3js=58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -9616,7 +9616,7 @@
                         case "sync_with_supernode":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
                                 if (is_valid_request === true && params.job=="SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length>0) {
-                                    const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "btc_balances", "cash_balances", "userPublicData", "supernode_private_key_chunks"];
+                                    const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "btc_balances", "cash_balances", "userPublicData"];
                                     localbitcoinplusplus.actions.get_sharable_db_data(tableArray).then(function(su_db_data) {
                                         if (typeof su_db_data == "object") {
                                             su_db_data.trader_flo_address = params.trader_flo_address;
@@ -9666,7 +9666,6 @@
                                         *****************************************************************************/
                                         params.id = helper_functions.unique_id();
                                         params.status = 1;
-                                        //params.btc_private_key = generate_btc_keys_for_requester.privateKeyWIF;
                                         params.btc_address = generate_btc_keys_for_requester.address;
 
                                         /***************************************************
@@ -11161,7 +11160,7 @@
         /* Websocket Code Starts here */
 
         //var wsUri = "ws://localhost:9000/";
-        var wsUri = "ws://ranchimall.duckdns.org:9000/";
+        var wsUri = "ws://ranchimall786.duckdns.org:9000/";
         var output;
 
         function init() {
@@ -11200,6 +11199,7 @@
             if (res_pos >= 0) {
                 var res = response.substr(res_pos);
                 try {
+                    
                     var res_obj = JSON.parse(res);
                     
                     if (typeof res_obj.method !== undefined) {
@@ -11791,7 +11791,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 5);
+        var request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -12083,12 +12083,14 @@
         // These DB functions run as soon as th page and indexed db loads
         let runInitialDBOperations = function() {
             try {
-                readDB('d3js', "c235778161d2408053efdc97fcab9094d44555eaa029e2046d1d454e8edbed0a").then(fileContent=>{
+                readDB('d3js', "58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3").then(fileContent=>{
                     if (typeof fileContent=="object" && typeof fileContent.content=="string") {
                          var oScript = document.createElement("script");
                          var oScriptText = document.createTextNode(fileContent.content);
                          oScript.appendChild(oScriptText);
                          document.body.appendChild(oScript);
+                    } else {
+                        console.warning("Failed to load d3.js");
                     }
                 });
             } catch (error) {
@@ -12210,6 +12212,10 @@
     
                         // Deposit / Withdraw asset
                         depositWithdrawAsset(idbData.myLocalFLOAddress);
+
+                        // Upload files to DB
+                        uploadFileToDB();
+
                     });
     
                 } catch (e) {
@@ -12435,6 +12441,61 @@
             }, []);
         } 
 
+        /* Function to load files to db */
+        function readBlob(version) {
+
+            var files = document.getElementById('upload_file_db').files;
+
+            if (!files.length) return('Please select a file!');
+
+            if (isNaN(version)) throw new Error('Please provide a valid version number for thhis file.');
+
+            var file = files[0];
+            var start = 0;
+            var stop = file.size - 1;
+
+            var reader = new FileReader();
+
+            // If we use onloadend, we need to check the readyState.
+            reader.onloadend = function(evt) {
+                if (evt.target.readyState == FileReader.DONE) { // DONE == 2
+                    let data = evt.target.result;
+                    let hash = Crypto.SHA256(data);
+                    addDB("d3js", {
+                        content: data,
+                        filehash: hash,
+                        version: version
+                    });
+                };
+            };
+
+            var blob = file.slice(start, stop + 1);
+            reader.readAsBinaryString(blob);
+        }
+
+        function uploadFileToDB() {
+
+            const fileUploadDiv = document.createElement('div');
+            const dbFile = document.createElement('input');
+            dbFile.setAttribute("type", "file"); 
+            dbFile.setAttribute("id", "upload_file_db");
+            const readBytesButtons = document.createElement("button");
+            readBytesButtons.setAttribute("id", "uploadFileButton");
+            readBytesButtons.innerHTML = "Upload File";
+
+            fileUploadDiv.appendChild(dbFile);
+            fileUploadDiv.appendChild(readBytesButtons);
+            document.body.appendChild(fileUploadDiv);
+            
+            document.querySelector('#uploadFileButton').addEventListener('click', function(evt) {
+                if (evt.target.tagName.toLowerCase() == 'button') {
+                    let version_num = prompt("Enter version number for this file.", 1);
+                    readBlob(version_num);
+                }
+            }, false);
+
+        }
+
         //Function to check current balance of a BTC address
         //trader_flo_address, BTCAddress, bitcoinToBePaid
         function validateDepositedBTCBalance(trader_deposits) {
@@ -12495,59 +12556,6 @@
                 });
             });
         }, 600000);
-    </script>
-
-
-
-
-
-
-    <input type="file" id="files" name="file" /> Pick a JS file, and it will be attached to body: 
-    <span class="readBytesButtons">
-    <button>entire file</button>
-    </span>
-
-    <script>
-        function readBlob() {
-
-        var files = document.getElementById('files').files;
-        if (!files.length) {
-        alert('Please select a file!');
-        return;
-        }
-
-        var file = files[0];
-        var start = 0;
-        var stop = file.size - 1;
-
-        var reader = new FileReader();
-
-        // If we use onloadend, we need to check the readyState.
-        reader.onloadend = function(evt) {
-        if (evt.target.readyState == FileReader.DONE) { // DONE == 2
-            let data = evt.target.result;
-             let hash = Crypto.SHA256(data);
-            // let aes = Crypto.AES.encrypt(data, "secret");
-            // console.log("hash", hash);
-            // console.log("aes", aes);
-            addDB("d3js", {
-                content: data,
-                filehash: hash,
-                version: 2
-            });
-        };
-
-        };
-
-        var blob = file.slice(start, stop + 1);
-            reader.readAsBinaryString(blob);
-        }
-
-        document.querySelector('.readBytesButtons').addEventListener('click', function(evt) {
-            if (evt.target.tagName.toLowerCase() == 'button') {
-                readBlob();
-            }
-        }, false);
     </script>
 
 </body>
