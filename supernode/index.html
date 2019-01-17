@@ -10534,39 +10534,50 @@
                 if (localbitcoinplusplus.master_configurations.validTradingAmount.includes(btc_buy_price)) {
                     if(!localbitcoinplusplus.master_configurations.tradableAsset2.includes(currency)) return false;
                     let current_btc_price = localbitcoinplusplus.trade.prototype.get_current_btc_price_in_fiat(currency);
-                    if (current_btc_price > 0) {
-                        return parseFloat(btc_buy_price / current_btc_price).toFixed(8);
+                    if (typeof current_btc_price=="object" && current_btc_price.rate > 0) {
+                        return parseFloat(btc_buy_price / current_btc_price.rate).toFixed(8);
                     }
                 }
-                return null;
+                throw new Error("Failed to calculate BTC equivalent of cash.");
             },
             get_current_btc_price_in_fiat(currency_code) {
-                return eval(`localbitcoinplusplus.trade.current_btc_price_in_${currency_code}`);
+                return localbitcoinplusplus.trade[`current_btc_price_in_${currency_code}`];
             },
-            set_current_btc_price_in_fiat(currency_code) {
-                let url = `https://api.coindesk.com/v1/bpi/currentprice/${currency_code}.json`;
-                helper_functions.ajaxGet(url, function (res) {
-                    if (typeof res == "string" && res.length > 0) {
-                        try {
-                            let res_object = JSON.parse(res);
-                            return Object.defineProperty(localbitcoinplusplus.trade,
-                                `current_btc_price_in_${currency_code}`, {
-                                    value: {rate:eval(`res_object.bpi.${currency_code}.rate_float`),
-                                            timestamp: + new Date()},
-                                    writable: false,
-                                    configurable: true,
-                                    enumerable: true
-                            });
-                        } catch (error) {
-                            console.error(error);
-                            return false;
-                        }
+            async resolve_current_btc_price_in_fiat(currency_code) {
+                let today = + new Date();
+                let last_update_of_fiat_price_obj = localbitcoinplusplus.trade.prototype.get_current_btc_price_in_fiat(currency_code); 
+                if(typeof last_update_of_fiat_price_obj!=="object"
+                  || (today-last_update_of_fiat_price_obj.timestamp>3600000)) {
+                    last_update_of_fiat_price_obj = await localbitcoinplusplus.trade.prototype.set_current_btc_price_in_fiat(currency_code);
+                    return last_update_of_fiat_price_obj; 
+                } else {
+                    return last_update_of_fiat_price_obj; 
+                }
+            },
+            async set_current_btc_price_in_fiat(currency_code) {
+                const url = `https://api.coindesk.com/v1/bpi/currentprice/${currency_code}.json`;
+                const res = await helper_functions.ajaxGet(url);
+                if (typeof res == "object" && typeof res.bpi =="object") {
+                    try {
+                        let new_price = res.bpi[`${currency_code}`].rate_float;
+                        await Object.defineProperty(localbitcoinplusplus.trade,
+                            `current_btc_price_in_${currency_code}`, {
+                                value: {rate:new_price,
+                                        timestamp: + new Date()},
+                                writable: true,
+                                configurable: false,
+                                enumerable: true
+                        });
+                        return localbitcoinplusplus.trade[`current_btc_price_in_${currency_code}`];
+                    } catch (error) {
+                        console.error(error);
+                        return false;
                     }
-                });
+                }
             },
             sendTransaction(utxo_addr, utxo_addr_wif, receiver_address, receiving_amount, receiving_amount_currency="USD", change_adress, callback) {
                 let url = `${localbitcoinplusplus.flocha}/api/addr/${utxo_addr}/utxo`;
-                helper_functions.ajaxGet(url, function (res) {
+                helper_functions.ajaxGet(url).then(res=>{
                     
                     if (res.length > 0) {
                         try {
@@ -10929,41 +10940,36 @@
     <script>
         let helper_functions = {
             // AJAX Get
-            ajaxGet: function (url, callback) {
+            ajaxGet: async function (url) {
                 try {
-                    var xhr = new XMLHttpRequest();
-                    xhr.open('GET', url);
-                    xhr.onload = function () {
-                        if (xhr.status === 200) {
-                            callback(xhr.responseText);
-                        } else {
-                            throw new Error(`Request to ${url} failed: ${xhr.status}`);
-                        }
-                    };
-                    xhr.send();
+                    //await the response of the fetch call
+                    let response = await fetch(url);
+                    //proceed once the first promise is resolved.
+                    let data = await response.json()
+                    //proceed only when the second promise is resolved
+                    return data;
                 } catch (error) {
                     throw new Error(error);
                 }
             },
 
             //AJAX Post
-            ajaxPost: function (url, data, callback) {
-                xhttp = new XMLHttpRequest();
-
-                xhttp.onreadystatechange = function() {
-                    if (this.readyState == 4 && this.status == 200) {
-                        console.log(this.responseText);
-                        callback(this.responseText);
-                    } else {
-                        callback(false);
-                        throw new Error(`Request to ${url} failed: ${xhttp.status}`);
-                    }
-                };
-                
-                xhttp.open('POST', url, true);
-                xhttp.setRequestHeader('Content-Type', 'application/json');
-                xhttp.send(JSON.stringify(data));
-            },
+            ajaxPost: function (url = ``, data = {}) {
+                return fetch(url, {
+                    method: "POST", // *GET, POST, PUT, DELETE, etc.
+                    mode: "cors", // no-cors, cors, *same-origin
+                    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+                    credentials: "same-origin", // include, *same-origin, omit
+                    headers: {
+                        "Content-Type": "application/json",
+                        // "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    redirect: "follow", // manual, *follow, error
+                    referrer: "no-referrer", // no-referrer, *client
+                    body: JSON.stringify(data), // body data type must match "Content-Type" header
+                })
+                .then(response => response.json()); // parses response to JSON
+            }, 
 
             // Create unique id
             unique_id: function () {
@@ -11216,7 +11222,7 @@
                                             });       
                                         }
                                     } catch (error) {
-                                        throw new Error('');
+                                        throw new Error(error);
                                     }
                                 }
                             break;
@@ -12553,7 +12559,7 @@
             try {
                 //let url = `https://blockchain.info/q/addressbalance/${BTCAddress}?confirmations=6`;
                 let url = `https://testnet.flocha.in/api/addr/${trader_deposits.btc_address}/balance`;
-                helper_functions.ajaxGet(url, function (balance) {
+                helper_functions.ajaxGet(url).then(balance=> {
                     if (!isNaN(balance) && parseFloat(balance) > 0) {
                         balance = parseFloat(balance);
 
