@@ -53,21 +53,21 @@
             <div id="preffered_fiat_div"></div>
         </div>
         
-
         <h5>Asset Box</h5>
         <div class="box">
             <div id="asset_box"></div>
         </div>
 
-        <h5>Sync</h5>
-        <div class="box">
-            <div id="syncNodes"></div>
-            <div id="datablocksdiv"></div>
-        </div>
-
         <h5>Buy--Sell</h5>
         <div class="box tradebox" id="tradebox"></div>
 
+        <h5>D3 file upload</h5>
+        <div class="box">
+            <div id="d3div"></div>
+        </div>
+
+        <hr>
+        <h5>Websocket Chat</h5>  
         <div id="output_div"></div>
 
     </div>
@@ -9490,7 +9490,51 @@
                 privateKeyDecimal = BigInteger(pk).toString()
                 privateKeyHex = Crypto.util.bytesToHex(pk)
                 return {privateKeyDecimal:privateKeyDecimal, privateKeyHex:privateKeyHex}
-            }              
+            },
+            distributeShamirsSecretShares: function(users_entered_private_key) {
+
+                if (users_entered_private_key.length<0) throw new Error("Private key is empty.");
+                
+                let publicKey_for_users_entered_private_key;
+                try {
+                    publicKey_for_users_entered_private_key = RM_WALLET.generateFloKeys(users_entered_private_key).pubKeyHex;
+                } catch (error) {
+                    throw new Error(error);
+                } 
+
+                let pvt_key_shamirs_secret_shares = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(users_entered_private_key, 10, 5);
+                if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
+                    
+                    // Add suprnode's own private keys to DB
+                    let supernode_transaction_key = Crypto.util.randomBytes(64);
+                    let pvt_key_shamirs_secret_shares_array = pvt_key_shamirs_secret_shares.map(chunks=>{
+                        let chunk_ids = Crypto.util.bytesToHex(Crypto.util.randomBytes(64));
+                        let chunk_array = {
+                            "id": chunk_ids,
+                            "privateKeyChunks": Crypto.AES.encrypt(chunks, supernode_transaction_key)  
+                        };
+                        try {
+                            addDB("my_supernode_private_key_chunks", {id:chunk_ids, supernode_transaction_key:supernode_transaction_key});
+                        } catch (error) {
+                            throw new Error(error);
+                        }
+                        return chunk_array;
+                    });
+
+                    // Send chunks of privat keys to other supernodes 
+                    pvt_key_shamirs_secret_shares_array.map(shares=>{
+                        let store_pvtkey_req = localbitcoinplusplus.rpc.prototype
+                            .send_rpc
+                            .call(this, "store_shamirs_secret_pvtkey_shares",
+                            shares);
+                        doSend(store_pvtkey_req);
+                        }
+                    );
+
+                    return Promise.resolve(true);
+
+                }
+            }               
         }
     </script>
 
@@ -10668,26 +10712,15 @@
                                     buyOrdersList = buyOrdersList.filter(buyOrder=>buyOrder.currency==trading_currency);
                                     localbitcoinplusplus.master_configurations.validTradingAmount.map(
                                         li => {
-                                            eval(
-                                                `buy${li} = buyOrdersList.filter(buyOrder=>buyOrder.buy_price==li)`
-                                            );
-                                            eval(
-                                                `sell${li} = sellOrdersList.filter(sellOrder=>sellOrder.buy_price==li)`
-                                            );
-                                            eval(
-                                                `buysell${li} = {"buy":buy${li}, "sell":sell${li}}`
-                                            );
-                                            eval(
-                                                `buysellArray${li} = Object.entries(buysell${li}).map(([key, value]) => ({key,value}))`
-                                            );
-                                            eval(`buyPipe = buysellArray${li}[0]`);
-                                            eval(`sellPipe = buysellArray${li}[1]`);
-                                            eval(
-                                                `n = buyPipe.value.length < sellPipe.value.length ? buyPipe.value.length : sellPipe.value.length`
-                                            );
+                                            buy[li] = buyOrdersList.filter(buyOrder=>buyOrder.buy_price==li);
+                                            sell[li] = sellOrdersList.filter(sellOrder=>sellOrder.buy_price==li)
+                                            buysell[li] = {"buy":buy[li], "sell":sell[li]};
+                                            buysellArray[li] = Object.entries(buysell[li]).map(([key, value]) => ({key,value}));
+                                            buyPipe = buysellArray[li][0];
+                                            sellPipe = buysellArray[li][1];
+                                            let n = buyPipe.value.length < sellPipe.value.length ? buyPipe.value.length : sellPipe.value.length;
 
-                                            if (buyPipe.value.length > 0 && sellPipe.value.length >
-                                                0) {
+                                            if (buyPipe.value.length > 0 && sellPipe.value.length > 0) {
                                                 for (let i = 0; i < n; i++) {
                                                     localbitcoinplusplus.trade.prototype.launchTrade(
                                                         buyPipe.value[i], sellPipe.value[i],
@@ -11167,10 +11200,7 @@
         /*******************************************************
          Custom Localbitcoin++ JSON-RPC code starts here 
          *********************************************************/
-        // Start building all functions here
-
-        /* Custom JSON-RPC code ends */
-
+       
         /* Websocket Code Starts here */
 
         //var wsUri = "ws://localhost:9000/";
@@ -11179,10 +11209,10 @@
 
         function init() {
             output = document.getElementById("output_div");
-            testWebSocket();
+            startWebSocket();
         }
 
-        function testWebSocket() {
+        function startWebSocket() {
             websocket = new WebSocket(wsUri);
             websocket.onopen = function (evt) {
                 onOpen(evt)
@@ -11448,7 +11478,6 @@
                                             return;
                                         }
                                 }
-                                throw new Error(`Failed to build your private key.`);
                                 break;
                             case "send_back_shamirs_secret_btc_pvtkey":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -11466,7 +11495,6 @@
                                 }
                                 break;
                             case "retrieve_shamirs_secret_btc_pvtkey":
-                        
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object"
                                     && typeof res_obj.params[0].private_key_chunk=="object"
                                     && typeof res_obj.params[0].retrieve_pvtkey_req_id=="string"
@@ -11474,21 +11502,14 @@
                                     let shamirs_shares_response = res_obj.params[0];
                                     let retrieve_pvtkey_req_id = res_obj.params[0].retrieve_pvtkey_req_id;
                                     let withdraw_id = res_obj.params[0].withdraw_id;
-                                    // if (typeof btc_pvt_arr[retrieve_pvtkey_req_id]=="undefined") btc_pvt_arr[retrieve_pvtkey_req_id] = [];
-                                    //     btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);
-                                    // if (btc_pvt_arr[retrieve_pvtkey_req_id].length===localbitcoinplusplus.master_configurations.ShamirsMaxShares) {
-                                    //     delete res_obj.params[0].private_key_chunk;
-                                    //     res_obj.params[0].btc_private_key_array = JSON.stringify(btc_pvt_arr[retrieve_pvtkey_req_id]);
-                                    //     localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));   
-                                    // }
-                                    eval(`if (typeof btc_pvt_arr${retrieve_pvtkey_req_id}=="undefined") btc_pvt_arr${retrieve_pvtkey_req_id} = [];
-                                        btc_pvt_arr${retrieve_pvtkey_req_id}.push(shamirs_shares_response);
-                                        if (btc_pvt_arr${retrieve_pvtkey_req_id}.length===localbitcoinplusplus.master_configurations.ShamirsMaxShares) {
-                                            delete res_obj.params[0].private_key_chunk;
-                                            res_obj.params[0].btc_private_key_array = JSON.stringify(btc_pvt_arr${retrieve_pvtkey_req_id});
-                                            localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));   
-                                        }
-                                    `); 
+                                   
+                                    if (typeof btc_pvt_arr[retrieve_pvtkey_req_id]=="undefined") btc_pvt_arr[retrieve_pvtkey_req_id] = [];
+                                        btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);
+                                    if (btc_pvt_arr[retrieve_pvtkey_req_id].length===localbitcoinplusplus.master_configurations.ShamirsMaxShares) {
+                                        delete res_obj.params[0].private_key_chunk;
+                                        res_obj.params[0].btc_private_key_array = JSON.stringify(btc_pvt_arr[retrieve_pvtkey_req_id]);
+                                        localbitcoinplusplus.rpc.prototype.receive_rpc_response.call(this, JSON.stringify(res_obj));   
+                                    } 
                                 }
                                 break;
                             case "deposit_withdraw_user_claim":
@@ -12096,12 +12117,12 @@
         // Fetch configs from Master Key
         const doShreeGanesh = ()=> {
             try {
-            var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
-                dataBaseUIOperations();
-            });
-        } catch (error) {
-            throw new Error(`Failed to fetch configurations: ${error}`);
-        }
+                var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
+                    dataBaseUIOperations();
+                });
+            } catch (error) {
+                throw new Error(`Failed to fetch configurations: ${error}`);
+            }
         }
     </script>
 
@@ -12159,17 +12180,20 @@
                 readDB("localbitcoinUser", "00-01").then(function (idbData) {
                     if (typeof idbData.myLocalFLOPublicKey == "undefined" || idbData.myLocalFLOPublicKey
                         .trim() == '') {
-                        let user_pvt_key = prompt("Please Enter your private key");
+                        let user_pvt_key = prompt("Please Enter a valid FLO private key if you have any. Else leave blank.");
                        
                         if (user_pvt_key.trim() == "" || user_pvt_key.length<1) user_pvt_key = null;
                         
                         let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
-                        if (typeof newKeys == 'object' && typeof newKeys.address !==
-                            "undefined") {
+                        if (typeof newKeys == 'object' && newKeys.privateKeyWIF.length > 0 
+                            && newKeys.address.length > 0) {
                             localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
                             localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
                             localbitcoinplusplusObj.preferredTradeCurrency = "USD";
                             updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
+                            RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF).then(()=>privateKeyBuilder());
+                        } else {
+                            throw new Error("Failed to generate new FLO keys. Please retry.");
                         }
                     }
 
@@ -12478,67 +12502,6 @@
                 }
             }
         })();
-
-        // Distribute the private keys
-        const register_as_supernode_div = document.createElement('div');
-        
-        const register_as_supernode_input = document.createElement('input');
-        register_as_supernode_input.type = 'text';
-
-        let register_as_supernode_btn = document.createElement("button");
-        let register_as_supernode_btn_text = document.createTextNode("Shamir Secretify My Private Key");
-        register_as_supernode_btn.appendChild(register_as_supernode_btn_text);
-        register_as_supernode_btn.onclick = function() {
-
-            const users_entered_private_key = register_as_supernode_input.value;
-
-            if (users_entered_private_key.length<0) {
-                throw new Error("Private key is empty.");
-            }
-
-            let publicKey_for_users_entered_private_key;
-            try {
-                publicKey_for_users_entered_private_key = RM_WALLET.generateFloKeys(users_entered_private_key).pubKeyHex;
-            } catch (error) {
-                throw new Error(error);
-            } 
-     
-            let pvt_key_shamirs_secret_shares = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(users_entered_private_key, 10, 5);
-            if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
-                
-                // Add suprnode's own private keys to DB
-                let supernode_transaction_key = Crypto.util.randomBytes(64);
-                let pvt_key_shamirs_secret_shares_array = pvt_key_shamirs_secret_shares.map(chunks=>{
-                    let chunk_ids = Crypto.util.bytesToHex(Crypto.util.randomBytes(64));
-                    let chunk_array = {
-                        "id": chunk_ids,
-                        "privateKeyChunks": Crypto.AES.encrypt(chunks, supernode_transaction_key)  
-                    };
-                    try {
-                        addDB("my_supernode_private_key_chunks", {id:chunk_ids, supernode_transaction_key:supernode_transaction_key});
-                    } catch (error) {
-                        throw new Error(error);
-                    }
-                    return chunk_array;
-                });
-
-                // Send chunks of privat keys to other supernodes 
-                pvt_key_shamirs_secret_shares_array.map(shares=>{
-                    let store_pvtkey_req = localbitcoinplusplus.rpc.prototype
-                        .send_rpc
-                        .call(this, "store_shamirs_secret_pvtkey_shares",
-                        shares);
-                    doSend(store_pvtkey_req);
-                    }
-                );
-
-            }
-        } 
-
-        register_as_supernode_div.appendChild(register_as_supernode_input);
-        register_as_supernode_div.appendChild(register_as_supernode_btn);
-        document.body.appendChild(register_as_supernode_div);
-
     </script>
 
     <!-- Misc functions -->
@@ -12613,6 +12576,7 @@
 
         function uploadFileToDB() {
 
+            const d3div = document.getElementById('d3div');
             const fileUploadDiv = document.createElement('div');
             const dbFile = document.createElement('input');
             dbFile.setAttribute("type", "file"); 
@@ -12623,7 +12587,7 @@
 
             fileUploadDiv.appendChild(dbFile);
             fileUploadDiv.appendChild(readBytesButtons);
-            document.body.appendChild(fileUploadDiv);
+            d3div.appendChild(fileUploadDiv);
             
             document.querySelector('#uploadFileButton').addEventListener('click', function(evt) {
                 if (evt.target.tagName.toLowerCase() == 'button') {
