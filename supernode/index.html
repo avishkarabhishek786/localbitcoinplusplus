@@ -38,11 +38,7 @@
 
         <h5>Indexed DB</h5>
         <div class="box">
-            <label for="ask_flo_addr">Enter Your FLO Address: </label>
-            <input type="text" id="ask_flo_addr" class="form-control">
-            <input type="button" id="ask_flo_addr_btn" value="Submit">
-            <br>
-            <input type="button" id="reset_flo_keys" value="Reset Keys">
+            <div id="reset_flo_keys_div"></div>
             <div id="localbitcoinuserdiv"></div>
         </div>
 
@@ -70,24 +66,7 @@
         </div>
 
         <h5>Buy--Sell</h5>
-        <div class="box tradebox" id="tradebox">
-            <!-- <div class="buybox">
-                <strong>Buy BTC</strong>
-                <ul class="panel-box trade_amount_box" id="buyul">
-                    <li>CASH 10000</li>
-                    <li>CASH 50000</li>
-                    <li>CASH 100000</li>
-                </ul>
-            </div>
-            <div class="sellbox">
-                <strong>Sell BTC</strong>
-                <ul class="panel-box trade_amount_box" id="sellul">
-                    <li>CASH 10000</li>
-                    <li>CASH 50000</li>
-                    <li>CASH 100000</li>
-                </ul>
-            </div> -->
-        </div>
+        <div class="box tradebox" id="tradebox"></div>
 
         <div id="output_div"></div>
 
@@ -9230,6 +9209,20 @@
                     let withdraw_deposit_table = document.getElementById('withdraw_deposit_table');
                     withdraw_deposit_table.innerHTML = t;
                 }
+            },
+
+            reset_flo_keys: ()=> {
+                const promise1 = updateinDB('localbitcoinUser', {
+                    id: "00-01",
+                    myLocalFLOAddress: "",
+                    myLocalFLOPublicKey: "",
+                    myAddressTrustLevel: 1,
+                    preferredTradeCurrency: "USD"
+                }, "00-01")
+
+                const promise2 = removeAllinDB('my_supernode_private_key_chunks');
+                
+                return Promise.all([promise1, promise2]).then(()=>true).catch(e=>false);
             }
 
         }
@@ -11206,8 +11199,8 @@
         }
 
         function onOpen(evt) {
+            doShreeGanesh();
             writeToScreen("CONNECTED");
-            doSend("Intial Hello Message: WebSocket rocks");
         }
 
         function onClose(evt) {
@@ -11684,10 +11677,8 @@
                                     let data = res_obj.params[0];
                                     let msg = localbitcoinplusplus.encrypt.decryptMessage(data.secret, data.senderPublicKeyString);
                                     console.log(msg);
-                                    
                                 } catch (error) {
                                     console.error(error);
-                                    
                                 }
                             break;
 
@@ -11714,14 +11705,6 @@
         function doSend(message) {
             writeToScreen("SENT: " + message);
             websocket.send(message);
-        }
-
-        function SendToSpecificAddress(to, message) {
-            writeToScreen("SENT: " + message);
-            websocket.send(JSON.stringify({
-                to: to,
-                data: message
-            }));
         }
 
         function writeToScreen(message) {
@@ -12111,12 +12094,14 @@
         var RM_RPC = new localbitcoinplusplus.rpc;
 
         // Fetch configs from Master Key
-        try {
+        const doShreeGanesh = ()=> {
+            try {
             var rm_configs = localbitcoinplusplus.actions.fetch_configs(function (...fetch_configs_res) {
-                dataBaseOperations();
+                dataBaseUIOperations();
             });
         } catch (error) {
             throw new Error(`Failed to fetch configurations: ${error}`);
+        }
         }
     </script>
 
@@ -12140,39 +12125,8 @@
             }
         }
 
-        // localbitcoinUser Databse
-        const dataBaseOperations = function () {
-            let ask_flo_addr_btn = document.getElementById('ask_flo_addr_btn');
-            let reset_flo_keys_btn = document.getElementById('reset_flo_keys');
-            
-            reset_flo_keys_btn.onclick = function() {
-                if (confirm(`This will reset your old keys along with data associated with it. 
-                    Are you sure you want to continue?`)) {
-                    const promise1 = updateinDB('localbitcoinUser', {
-                        id: "00-01",
-                        myLocalFLOAddress: "",
-                        myLocalFLOPublicKey: "",
-                        myAddressTrustLevel: 1,
-                        preferredTradeCurrency: "USD"
-                    }, "00-01")
-
-                    const promise2 = removeAllinDB('my_supernode_private_key_chunks');
-                    
-                    Promise.all([promise1, promise2]).then(function(values) {
-                        alert(`Your FLO keys have been deleted. Please generate new keys to continue.`);
-                    });
-                } 
-            }
-            ask_flo_addr_btn.addEventListener('click', async function () {
-                let ask_flo_addr = document.getElementById('ask_flo_addr');
-                let ask_flo_addr_val = ask_flo_addr.value.trim();
-    
-                if (ask_flo_addr_val == null || typeof ask_flo_addr_val == undefined || ask_flo_addr_val ==
-                    "") {
-                    throw new Error('Empty or invalid FLO address.');
-                }
-
-                // rebuild private key
+        const privateKeyBuilder = ()=>{
+            return new Promise(async(resolve, reject)=>{
                 let supernode_transaction_key_arr = [];
                 const chunks = await readAllDB("my_supernode_private_key_chunks");
                 if (typeof chunks == "object" && chunks.length>0) {
@@ -12188,180 +12142,224 @@
                         return c.indexOf(e) === i;
                     });
                     const TRANSACTION_KEY = localbitcoinplusplus.wallets.supernode_transaction_key = txKey[0][0];
+                    resolve(true);
+                } else {
+                    reject("Failed to build the private key.");
                 }
+            })
+        }
+
+        // localbitcoinUser Databse
+        const dataBaseUIOperations = async function () {
+
+            // rebuild private key
+            privateKeyBuilder();
     
-                try {
-                    readDB("localbitcoinUser", "00-01").then(function (idbData) {
-                        if (typeof idbData.myLocalFLOPublicKey == undefined || idbData.myLocalFLOPublicKey
-                            .trim() == '') {
-                            let user_pvt_key = prompt("Please Enter your private key");
-                            if (user_pvt_key.trim() !== "") {
-    
-                                let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
-    
-                                if (typeof newKeys == 'object' && typeof newKeys.address !==
-                                    undefined) {
-                                    localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
-                                    localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
-                                    localbitcoinplusplusObj.preferredTradeCurrency = "USD";
-                                    updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
-                                }
-                            }   
+            try {
+                readDB("localbitcoinUser", "00-01").then(function (idbData) {
+                    if (typeof idbData.myLocalFLOPublicKey == "undefined" || idbData.myLocalFLOPublicKey
+                        .trim() == '') {
+                        let user_pvt_key = prompt("Please Enter your private key");
+                       
+                        if (user_pvt_key.trim() == "" || user_pvt_key.length<1) user_pvt_key = null;
+                        
+                        let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
+                        if (typeof newKeys == 'object' && typeof newKeys.address !==
+                            "undefined") {
+                            localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
+                            localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
+                            localbitcoinplusplusObj.preferredTradeCurrency = "USD";
+                            updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
                         }
-    
-                        // Declare the user flo address
-                        const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
-                        const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
-                        const MY_PREFFERED_TRADE_CURRENCY = localbitcoinplusplus.wallets.my_preferred_trade_currency 
-                        = typeof idbData.preferredTradeCurrency !=="undefined" ? idbData.preferredTradeCurrency:"USD";
-    
-                        readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function(pubic_data_response) {
-                            if (typeof pubic_data_response !== "object") {
-                                let user_public_data_object = {
-                                    trader_flo_address: MY_LOCAL_FLO_ADDRESS,
-                                    trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
-                                    trader_status: 0,
-                                    timestamp: + new Date()
-                                }
-                                let add_user_public_data_req = localbitcoinplusplus.rpc.prototype
-                                    .send_rpc
-                                    .call(this, "add_user_public_data",
-                                    {public_data:user_public_data_object});
-                                doSend(add_user_public_data_req);
+                    }
+
+                    // Declare the user flo address
+                    const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
+                    const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
+                    const MY_PREFFERED_TRADE_CURRENCY = localbitcoinplusplus.wallets.my_preferred_trade_currency = idbData.preferredTradeCurrency;
+
+                    readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function(pubic_data_response) {
+                        if (typeof pubic_data_response !== "object") {
+                            let user_public_data_object = {
+                                trader_flo_address: MY_LOCAL_FLO_ADDRESS,
+                                trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
+                                trader_status: 0,
+                                timestamp: + new Date()
                             }
-                        });
-    
-                        localbitcoinplusplus.actions.sync_with_supernode(MY_LOCAL_FLO_ADDRESS);
-    
-                        //localbitcoinuserdiv
-                        document.getElementById("localbitcoinuserdiv").innerHTML = `<p>Address: ${idbData.myLocalFLOAddress}<p>`;
-    
-                        /*To change preferred fiat currency*/
-                        const preffered_fiat_div = document.getElementById("preffered_fiat_div");
-                        
-                        const current_preffered_fiat_h5 = document.createElement("H5");
-                        var current_preffered_fiat_text = document.createTextNode(`
-                        Current Default Trading Currency: ${MY_PREFFERED_TRADE_CURRENCY}`);
-                        current_preffered_fiat_h5.appendChild(current_preffered_fiat_text);
-                        
-                        const fiat_currency_select = document.createElement('select');
-                        fiat_currency_select.id = "fiat_currency_select";
-                        
-                        const change_preferred_fiat_btn = document.createElement('button');
-                        const change_preferred_fiat_btn_text = document.createTextNode('Change Currency');
-                        change_preferred_fiat_btn.appendChild(change_preferred_fiat_btn_text);
-
-                        preffered_fiat_div.appendChild(current_preffered_fiat_h5);
-                        preffered_fiat_div.appendChild(fiat_currency_select);
-                        preffered_fiat_div.appendChild(change_preferred_fiat_btn);
-
-                        change_preferred_fiat_btn.onclick = function() {
-                            readDB("localbitcoinUser", "00-01").then(function (idbData) {
-                                idbData.preferredTradeCurrency = fiat_currency_select.value;
-                                updateinDB('localbitcoinUser', idbData, "00-01").then(()=>{alert(`
-                                    You successfully changed your default trading fiat currency to ${idbData.preferredTradeCurrency}.
-                                `)}).catch(e=>alert("Warning: System failed to update your preferred currency. Please try again."));
-                            });
+                            let add_user_public_data_req = localbitcoinplusplus.rpc.prototype
+                                .send_rpc
+                                .call(this, "add_user_public_data",
+                                {public_data:user_public_data_object});
+                            doSend(add_user_public_data_req);
                         }
-
-                        localbitcoinplusplus.master_configurations.tradableAsset2
-                        .filter(assets=>!localbitcoinplusplus.master_configurations.tradableAsset1.includes(assets))
-                        .map(cryptos=>{
-                            let option = document.createElement("option");
-                            option.value = cryptos;
-                            option.text = cryptos;
-                            fiat_currency_select.appendChild(option);
-                        });
-
-                        
-                        /* Give user the facillity to trade */
-                        
-                        const tradebox = document.getElementById("tradebox");
-
-                        const selectListCrypto = document.createElement("select");
-                        selectListCrypto.id = "selectListCrypto";
-                        tradebox.appendChild(selectListCrypto);
-
-                        const selectListFiat = document.createElement("select");
-                        selectListFiat.id = "selectListFiat";
-                        tradebox.appendChild(selectListFiat);
-
-                        const selectListAmount = document.createElement('select');
-                        selectListAmount.id = "selectListAmount";
-                        tradebox.appendChild(selectListAmount);
-
-                        const trade_buy_button = document.createElement('button');
-                        const trade_buy_button_text = document.createTextNode("BUY");
-                        trade_buy_button.appendChild(trade_buy_button_text);
-
-                        const trade_sell_button = document.createElement('button');
-                        const trade_sell_button_text = document.createTextNode("SELL");
-                        trade_sell_button.appendChild(trade_sell_button_text);
-                        
-                        tradebox.appendChild(selectListCrypto);
-                        tradebox.appendChild(selectListFiat);
-                        tradebox.appendChild(selectListAmount);
-                        tradebox.appendChild(trade_buy_button);
-                        tradebox.appendChild(trade_sell_button);
-
-                        localbitcoinplusplus.master_configurations.tradableAsset1.map(cryptos=>{
-                            let option = document.createElement("option");
-                            option.value = cryptos;
-                            option.text = cryptos;
-                            selectListCrypto.appendChild(option);
-                        });
-                        localbitcoinplusplus.master_configurations.tradableAsset2.map(fiat=>{
-                            let option = document.createElement("option");
-                            option.value = fiat;
-                            option.text = fiat;
-                            selectListFiat.appendChild(option);
-                        });
-                        localbitcoinplusplus.master_configurations.validTradingAmount.map(amount=>{
-                            let option = document.createElement("option");
-                            option.value = amount;
-                            option.text = amount;
-                            selectListAmount.appendChild(option);
-                        });
-
-                        trade_buy_button.onclick = function (event) {
-                            if (typeof idbData.myLocalFLOAddress !== "string" || idbData.myLocalFLOAddress
-                                .trim() == "") {
-                                throw new Error(
-                                    "You must have a BTC address to receive Bitcoin. No Bitcoin address found in database."
-                                );
-                            }
-                            let buytrade = RM_TRADE.place_order("buy", idbData.myLocalFLOAddress,
-                            selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
-                            doSend(buytrade);
-                        }
-    
-                        trade_sell_button.onclick = function (event) {
-                            if (typeof idbData.myLocalFLOAddress == undefined || idbData.myLocalFLOAddress
-                                .trim() == "") {
-                                throw new Error(
-                                    "You must have a FLO address to trade. No such address found in database."
-                                );
-                            }
-                            let selltrade = RM_TRADE.place_order("sell", idbData.myLocalFLOAddress,
-                            selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
-                            doSend(selltrade);
-                        }
-    
-                        // Deposit / Withdraw asset
-                        depositWithdrawAsset(idbData.myLocalFLOAddress);
-
-                        // Upload files to DB
-                        uploadFileToDB();
-
                     });
+
+                    /* Give user the facillity to trade */
+                    buildTradeUI(idbData);
+
+                    // Deposit / Withdraw asset
+                    depositWithdrawAsset(idbData.myLocalFLOAddress);
+
+                    // Upload files to DB
+                    uploadFileToDB();
+
+                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(MY_LOCAL_FLO_PUBLIC_KEY)) {
+                        localbitcoinplusplus.master_configurations.tradableAsset2.map((assets)=>{
+                            if(!localbitcoinplusplus.master_configurations.tradableAsset1.includes(assets))
+                                RM_TRADE.resolve_current_btc_price_in_fiat(assets);
+                        });
+                    }
+
+                    localbitcoinplusplus.actions.sync_with_supernode(MY_LOCAL_FLO_ADDRESS);
+
+                });
+
+            } catch (e) {
+                throw new Error(
+                    "ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment."
+                );
+            }
+
+        }
+    </script>
+
+    <!-- Trade functions -->
+    <script>
+        const buildTradeUI =(idbData)=> {
+
+            if(typeof idbData !== "object") return;
+
+            // RESET KEYS
+            const reset_flo_keys_div = document.getElementById('reset_flo_keys_div');
+            const reset_flo_keys_btn = document.createElement('button');
+            const reset_flo_keys_btn_text = document.createTextNode(`Reset FLO Keys`);
+            reset_flo_keys_btn.appendChild(reset_flo_keys_btn_text);
+            reset_flo_keys_div.appendChild(reset_flo_keys_btn);
+            
+            reset_flo_keys_btn.onclick = function() {
+                if (confirm(`This will reset your old keys along with data associated with it. Are you sure you want to continue?`)) {
+                    localbitcoinplusplus.actions.reset_flo_keys().then(reset_success=>{
+                        if(reset_success) {
+                            alert("FLO keys have been reset successfully.");
+                        } else {
+                            alert(`Failed to reset FLO keys.`)
+                        }
+                    });
+                } 
+            }
+
+            //localbitcoinuserdiv
+            document.getElementById("localbitcoinuserdiv").innerHTML = `<p>Address: ${idbData.myLocalFLOAddress}<p>`;
     
-                } catch (e) {
+            /*To change preferred fiat currency*/
+            const preffered_fiat_div = document.getElementById("preffered_fiat_div");
+            
+            const current_preffered_fiat_h5 = document.createElement("H5");
+            var current_preffered_fiat_text = document.createTextNode(`
+            Current Default Trading Currency: ${idbData.preferredTradeCurrency}`);
+            current_preffered_fiat_h5.appendChild(current_preffered_fiat_text);
+            
+            const fiat_currency_select = document.createElement('select');
+            fiat_currency_select.id = "fiat_currency_select";
+            
+            const change_preferred_fiat_btn = document.createElement('button');
+            const change_preferred_fiat_btn_text = document.createTextNode('Change Currency');
+            change_preferred_fiat_btn.appendChild(change_preferred_fiat_btn_text);
+
+            preffered_fiat_div.appendChild(current_preffered_fiat_h5);
+            preffered_fiat_div.appendChild(fiat_currency_select);
+            preffered_fiat_div.appendChild(change_preferred_fiat_btn);
+
+            change_preferred_fiat_btn.onclick = function() {
+                readDB("localbitcoinUser", "00-01").then(function (idbData) {
+                    idbData.preferredTradeCurrency = fiat_currency_select.value;
+                    updateinDB('localbitcoinUser', idbData, "00-01").then(()=>{alert(`
+                        You successfully changed your default trading fiat currency to ${idbData.preferredTradeCurrency}.
+                    `)}).catch(e=>alert("Warning: System failed to update your preferred currency. Please try again."));
+                });
+            }
+
+            localbitcoinplusplus.master_configurations.tradableAsset2
+            .filter(assets=>!localbitcoinplusplus.master_configurations.tradableAsset1.includes(assets))
+            .map(cryptos=>{
+                let option = document.createElement("option");
+                option.value = cryptos;
+                option.text = cryptos;
+                fiat_currency_select.appendChild(option);
+            });
+
+            // TRADE BOX
+
+            const tradebox = document.getElementById("tradebox");
+
+            const selectListCrypto = document.createElement("select");
+            selectListCrypto.id = "selectListCrypto";
+            tradebox.appendChild(selectListCrypto);
+
+            const selectListFiat = document.createElement("select");
+            selectListFiat.id = "selectListFiat";
+            tradebox.appendChild(selectListFiat);
+
+            const selectListAmount = document.createElement('select');
+            selectListAmount.id = "selectListAmount";
+            tradebox.appendChild(selectListAmount);
+
+            const trade_buy_button = document.createElement('button');
+            const trade_buy_button_text = document.createTextNode("BUY");
+            trade_buy_button.appendChild(trade_buy_button_text);
+
+            const trade_sell_button = document.createElement('button');
+            const trade_sell_button_text = document.createTextNode("SELL");
+            trade_sell_button.appendChild(trade_sell_button_text);
+            
+            tradebox.appendChild(selectListCrypto);
+            tradebox.appendChild(selectListFiat);
+            tradebox.appendChild(selectListAmount);
+            tradebox.appendChild(trade_buy_button);
+            tradebox.appendChild(trade_sell_button);
+
+            localbitcoinplusplus.master_configurations.tradableAsset1.map(cryptos=>{
+                let option = document.createElement("option");
+                option.value = cryptos;
+                option.text = cryptos;
+                selectListCrypto.appendChild(option);
+            });
+            localbitcoinplusplus.master_configurations.tradableAsset2.map(fiat=>{
+                let option = document.createElement("option");
+                option.value = fiat;
+                option.text = fiat;
+                selectListFiat.appendChild(option);
+            });
+            localbitcoinplusplus.master_configurations.validTradingAmount.map(amount=>{
+                let option = document.createElement("option");
+                option.value = amount;
+                option.text = amount;
+                selectListAmount.appendChild(option);
+            });
+
+            trade_buy_button.onclick = function (event) {
+                if (typeof idbData.myLocalFLOAddress !== "string" || idbData.myLocalFLOAddress
+                    .trim() == "") {
                     throw new Error(
-                        "ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment."
+                        "You must have a BTC address to receive Bitcoin. No Bitcoin address found in database."
                     );
                 }
-    
-            });
+                let buytrade = RM_TRADE.place_order("buy", idbData.myLocalFLOAddress,
+                selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
+                doSend(buytrade);
+            }
+
+            trade_sell_button.onclick = function (event) {
+                if (typeof idbData.myLocalFLOAddress == undefined || idbData.myLocalFLOAddress
+                    .trim() == "") {
+                    throw new Error(
+                        "You must have a FLO address to trade. No such address found in database."
+                    );
+                }
+                let selltrade = RM_TRADE.place_order("sell", idbData.myLocalFLOAddress,
+                selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
+                doSend(selltrade);
+            }
         }
     </script>
 
@@ -12504,13 +12502,7 @@
             } catch (error) {
                 throw new Error(error);
             } 
-
-            // let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys;
-
-            // if (!su_list.includes(publicKey_for_users_entered_private_key)) {
-            //     throw new Error(`The public key ${publicKey_for_users_entered_private_key} is not registered as supernode yet.`);
-            // }
-            
+     
             let pvt_key_shamirs_secret_shares = localbitcoinplusplus.wallets.prototype.createShamirsSecretShares(users_entered_private_key, 10, 5);
             if (typeof pvt_key_shamirs_secret_shares=="object" && pvt_key_shamirs_secret_shares.length>0) {
                 
