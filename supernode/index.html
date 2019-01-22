@@ -50,6 +50,7 @@
 
         <h5>Change preffered fiat currency</h5>
         <div class="box">
+            <div id="balance_div"></div>
             <div id="preffered_fiat_div"></div>
         </div>
         
@@ -10078,7 +10079,8 @@
                                           AND RECEIVER HAS CONFIRMED WITHDRAW*/
 
                                         // Check how much Cash user can withdraw
-                                        readDB("cash_balances", params.trader_flo_address).then(function (
+                                        const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
+                                        readDB("cash_balances", trader_cash_id).then(function (
                                             cash_balances_res) {
                                             if (typeof cash_balances_res == "object" && typeof cash_balances_res
                                                 .trader_flo_address == "string" &&
@@ -10420,7 +10422,8 @@
                 }
 
                 //Check buyer's fiat balance
-                readDB("cash_balances", params.trader_flo_address).then(function (res) {
+                const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
+                readDB("cash_balances", trader_cash_id).then(function (res) {
                     if (typeof res !== "undefined" && typeof res.cash_balance == "number" && !isNaN(res.cash_balance)) {
                         let buyer_cash_balance = parseFloat(res.cash_balance);
                         let buy_price_btc = parseFloat(params.buy_price);
@@ -10710,10 +10713,16 @@
                             readAllDB("buyOrders").then(function (buyOrdersList) {
                                 if (buyOrdersList.length > 0) {
                                     buyOrdersList = buyOrdersList.filter(buyOrder=>buyOrder.currency==trading_currency);
+                                    let buy = [];
+                                    let sell = [];
+                                    let buysell = [];
+                                    let buysellArray = [];
+                                    let buyPipe = [];
+                                    let sellPipe = [];
                                     localbitcoinplusplus.master_configurations.validTradingAmount.map(
                                         li => {
                                             buy[li] = buyOrdersList.filter(buyOrder=>buyOrder.buy_price==li);
-                                            sell[li] = sellOrdersList.filter(sellOrder=>sellOrder.buy_price==li)
+                                            sell[li] = sellOrdersList.filter(sellOrder=>sellOrder.buy_price==li);
                                             buysell[li] = {"buy":buy[li], "sell":sell[li]};
                                             buysellArray[li] = Object.entries(buysell[li]).map(([key, value]) => ({key,value}));
                                             buyPipe = buysellArray[li][0];
@@ -10752,7 +10761,8 @@
                     && buyPipeObj.currency == sellPipeObj.currency
                 ) {
                     // Check buyer's cash balance
-                    readDB("cash_balances", buyPipeObj.trader_flo_address).then(function (buyPipeCashRes) {
+                    const buyer_cash_id = `${buyPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
+                    readDB("cash_balances", buyer_cash_id).then(function (buyPipeCashRes) {
                         if (typeof buyPipeCashRes == "object" && typeof buyPipeCashRes.cash_balance ==
                             "number") {
                             let buyer_cash_balance = parseFloat(buyPipeCashRes.cash_balance);
@@ -10801,18 +10811,21 @@
                                                     }
                                                 }
 
-                                                // Descrease buyer cash balance
+                                                // Decrease buyer cash balance
                                                 let buyer_new_cash_balance = buyer_cash_balance -
                                                     buy_price_btc;
 
                                                 let buyerCashResponseObject = {
+                                                    id: buyer_cash_id,
+                                                    currency: buyPipeObj.currency,
                                                     trader_flo_address: buyPipeObj.trader_flo_address,
                                                     cash_balance: buyer_new_cash_balance
                                                 }
 
                                                 // Increase seller's Cash balance
                                                 let sellerCashResponseObject;
-                                                readDB("cash_balances", sellPipeObj.trader_flo_address).then(
+                                                const seller_cash_id = `${sellPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
+                                                readDB("cash_balances", seller_cash_id).then(
                                                     function (sellPipeCashRes) {
                                                         if (typeof sellPipeCashRes ==
                                                             "object" && typeof sellPipeCashRes
@@ -10822,13 +10835,14 @@
                                                             sellPipeCashRes.cash_balance =
                                                                 parseFloat(sellPipeCashRes.cash_balance) +
                                                                 sell_price_in_inr;
-                                                            sellerCashResponseObject =
-                                                                sellPipeCashRes;
+                                                            sellerCashResponseObject = sellPipeCashRes;
                                                         } else {
                                                             // User got cash for the first time
+                                                            let seller_cash_id = `${sellPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
                                                             sellerCashResponseObject = {
-                                                                trader_flo_address: sellPipeObj
-                                                                    .trader_flo_address,
+                                                                id: seller_cash_id,
+                                                                trader_flo_address: sellPipeObj.trader_flo_address,
+                                                                currency: buyPipeObj.currency,
                                                                 cash_balance: sell_price_in_inr
                                                             }
                                                         }
@@ -10863,8 +10877,7 @@
                                                                             .id);
                                                                     } catch (error) {
                                                                         callback(false);
-                                                                        throw new Error(
-                                                                            error);
+                                                                        throw new Error(error);
                                                                     }
 
                                                                     // Update balances
@@ -11557,11 +11570,12 @@
                                                     doSend(update_withdraw_cash_obj);
                                                 } else if (withdraw_data.trader_flo_address==user_id) {
                                                     // Withdrawer confirmed the payment
-                                                    readDBbyIndex('cash_balances', 'trader_flo_address', withdraw_data.depositor_flo_id).then(function(depositor_cash_data_res) {
+                                                    let depositor_cash_id = `${withdraw_data.depositor_flo_id}_${withdraw_data.currency}`;
+                                                    readDB('cash_balances', depositor_cash_id).then(function(depositor_cash_data_res) {
                                                         if (typeof depositor_cash_data_res=="object") {
                                                             depositor_cash_data_res.map(depositor_cash_data=>{
                                                                 if (depositor_cash_data.length==0) {
-                                                                    depositor_cash_data = {cash_balance:0, trader_flo_address:withdraw_data.depositor_flo_id, currency:localbitcoinplusplus.trade.user_preffered_currency};
+                                                                    depositor_cash_data = {id: depositor_cash_id, cash_balance:0, trader_flo_address:withdraw_data.depositor_flo_id, currency:withdraw_data.currency};
                                                                     addDB('cash_balances', depositor_cash_data);
                                                                 }
                                                                 depositor_cash_data.cash_balance += parseFloat(withdraw_data.withdraw_amount);
@@ -11794,11 +11808,13 @@
         }
 
         const btc_balances = {
+            id: null,
             trader_flo_address: null,
             btc_balance: null
         }
 
         const cash_balances = {
+            id: null,
             trader_flo_address: null,
             cash_balance: null,
             currency: null
@@ -11905,12 +11921,21 @@
             }
             if (!db.objectStoreNames.contains('btc_balances')) {
                 var objectStore = db.createObjectStore("btc_balances", {
-                    keyPath: 'trader_flo_address'
+                    keyPath: 'id', autoIncrement: false
+                });
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                    unique: false
+                });
+                objectStore.createIndex('crypto_currency', 'crypto_currency', {
+                    unique: false
                 });
             }
             if (!db.objectStoreNames.contains('cash_balances')) {
                 var objectStore = db.createObjectStore("cash_balances", {
-                    keyPath: 'trader_flo_address'
+                    keyPath: 'id', autoIncrement: false
+                });
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                    unique: false
                 });
                 objectStore.createIndex('currency', 'currency', {
                     unique: false
@@ -12129,7 +12154,7 @@
     <!-- Database operations -->
     <script>
         // These DB functions run as soon as th page and indexed db loads
-        let runInitialDBOperations = function() {
+        const runInitialDBOperations = function() {
             try {
                 readDB('d3js', "58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3").then(fileContent=>{
                     if (typeof fileContent=="object" && typeof fileContent.content=="string") {
@@ -12383,6 +12408,17 @@
                 let selltrade = RM_TRADE.place_order("sell", idbData.myLocalFLOAddress,
                 selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
                 doSend(selltrade);
+            }
+
+            // Update balances in div
+            function refreshBalances(flo_id) {
+                localbitcoinplusplus.master_configurations.tradableAsset1
+                .concat(localbitcoinplusplus.master_configurations.tradableAsset2)
+                .filter((item, pos, self)=>self.indexOf(item) == pos)
+                .map(asset=>{
+                    //let table = localbitcoinplusplus.master_configurations.tradableAsset1.includes(asset) ? ''
+                    //readDBbyIndex();
+                });
             }
         }
     </script>
