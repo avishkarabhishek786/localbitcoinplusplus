@@ -9085,7 +9085,7 @@
                     let RMAssets = floData.slice(5);
 
                     // remove this line later
-                    // btcTradeMargin is tolerable difference between BTC trader should deposit and BTC he actually deposited 
+                    // btcTradeMargin is tolerable difference between Crypto trader should deposit and cryptos he actually deposited 
                     RMAssets =
                         `tradableAsset1=BTC,FLO#!#tradableAsset2=INR,USD,BTC,FLO#!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
@@ -9663,7 +9663,7 @@
                         case "sync_with_supernode":
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
                                 if (is_valid_request === true && params.job=="SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length>0) {
-                                    const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "btc_balances", "cash_balances", "userPublicData"];
+                                    const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "crypto_balances", "cash_balances", "userPublicData"];
                                     localbitcoinplusplus.actions.get_sharable_db_data(tableArray).then(function(su_db_data) {
                                         if (typeof su_db_data == "object") {
                                             su_db_data.trader_flo_address = params.trader_flo_address;
@@ -9703,17 +9703,13 @@
 
                                         await localbitcoinplusplus.trade.prototype.resolve_current_btc_price_in_fiat(params.currency);
 
-                                        if (params.product == "BTC") {
+                                        if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(params.product)) {
                                         /**************************************************************************
                                         // YOU HAVE TO PROVIDE BTC KEYS HERE. CHANGE IT LATER
                                         ****************************************************************************/
                                         let generate_btc_keys_for_requester = localbitcoinplusplus.wallets.prototype
                                             .generateFloKeys.call();
 
-                                        /************************************************************************************
-                                        // Need to do: Super Node saves the private keys and sends the BTC address to the requester
-                                        // THIS IS VERY DANGEROUS STEP BCOZ BTC PRIVATE KEY DATA CAN BE LEAKED HERE IF ANYTHING GOES WRONG
-                                        *****************************************************************************/
                                         params.id = helper_functions.unique_id();
                                         params.status = 1;
                                         params.btc_address = generate_btc_keys_for_requester.address;
@@ -9963,15 +9959,15 @@
                                     await localbitcoinplusplus.trade.prototype.resolve_current_btc_price_in_fiat(params.currency);
                                     params.id = helper_functions.unique_id();
                                     params.status = 1;
-                                    if (params.product == "BTC") {
-                                        // Check how much Bitcoins the user can withdraw
-                                        readDB("btc_balances", params.trader_flo_address).then(function (
-                                            btc_balance_res) {
+                                    if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(params.product)) {
+                                        // Check how much cryptos the user can withdraw
+                                        let withdrawer_btc_id = `${params.trader_flo_address}_${params.product}`;
+                                        readDB("crypto_balances", withdrawer_btc_id).then(function (btc_balance_res) {
                                             if (typeof btc_balance_res == "object" && typeof btc_balance_res
                                                 .trader_flo_address == "string" &&
-                                                typeof btc_balance_res.btc_balance == "number" &&
-                                                btc_balance_res.btc_balance > 0) {
-                                                let withdrawer_btc_balance = parseFloat(btc_balance_res.btc_balance);
+                                                typeof btc_balance_res.crypto_balance == "number" &&
+                                                btc_balance_res.crypto_balance > 0) {
+                                                let withdrawer_btc_balance = parseFloat(btc_balance_res.crypto_balance);
                                                 let withdrawing_btc_amount_in_cash = parseFloat(params.withdrawing_amount);
                                                 if(!localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.currency)) {
                                                     throw new Error("Invalid or unsupported currency.");
@@ -10001,7 +9997,7 @@
                                                             deposit_list.length > 0) {
                                                             deposit_list = deposit_list.filter(
                                                                 deposits => deposits.status == 2 
-                                                                && deposits.product == "BTC");
+                                                                && localbitcoinplusplus.master_configurations.tradableAsset1.includes(deposits.product));
                                                             for (const dl in deposit_list) {
                                                                 if (deposit_list.hasOwnProperty(dl)) {
                                                                     const deposit_dl = deposit_list[dl];
@@ -10201,7 +10197,7 @@
                                                         if (typeof res == "string" && res.length>0) {
                                                             try {
                                                                 let resp_obj = JSON.parse(res);
-                                                                let msg = `Transaction Id for your withdrawn BTC: ${resp_obj.txid.result}`;
+                                                                let msg = `Transaction Id for your withdrawn crypto asset: ${resp_obj.txid.result}`;
                                                                 writeToScreen(msg);
                                                                 alert(msg);
                                                                 return true;
@@ -10488,12 +10484,13 @@
                     throw new Error("Invalid sell request.");
                 }
 
-                // Check BTC balance of the seller
-                readDB("btc_balances", params.trader_flo_address).then(function (res) {
+                // Check crypto balance of the seller
+                let seller_btc_id = `${params.trader_flo_address}_${params.product}`;
+                readDB("crypto_balances", seller_btc_id).then(function (res) {
                     if (typeof res !== "undefined" && typeof res.trader_flo_address == "string" && res.trader_flo_address
                         .length > 0 &&
-                        typeof res.btc_balance == "number" && res.btc_balance > 0) {
-                        let seller_btc_balance = parseFloat(res.btc_balance);
+                        typeof res.crypto_balance == "number" && res.crypto_balance > 0) {
+                        let seller_btc_balance = parseFloat(res.crypto_balance);
                         let sell_price_in_inr = parseFloat(params.buy_price);
                         let eqBTC = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(sell_price_in_inr, params.currency);
                         eqBTC = parseFloat(eqBTC);
@@ -10777,11 +10774,12 @@
                                 eqBTCBuyer = parseFloat(eqBTCBuyer);
                             }
 
-                            // Check seller's BTC balance
-                            readDB("btc_balances", sellPipeObj.trader_flo_address).then(function (sellPipeBTCRes) {
-                                if (typeof sellPipeBTCRes == "object" && typeof sellPipeBTCRes.btc_balance ==
+                            // Check seller's crypto balance
+                            let seller_btc_id = `${sellPipeObj.trader_flo_address}_${sellPipeObj.product}`;
+                            readDB("crypto_balances", seller_btc_id).then(function (sellPipeBTCRes) {
+                                if (typeof sellPipeBTCRes == "object" && typeof sellPipeBTCRes.crypto_balance ==
                                     "number") {
-                                    let seller_btc_balance = parseFloat(sellPipeBTCRes.btc_balance)
+                                    let seller_btc_balance = parseFloat(sellPipeBTCRes.crypto_balance)
                                         .toFixed(8);
                                     let sell_price_in_inr = parseFloat(sellPipeObj.buy_price);
                                     let eqBTCSeller = localbitcoinplusplus.trade.prototype.calculateBTCEquivalentOfCash(
@@ -10793,21 +10791,24 @@
                                             throw new Error("Insufficient BTC balance of seller.");
                                         }
 
-                                        // Increase buyer's BTC balance
+                                        // Increase buyer's crypto balance
                                         let buyerBTCResponseObject;
-                                        readDB("btc_balances", buyPipeObj.trader_flo_address).then(
+                                        let buyer_btc_id = `${buyPipeObj.trader_flo_address}_${buyPipeObj.product}`;
+                                        readDB("crypto_balances", buyPipeObj.trader_flo_address).then(
                                             function (buyPipeBTCRes) {
                                                 if (typeof buyPipeBTCRes == "object" && typeof buyPipeBTCRes
-                                                    .btc_balance == "number") {
-                                                    buyPipeBTCRes.btc_balance = parseFloat(
-                                                            buyPipeBTCRes.btc_balance) +
+                                                    .crypto_balance == "number") {
+                                                    buyPipeBTCRes.crypto_balance = parseFloat(
+                                                            buyPipeBTCRes.crypto_balance) +
                                                         eqBTCBuyer;
                                                     buyerBTCResponseObject = buyPipeBTCRes;
                                                 } else {
                                                     // The user bought BTC for first time
                                                     buyerBTCResponseObject = {
+                                                        id: `${buyPipeObj.trader_flo_address}_${buyPipeObj.product}`,
                                                         trader_flo_address: buyPipeObj.trader_flo_address,
-                                                        btc_balance: eqBTCBuyer
+                                                        crypto_balance: eqBTCBuyer,
+                                                        crypto_currency: buyPipeObj.product
                                                     }
                                                 }
 
@@ -10848,13 +10849,13 @@
                                                         }
 
                                                         // Decrease seller BTC balance
-                                                        let new_seller_btc_balance =
-                                                            seller_btc_balance -
-                                                            eqBTCSeller;
+                                                        let new_seller_btc_balance = seller_btc_balance - eqBTCSeller;
+                                                        new_seller_btc_balance = parseFloat(new_seller_btc_balance).toFixed(8);
                                                         let sellerBTCResponseObject = {
-                                                            trader_flo_address: sellPipeObj
-                                                                .trader_flo_address,
-                                                            btc_balance: new_seller_btc_balance
+                                                            id: `${sellPipeObj.trader_flo_address}_${sellPipeObj.product}`,
+                                                            trader_flo_address: sellPipeObj.trader_flo_address,
+                                                            crypto_balance: new_seller_btc_balance,
+                                                            crypto_currency: sellPipeObj.product
                                                         }
 
                                                         // supernode data query
@@ -10895,13 +10896,13 @@
                                                                             .trader_flo_address
                                                                         );
                                                                         updateinDB(
-                                                                            "btc_balances",
+                                                                            "crypto_balances",
                                                                             buyerBTCResponseObject,
                                                                             buyPipeObj
                                                                             .trader_flo_address
                                                                         );
                                                                         updateinDB(
-                                                                            "btc_balances",
+                                                                            "crypto_balances",
                                                                             sellerBTCResponseObject,
                                                                             sellPipeObj
                                                                             .trader_flo_address
@@ -11342,7 +11343,7 @@
 
                                                 try {
                                                     let obj = su_db_data[tableStoreName];
-                                                    if (["btc_balances", "cash_balances", "userPublicData"].includes(tableStoreName)) {
+                                                    if (["crypto_balances", "cash_balances", "userPublicData"].includes(tableStoreName)) {
                                                         if (obj.length>0) {
                                                             for (var prop in obj) {
                                                                 if(!obj.hasOwnProperty(prop)) continue;
@@ -11449,9 +11450,9 @@
                                                     trade_balance_res.trade_infos.buyer_flo_id);
                                                 updateinDB("cash_balances", trade_balance_res.seller_cash_data,
                                                     trade_balance_res.trade_infos.seller_flo_id);
-                                                updateinDB("btc_balances", trade_balance_res.buyer_btc_data,
+                                                updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
                                                     trade_balance_res.trade_infos.buyer_flo_id);
-                                                updateinDB("btc_balances", trade_balance_res.seller_btc_data,
+                                                updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
                                                     trade_balance_res.trade_infos.seller_flo_id);
                                             } catch (error) {
                                                 callback(false);
@@ -11807,10 +11808,11 @@
             depositor_found_at: null
         }
 
-        const btc_balances = {
+        const crypto_balances = {
             id: null,
             trader_flo_address: null,
-            btc_balance: null
+            crypto_balance: null,
+            crypto_currency:null
         }
 
         const cash_balances = {
@@ -11919,8 +11921,8 @@
                     unique: true
                 });
             }
-            if (!db.objectStoreNames.contains('btc_balances')) {
-                var objectStore = db.createObjectStore("btc_balances", {
+            if (!db.objectStoreNames.contains('crypto_balances')) {
+                var objectStore = db.createObjectStore("crypto_balances", {
                     keyPath: 'id', autoIncrement: false
                 });
                 objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
@@ -12667,17 +12669,20 @@
                                 }
                             });
 
+                            let trader_depositor_cash_id = `${trader_deposits.trader_flo_address}_${trader_deposits.product}`;
                             let updatedBTCbalances = {
+                                id: trader_depositor_cash_id,
                                 trader_flo_address: trader_deposits.trader_flo_address,
-                                btc_balance: balance
+                                crypto_balance: balance,
+                                crypto_currency: trader_deposits.product
                             }
-                            readDB('btc_balances', trader_deposits.trader_flo_address).then(function (res_btc_balances) {
+                            readDB('crypto_balances', trader_depositor_cash_id).then(function (res_btc_balances) {
                                 if (typeof res_btc_balances == "object" && typeof res_btc_balances.result ==
-                                    "object" && typeof res_btc_balances.result.btc_balance=="number") {
-                                    updatedBTCbalances.btc_balance += parseFloat(res_btc_balances.result.btc_balance);
+                                    "object" && typeof res_btc_balances.crypto_balance=="number") {
+                                    updatedBTCbalances.crypto_balance += parseFloat(res_btc_balances.crypto_balance);
                                 }
-                                // Update BTC balance of user in btc_balances
-                                updateinDB("btc_balances", updatedBTCbalances, trader_deposits.btc_address);
+                                // Update crypto balance of user in crypto_balances
+                                updateinDB("crypto_balances", updatedBTCbalances, trader_deposits.btc_address);
                             });
                         }
                     }
@@ -12690,7 +12695,7 @@
         setInterval(function () {
             readDBbyIndex("deposit", 'status', 1).then(function (res) {
                 res.map(function (deposit_trade) {
-                    if (deposit_trade.product == "BTC") {
+                    if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(deposit_trade.product)) {
                         validateDepositedBTCBalance(deposit_trade);
                     }
                 });
