@@ -6042,16 +6042,18 @@
     </script>
     <script type="text/javascript">
         //https://raw.github.com/bitcoinjs/bitcoinjs-lib/09e8c6e184d6501a0c2c59d73ca64db5c0d3eb95/src/address.js
-        Bitcoin.Address = function (bytes) {
+        Bitcoin.Address = function (bytes, networkVersion) {
             if ("string" == typeof bytes) {
                 bytes = Bitcoin.Address.decodeString(bytes);
             }
             this.hash = bytes;
-            this.version = Bitcoin.Address.networkVersion;
+            // changesMadeByAbhishek: add networkVersion dynamically 
+            //this.version = Bitcoin.Address.networkVersion;
+            this.version = networkVersion;
         };
 
         //Bitcoin.Address.networkVersion = 0x23; // (FLO mainnet 0x23, 35D), (Bitcoin Mainnet, 0x00, 0D)
-        Bitcoin.Address.networkVersion = 0x73; // (FLO mainnet 0x23, 35D), (Bitcoin Mainnet, 0x00, 0D)
+        //Bitcoin.Address.networkVersion = 0x73; // (FLO mainnet 0x23, 35D), (Bitcoin Mainnet, 0x00, 0D)
 
         /**
          * Serialize this object as a standard Bitcoin address.
@@ -6543,9 +6545,10 @@
                 }
             };
 
-            //FLO Mainnet (0xA3) --- FLO Testnet (0xEF)
+            //FLO Mainnet (0xA3) --- FLO Testnet (0xEF) 
+            // changesMadeByAbhishek: Change below line to flo mainnet (0xA3) when deploying
             ECKey.privateKeyPrefix = 0xEF; //(Bitcoin mainnet 0x80    testnet 0xEF) (FLO mainnet 0xA3 163 D)
-
+            
             /**
              * Whether public keys should be returned compressed by default.
              */
@@ -6619,9 +6622,9 @@
                 }
             };
 
-            ECKey.prototype.getBitcoinAddress = function () {
+            ECKey.prototype.getBitcoinAddress = function (networkVersion) {
                 var hash = this.getPubKeyHash();
-                var addr = new Bitcoin.Address(hash);
+                var addr = new Bitcoin.Address(hash, networkVersion);
                 return addr.toString();
             };
 
@@ -9374,12 +9377,23 @@
         
         wallets.prototype = {
             ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
+            generateFloKeys: function (pk, crypto="FLO") {
 
-            generateFloKeys: function (pk) {
+                if (crypto=="BTC") {
+                    privKeyPrefix = 0x80;    //mainnet 0x80, testnet: 
+                    networkVersion = 0x00;   //mainnet 0x23, testnet:  
+                } else {
+                    // FLO is default
+                    privKeyPrefix = 0xEF;   //mainnet 0xa3, testnet: 0xef 
+                    networkVersion = 0x73;  //mainnet 0x23, testnet: 0x73
+                }
 
                 var privateKey = pk || Bitcoin.ECDSA.getBigRandom(EllipticCurve.getSECCurveByName("secp256k1")
                     .getN());
+                // changesMadeByAbhishek: Change private key prefix before initing key    
+                Bitcoin.ECKey.privateKeyPrefix = privKeyPrefix;
                 var key = new Bitcoin.ECKey(privateKey);
+                
                 key.setCompressed(true);
                 var privateKeyHex = key.getBitcoinHexFormat();
                 var privateKeyWIF = key.getBitcoinWalletImportFormat();
@@ -9389,7 +9403,7 @@
 
                 var pubKeyHash = key.getPubKeyHash();
                 var pubKeyHex = key.getPubKeyHex();
-                var address = key.getBitcoinAddress(publicKeyHex);
+                var address = key.getBitcoinAddress(networkVersion);
 
                 return {
                     privateKeyWIF,
@@ -9708,7 +9722,7 @@
                                         // YOU HAVE TO PROVIDE BTC KEYS HERE. CHANGE IT LATER
                                         ****************************************************************************/
                                         let generate_btc_keys_for_requester = localbitcoinplusplus.wallets.prototype
-                                            .generateFloKeys.call();
+                                            .generateFloKeys.call(null, params.product);
 
                                         params.id = helper_functions.unique_id();
                                         params.status = 1;
