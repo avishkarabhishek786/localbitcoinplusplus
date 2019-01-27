@@ -48,6 +48,9 @@
             <ul id="new_flo_keys_ul"></ul>
         </div>
 
+        <div class="box" id="balances_div"></div>
+        <div class="box" id="checkCryptoStatusDiv"></div>
+
         <h5>Change preffered fiat currency</h5>
         <div class="box">
             <div id="balance_div"></div>
@@ -9635,8 +9638,8 @@
                     if (typeof params.trader_flo_address == "string") respective_trader_id = params.trader_flo_address;
                     request.response = {};
 
-                    localbitcoinplusplus.rpc.prototype.filter_legit_requests(async function (is_valid_request) {
-                        /*try {
+                    //localbitcoinplusplus.rpc.prototype.filter_legit_requests(async function (is_valid_request) {
+                        try {
 
                         // CHECK HERE IF USER IS INDULGED IN ANY MORE TRADE. IF TRUE RETURN ERROR 
                         await readAllDB("deposit").then(function(res) {
@@ -9673,8 +9676,8 @@
                             });
                         } catch (error) {
                             throw new Error(error);
-                        }*/
-                    });
+                        }
+                    //});
                     
                     switch (method) {
                         case "trade_buy":
@@ -11689,9 +11692,7 @@
                                             }
                                         });
                                     }
-
                                 }
-
                             });
                                 break;
                             case "update_all_withdraw_cash_depositor_claim":
@@ -12328,6 +12329,9 @@
                         }
                     });
 
+                    // Show balances
+                    displayBalances(idbData.myLocalFLOAddress);
+
                     /* Give user the facillity to trade */
                     buildTradeUI(idbData);
 
@@ -12358,11 +12362,49 @@
         }
     </script>
 
+    <!-- Balances Functions-->
+    <script>
+        const displayBalances = (flo_id)=>{
+            if(typeof flo_id !== "string") return;
+            const balances_div = document.getElementById("balances_div");
+            const user_crypto_balances = readDBbyIndex("crypto_balances", "trader_flo_address", flo_id);
+            const user_fiat_balances = readDBbyIndex("cash_balances", "trader_flo_address", flo_id);
+            let t = `<h4>Balances:</h4>`;
+            Promise.all([user_crypto_balances, user_fiat_balances]).then((balances)=>{
+                balances[0].concat(balances[1]).map((user_balance_data)=>{
+                    let code = user_balance_data.crypto_currency || user_balance_data.currency;
+                    let value = user_balance_data.crypto_balance || user_balance_data.cash_balance;
+                    t += `<h5>${code}:${value}</h5>`;
+                });
+                balances_div.innerHTML = t;    
+            });
+        }
+
+        // Notify the system when deposited crypot has received confirmations
+        const updateDepositedCryptoBalanceStatus = () => {
+            readDBbyIndex("deposit", 'status', 1).then(function (res) {
+                res.map(function (deposit_trade) {
+                    if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(deposit_trade.product)) {
+                        validateDepositedBTCBalance(deposit_trade);
+                    }
+                });
+            }).then(()=>displayBalances(localbitcoinplusplus.wallets.my_local_flo_address));
+        }
+    </script>
+
     <!-- Trade functions -->
     <script>
         const buildTradeUI =(idbData)=> {
 
             if(typeof idbData !== "object") return;
+
+            // NOTIFY DEPOSITED CRYPTO CONFIRMATION
+            const checkCryptoStatusDiv = document.getElementById("checkCryptoStatusDiv");
+            const refresh_crypto_status_btn = document.createElement('button');
+            const refresh_crypto_status_btn_text = document.createTextNode('Refresh Deposited Crypto Status');
+            refresh_crypto_status_btn.appendChild(refresh_crypto_status_btn_text);
+            checkCryptoStatusDiv.appendChild(refresh_crypto_status_btn);
+            refresh_crypto_status_btn.addEventListener('click', updateDepositedCryptoBalanceStatus);
 
             // RESET KEYS
             const reset_flo_keys_div = document.getElementById('reset_flo_keys_div');
@@ -12498,16 +12540,6 @@
                 doSend(selltrade);
             }
 
-            // Update balances in div
-            function refreshBalances(flo_id) {
-                localbitcoinplusplus.master_configurations.tradableAsset1
-                .concat(localbitcoinplusplus.master_configurations.tradableAsset2)
-                .filter((item, pos, self)=>self.indexOf(item) == pos)
-                .map(asset=>{
-                    //let table = localbitcoinplusplus.master_configurations.tradableAsset1.includes(asset) ? ''
-                    //readDBbyIndex();
-                });
-            }
         }
     </script>
 
@@ -12751,11 +12783,11 @@
 
                         /************************ Case of dispute *****************/
                        if (trader_deposits.bitcoinToBePaid - balance > localbitcoinplusplus.master_configurations.btcTradeMargin) {
-                            console.log(trader_deposits.bitcoinToBePaid - balance, localbitcoinplusplus.master_configurations
+                            console.log(trader_deposits.bitcoinToBePaid, balance, localbitcoinplusplus.master_configurations
                                 .btcTradeMargin);
 
                             trader_deposits.status = 4; // User sent less BTC than he should  #Disputed
-                            updateinDB("deposit", trader_deposits, trader_flo_address);
+                            updateinDB("deposit", trader_deposits, trader_deposits.trader_flo_address);
                         } else {
                             //Deposit successful. Update user balance and status to 2. Its Private key can be
                             // now given to a random trader
@@ -12795,15 +12827,7 @@
             }
         }
 
-        setInterval(function () {
-            readDBbyIndex("deposit", 'status', 1).then(function (res) {
-                res.map(function (deposit_trade) {
-                    if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(deposit_trade.product)) {
-                        validateDepositedBTCBalance(deposit_trade);
-                    }
-                });
-            });
-        }, 600000);
+        
     </script>
 
 </body>
