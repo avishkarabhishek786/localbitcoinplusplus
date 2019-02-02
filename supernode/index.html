@@ -9104,12 +9104,11 @@
                     // remove this line later
                     // btcTradeMargin is tolerable difference between Crypto trader should deposit and cryptos he actually deposited 
                     RMAssets =
-                        `tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST
+                        `tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
                         #!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
-                        #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=02BCBC8186CE5E978BCBC6B70F6CAD8FED936A725FEF377EFE4A56AD6E6D4E8392,
-                        #!#externalFiles={"testjs":"bebabf9b08571c23064b35c25850fdbc004044779af58f6327e3b316410f5884",
-                        "d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
+                        #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
+                        #!#supernodesPubKeys=021E444E83530F0D6DB1D2121EE0696BAF5775F2BDD0D8F0301C63974816D91929,
+                        #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3","testjs":"5b10c1e79b9a7f3b2fb94f1d0f4c6219918f7d4bc5e9eee97deac888d248e7e2"},
                         #!#ShamirsMaxShares=8`;
                     let floAssetsArray = RMAssets.split('#!#');
 
@@ -9540,6 +9539,15 @@
                     }
                 });
             },
+            getSuperNodePublicKey: async function(user_flo_address) {
+                try {
+                    let getUserData = await readDB("userPublicData", user_flo_address);
+                    if(typeof getUserData=="object") return getUserData.supernode_flo_public_key;
+                    return false;
+                } catch (error) {
+                    return false;
+                }
+            },
             wifToDecimal(pk_wif, isPubKeyCompressed=false) {
                 let pk = Bitcoin.Base58.decode(pk_wif)
                 pk.shift()
@@ -9581,7 +9589,7 @@
                         return chunk_array;
                     });
 
-                    // Send chunks of privat keys to other supernodes 
+                    // Send chunks of private keys to other supernodes 
                     pvt_key_shamirs_secret_shares_array.map(shares=>{
                         let store_pvtkey_req = localbitcoinplusplus.rpc.prototype
                             .send_rpc
@@ -10402,7 +10410,7 @@
                                             return true;
                                     }
                                 }
-                                console.warn(`Failed to update externl files from server.`);
+                                console.warn(`Failed to update external files from server.`);
                             }
                         break;
                             
@@ -11440,7 +11448,8 @@
 
         //var wsUri = "ws://localhost:9000/";
         //var wsUri = "ws://ranchimall.duckdns.org:9000/";
-        var wsUri = "ws://167.99.5.116:9000/";
+        var wsUri = "ws://ranchimall1.duckdns.org:9000/";
+        //var wsUri = "ws://167.99.5.116:9000/";
         var output;
 
         function init() {
@@ -11906,6 +11915,11 @@
                             localbitcoinplusplus.rpc.prototype.filter_legit_requests(function (is_valid_request) {
                                 if (is_valid_request !== true) return false;
 
+                                let supernode_flo_public_key = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                if (!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(supernode_flo_public_key)) {
+                                    throw new Error("Failed to identify as supernode.");
+                                }
+
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                 let req_data = res_obj.params[0].public_data;
                                 try {
@@ -11916,6 +11930,7 @@
                                         let public_req_object = {
                                             trader_flo_address: req_data.trader_flo_address,
                                             trader_flo_pubKey: req_data.trader_flo_pubKey,
+                                            supernode_flo_public_key: supernode_flo_public_key, 
                                             trader_status: 0,
                                             timestamp: + new Date()
                                         }
@@ -12098,6 +12113,7 @@
             trader_flo_address: null,
             trader_flo_pubKey: null,
             trader_status: null,
+            supernode_flo_public_key: null,
             timestamp: null
         };
 
