@@ -9142,7 +9142,10 @@
                         }
 
                         const incumbent = node.contacts[index]
-                        const selection = this.arbiter(incumbent, contact)
+                        
+                        /***************Change made by Abhishek*************/
+                        //const selection = this.arbiter(incumbent, contact)
+                        const selection = localbitcoinplusplus.kademlia.arbiter(incumbent, contact);
                         // if the selection is our old contact and the candidate is some new
                         // contact, then there is nothing to do
                         if (selection === incumbent && incumbent !== contact) return
@@ -9753,7 +9756,49 @@
             }
 
         }
-    </script>
+   
+        /*Modified functions from https://github.com/tristanls/k-bucket */
+        localbitcoinplusplus.kademlia = {
+
+            decodeBase58Address: function(blockchain, address) {
+                let k = bitjs[blockchain].Base58.decode(address)
+                k.shift()
+                k.splice(-4, 4)
+                return Crypto.util.bytesToHex(k)
+            },
+            addContact: function(id, data) {
+                const nodeId = new Uint8Array(id.length)
+                for (let i = 0, len = nodeId.length; i < len; ++i) {
+                    nodeId[i] = id.charCodeAt(i)
+                }
+                const contact = {
+                    id: nodeId,
+                    data: data
+                };
+                KBucket.add(contact)
+            },
+            addNewUserNodeInKbucket: function(blockchain, address, data) {
+                const decodedId = this.decodeBase58Address(blockchain, address);
+                const addNewUserNode = this.addContact(decodedId, data);
+                return addNewUserNode;
+            },   
+            arbiter: function(incumbent, candidate) {
+                // we create a new object so that our selection is guaranteed to replace
+                // the incumbent
+                const merged = {
+                    id: incumbent.id, // incumbent.id === candidate.id within an arbiter
+                    data: incumbent.data
+                }
+
+                Object.keys(candidate.data).forEach(workerNodeId => {
+                    merged.data[workerNodeId] = candidate.data[workerNodeId];
+                })
+
+                return merged;
+            },
+
+        }
+   </script>
 
     <!-- Encryption -->
     <script>
@@ -12747,9 +12792,15 @@
             content: null
         }
 
+        const kBucketStore = {
+            id: null,
+            data: null,
+            last_updated_on: null,
+        }
+
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 2);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -12889,6 +12940,11 @@
                 objectStore.createIndex('filehash', 'filehash', {
                     unique: true
                 });
+            }
+            if (!db.objectStoreNames.contains('kBucketStore')) {
+                var objectStore = db.createObjectStore('kBucketStore', {
+                    keyPath: "id"
+                })
             }
 
         }
@@ -13142,7 +13198,18 @@
                             localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
                             localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
                             updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
-                            RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF).then(()=>privateKeyBuilder());
+                            
+                            // Add new user node in Kademlia
+                            addDB('kBucketStore', {
+                                id: localbitcoinplusplusObj.myLocalFLOAddress,
+                                data: {"trader_flo_address": localbitcoinplusplusObj.myLocalFLOAddress},
+                            }).then(dbObj=>{
+                                // localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
+                                //     dbObj.id, dbObj.data);
+                            });
+                            
+                            RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
+                            .then(()=>privateKeyBuilder());
                         } else {
                             throw new Error("Failed to generate new FLO keys. Please retry.");
                         }
@@ -13810,6 +13877,33 @@
         }
     </script>
     
+    <script>    
+        const makeKademliaNetwork = function(count) {
+            const RM_WALLET = new localbitcoinplusplus.wallets;
+            for (let index = 0; index < count; index++) {
+                let genAddr = RM_WALLET.generateFloKeys();
+                let data = {
+                    trader_flo_address: genAddr.address,
+                    crypto_balances: {
+                        crypto_balance: rand(1,100,100),
+                        crypto_currency: "FLO_TEST",
+                        id: genAddr.address+"_FLO_TEST",
+                        trader_flo_address: genAddr.address
+                    },
+                    cash_balances: {
+                        id: genAddr.address+"_USD",
+                        trader_flo_address: genAddr.address,
+                        cash_balance: rand(10000, 1000000, 1000000),
+                        currency: "USD"
+                    } 
+                }
+               // let data = {trader_flo_address: genAddr.address}
+            localbitcoinplusplus.kademlia
+                .addNewUserNodeInKbucket("FLO_TEST", genAddr.address, data);
+            }
+        }
+    </script>
+
 </body>
 
 </html>
