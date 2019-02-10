@@ -9144,8 +9144,8 @@
                         const incumbent = node.contacts[index]
                         
                         /***************Change made by Abhishek*************/
-                        //const selection = this.arbiter(incumbent, contact)
-                        const selection = localbitcoinplusplus.kademlia.arbiter(incumbent, contact);
+                        const selection = this.arbiter(incumbent, contact)
+                        //const selection = localbitcoinplusplus.kademlia.arbiter(incumbent, contact);
                         // if the selection is our old contact and the candidate is some new
                         // contact, then there is nothing to do
                         if (selection === incumbent && incumbent !== contact) return
@@ -34683,9 +34683,9 @@ exports.createContext = Script.createContext = function (context) {
                         `tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
                         #!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=021E444E83530F0D6DB1D2121EE0696BAF5775F2BDD0D8F0301C63974816D91929,
-                        #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3","testjs":"5b10c1e79b9a7f3b2fb94f1d0f4c6219918f7d4bc5e9eee97deac888d248e7e2"},
-                        #!#ShamirsMaxShares=8`;
+                        #!#supernodesPubKeys=02B2D2F40EC5BC9D336BAF14017D629B3A96892D5E86095923A50A734E2364FB34,
+                        #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
+                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"167.99.5.116","port":"9002"}}`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -34864,7 +34864,16 @@ exports.createContext = Script.createContext = function (context) {
 
                 return merged;
             },
-
+            newBase64DiscoverId: function(pubKey) {
+                let  pubKeyBytes = Crypto.util.hexToBytes(pubKey);
+                return Crypto.util.bytesToBase64(pubKeyBytes);
+            },
+            getSupernodeSeed: function() {
+                const su_seeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
+                const su_seeds_obj = JSON.parse(su_seeds);
+                const su_addr = `ws://${su_seeds_obj.ranchimall1.ip}:${su_seeds_obj.ranchimall1.port}/`;
+                return su_addr;
+            }, 
         }
    </script>
 
@@ -37089,18 +37098,17 @@ exports.createContext = Script.createContext = function (context) {
        
         /* Websocket Code Starts here */
 
-        //var wsUri = "ws://localhost:9000/";
-        //var wsUri = "ws://ranchimall.duckdns.org:9000/";
-        var wsUri = "ws://ranchimall1.duckdns.org:9002/";
-        //var wsUri = "ws://167.99.5.116:9000/";
         var output;
 
         function init() {
             output = document.getElementById("output_div");
-            startWebSocket();
+            return new Promise(resolve=>{
+                wsUri = localbitcoinplusplus.kademlia.getSupernodeSeed();
+                resolve(startWebSocket(wsUri));
+            });
         }
 
-        function startWebSocket() {
+        function startWebSocket(wsUri) {
             websocket = new WebSocket(wsUri);
             websocket.onopen = function (evt) {
                 onOpen(evt)
@@ -37117,7 +37125,9 @@ exports.createContext = Script.createContext = function (context) {
         }
 
         function onOpen(evt) {
-            doShreeGanesh();
+            //doShreeGanesh();
+            loadExternalFiles();
+            dataBaseUIOperations();
             writeToScreen("CONNECTED");
         }
 
@@ -37707,6 +37717,16 @@ exports.createContext = Script.createContext = function (context) {
                                     });
                                 break;
 
+                            case "addNewKbucketNode":
+                                    try {
+                                        const newKbucketObject = res_obj.params[0];
+                                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
+                                            newKbucketObject.newKbucketNode.id, newKbucketObject.newKbucketNode.data);      
+                                    } catch (error) {
+                                        console.error(error);
+                                    }
+                                break;
+
                             case "testMessageBroadcasting":
                                 console.log(res_obj);
                                 try {
@@ -37749,8 +37769,6 @@ exports.createContext = Script.createContext = function (context) {
             pre.innerHTML = message;
             output.appendChild(pre);
         }
-
-        window.addEventListener("load", init, false);
 
         /* Websocket Code Ends Here*/
     </script>
@@ -37868,7 +37886,7 @@ exports.createContext = Script.createContext = function (context) {
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 2);
+        var request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -38154,8 +38172,7 @@ exports.createContext = Script.createContext = function (context) {
         const doShreeGanesh = () => {
             try {
                 var rm_configs = localbitcoinplusplus.actions.fetch_configs(async function (...fetch_configs_res) {
-                    await loadExternalFiles();
-                    await dataBaseUIOperations();
+                    await init();
                     window.bitjs = []; // Launch bitjs
                     await localbitcoinplusplus.master_configurations.tradableAsset1.map(asset=>bitjslib(asset));
                 });
@@ -38163,6 +38180,7 @@ exports.createContext = Script.createContext = function (context) {
                 throw new Error(`Failed to fetch configurations: ${error}`);
             }
         }
+        doShreeGanesh();
     </script>
 
     <script>
@@ -38270,10 +38288,16 @@ exports.createContext = Script.createContext = function (context) {
                             // Add new user node in Kademlia
                             addDB('kBucketStore', {
                                 id: localbitcoinplusplusObj.myLocalFLOAddress,
-                                data: {"trader_flo_address": localbitcoinplusplusObj.myLocalFLOAddress},
+                                data: {id: localbitcoinplusplusObj.myLocalFLOAddress, vectorClock: 0},
                             }).then(dbObj=>{
-                                // localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
-                                //     dbObj.id, dbObj.data);
+                                 localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
+                                     dbObj.id, dbObj.data);
+                                     let addNewKNode = localbitcoinplusplus.rpc.prototype
+                                        .send_rpc
+                                        .call(this, "addNewKbucketNode",
+                                        {newKbucketNode:dbObj});
+                                     console.log(addNewKNode);
+                                     doSend(addNewKNode);
                             });
                             
                             RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
@@ -38287,6 +38311,17 @@ exports.createContext = Script.createContext = function (context) {
                     const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
                     const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
                     
+                    // restore k-bucket
+                    readDB('kBucketStore', MY_LOCAL_FLO_ADDRESS).then(dbObj=>{
+                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
+                            dbObj.id, dbObj.data);
+                        let addNewKNode = localbitcoinplusplus.rpc.prototype
+                            .send_rpc
+                            .call(this, "addNewKbucketNode",
+                            {newKbucketNode:dbObj});
+                        doSend(addNewKNode);
+                    });
+                                
                     readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function(pubic_data_response) {
                         if (typeof pubic_data_response !== "object") {
                             let user_public_data_object = {
@@ -38950,22 +38985,22 @@ exports.createContext = Script.createContext = function (context) {
             const RM_WALLET = new localbitcoinplusplus.wallets;
             for (let index = 0; index < count; index++) {
                 let genAddr = RM_WALLET.generateFloKeys();
-                let data = {
-                    trader_flo_address: genAddr.address,
-                    crypto_balances: {
-                        crypto_balance: rand(1,100,100),
-                        crypto_currency: "FLO_TEST",
-                        id: genAddr.address+"_FLO_TEST",
-                        trader_flo_address: genAddr.address
-                    },
-                    cash_balances: {
-                        id: genAddr.address+"_USD",
-                        trader_flo_address: genAddr.address,
-                        cash_balance: rand(10000, 1000000, 1000000),
-                        currency: "USD"
-                    } 
-                }
-                //let data = {id: rand(10000, 100000000, 100000000)}
+                // let data = {
+                //     trader_flo_address: genAddr.address,
+                //     crypto_balances: {
+                //         crypto_balance: rand(1,100,100),
+                //         crypto_currency: "FLO_TEST",
+                //         id: genAddr.address+"_FLO_TEST",
+                //         trader_flo_address: genAddr.address
+                //     },
+                //     cash_balances: {
+                //         id: genAddr.address+"_USD",
+                //         trader_flo_address: genAddr.address,
+                //         cash_balance: rand(10000, 1000000, 1000000),
+                //         currency: "USD"
+                //     } 
+                // }
+                let data = {id: genAddr.address, vectorClock: 0}
             localbitcoinplusplus.kademlia
                 .addNewUserNodeInKbucket("FLO_TEST", genAddr.address, data);
             }
