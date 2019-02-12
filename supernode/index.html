@@ -34850,6 +34850,14 @@ exports.createContext = Script.createContext = function (context) {
                 const addNewUserNode = this.addContact(decodedId, data);
                 return addNewUserNode;
             },   
+            floIdToKbucketId: function(blockchain, address) {
+                const decodedId = this.decodeBase58Address(blockchain, address);
+                const nodeId = new Uint8Array(decodedId.length)
+                for (let i = 0, len = nodeId.length; i < len; ++i) {
+                    nodeId[i] = decodedId.charCodeAt(i)
+                }
+                return nodeId;
+            },
             arbiter: function(incumbent, candidate) {
                 // we create a new object so that our selection is guaranteed to replace
                 // the incumbent
@@ -34868,11 +34876,42 @@ exports.createContext = Script.createContext = function (context) {
                 let  pubKeyBytes = Crypto.util.hexToBytes(pubKey);
                 return Crypto.util.bytesToBase64(pubKeyBytes);
             },
-            getSupernodeSeed: function() {
-                const su_seeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
-                const su_seeds_obj = JSON.parse(su_seeds);
-                const su_addr = `ws://${su_seeds_obj.ranchimall1.ip}:${su_seeds_obj.ranchimall1.port}/`;
-                return su_addr;
+            getSupernodeSeed: function(flo_addr, flo_pub_key) {
+                return new Promise((resolve, reject)=>{
+                    const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
+                    if (typeof supernodeSeeds!=="object") throw new Error("Failed to get supernode seeds.");
+                    const supernodeSeedsObj = JSON.parse(supernodeSeeds);
+
+                    const contactId = localbitcoinplusplus.kademlia.newBase64DiscoverId(flo_pub_key);
+            
+                    const seedContactArray = {
+                        id: contactId, // Base64 encoding 
+                        data: {
+                            publicKey: flo_pub_key,
+                            floId: flo_addr,
+                            msg: `Hello from ${flo_addr}!`
+                        },
+                    };
+
+                    if (!localbitcoinplusplus.master_configurations
+                        .supernodesPubKeys.includes(flo_pub_key)) {
+                        seedContactArray.transport = {
+                            host: supernodeSeedsObj.ranchimall1.ip,
+                            port: supernodeSeedsObj.ranchimall1.port
+                        }
+                    }
+
+                    const nodeDiscoveryOptions = {
+                        seeds: seedContactArray
+                    }
+                    
+                    const kdiscover = new tristanDiscover(nodeDiscoveryOptions);
+                    console.log(kdiscover);
+
+                    let supernodeAddress = `ws://ranchimall1.duckdns.org:9002`;
+
+                    resolve(supernodeAddress);
+                });
             }, 
         }
    </script>
@@ -37102,30 +37141,83 @@ exports.createContext = Script.createContext = function (context) {
 
         function init() {
             output = document.getElementById("output_div");
+            const RM_WALLET = new localbitcoinplusplus.wallets;
             return new Promise(resolve=>{
-                wsUri = localbitcoinplusplus.kademlia.getSupernodeSeed();
-                resolve(startWebSocket(wsUri));
+
+                readDB("localbitcoinUser", "00-01").then(async function (idbData) {
+                    if (typeof idbData.myLocalFLOPublicKey == "undefined" || idbData.myLocalFLOPublicKey
+                        .trim() == '') {
+                        let user_pvt_key = prompt("Please Enter a valid FLO private key if you have any. Else leave blank.");
+                       
+                        if (user_pvt_key.trim() == "" || user_pvt_key.length<1) user_pvt_key = null;
+                        
+                        let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
+                        if (typeof newKeys == 'object' && newKeys.privateKeyWIF.length > 0 
+                            && newKeys.address.length > 0) {
+                            localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
+                            localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
+                            
+                            updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
+                    
+                            wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(localbitcoinplusplusObj.myLocalFLOAddress,
+                                localbitcoinplusplusObj.myLocalFLOPublicKey);
+                            
+                            await startWebSocket(wsUri);
+
+                            // Add new user node in Kademlia
+                            addDB('kBucketStore', {
+                                id: localbitcoinplusplusObj.myLocalFLOAddress,
+                                data: {id: localbitcoinplusplusObj.myLocalFLOAddress, vectorClock: 0},
+                            }).then(dbObj=>{
+                                localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
+                                    dbObj.id, dbObj.data);
+                                let addNewKNode = localbitcoinplusplus.rpc.prototype
+                                    .send_rpc
+                                    .call(this, "addNewKbucketNode",
+                                    {newKbucketNode:dbObj});
+                                console.log(addNewKNode);
+                                doSend(addNewKNode);
+                            });
+                            
+                            RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
+                                .then(()=>privateKeyBuilder());
+
+                            resolve(true);
+                            return;
+                            
+                        } else {
+                            throw new Error("Failed to generate new FLO keys. Please retry.");
+                        }
+                    }
+
+                    wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(localbitcoinplusplusObj.myLocalFLOAddress,
+                        localbitcoinplusplusObj.myLocalFLOPublicKey);
+                    
+                    resolve(startWebSocket(wsUri));
+                });
+
             });
         }
-
+        
         function startWebSocket(wsUri) {
-            websocket = new WebSocket(wsUri);
-            websocket.onopen = function (evt) {
-                onOpen(evt)
-            };
-            websocket.onclose = function (evt) {
-                onClose(evt)
-            };
-            websocket.onmessage = function (evt) {
-                onMessage(evt)
-            };
-            websocket.onerror = function (evt) {
-                onError(evt)
-            };
+            return new Promise((resolve, reject)=>{
+                websocket = new WebSocket(wsUri);
+                websocket.onopen = function (evt) {
+                    resolve(onOpen(evt))
+                };
+                websocket.onclose = function (evt) {
+                    resolve(onClose(evt))
+                };
+                websocket.onmessage = function (evt) {
+                    resolve(onMessage(evt))
+                };
+                websocket.onerror = function (evt) {
+                    reject(onError(evt))
+                };
+            })
         }
 
         function onOpen(evt) {
-            //doShreeGanesh();
             loadExternalFiles();
             dataBaseUIOperations();
             writeToScreen("CONNECTED");
@@ -37727,6 +37819,22 @@ exports.createContext = Script.createContext = function (context) {
                                     }
                                 break;
 
+                            case "queryKbucket":
+                                    try {
+                                        const kBucketQuery = res_obj.params[0];
+                                        const kfrom = kBucketQuery.query.from;
+                                        const kto = kBucketQuery.query.to;
+                                        const kmsg = kBucketQuery.query.msg;
+
+                                        buckId = localbitcoinplusplus.kademlia.floIdToKbucketId("FLO_TEST", kto);
+                                        const getItem = KBucket.get(buckId);
+                                        const getData = getItem.data;
+                                        
+                                    } catch (error) {
+                                        console.error(error);
+                                    }
+                                break;
+
                             case "testMessageBroadcasting":
                                 console.log(res_obj);
                                 try {
@@ -38172,9 +38280,9 @@ exports.createContext = Script.createContext = function (context) {
         const doShreeGanesh = () => {
             try {
                 var rm_configs = localbitcoinplusplus.actions.fetch_configs(async function (...fetch_configs_res) {
-                    await init();
                     window.bitjs = []; // Launch bitjs
-                    await localbitcoinplusplus.master_configurations.tradableAsset1.map(asset=>bitjslib(asset));
+                    localbitcoinplusplus.master_configurations.tradableAsset1.map(asset=>bitjslib(asset));
+                    init();
                 });
             } catch (error) {
                 throw new Error(`Failed to fetch configurations: ${error}`);
@@ -38260,7 +38368,7 @@ exports.createContext = Script.createContext = function (context) {
             })
         }
 
-        // localbitcoinUser Databse
+        // localbitcoinUser Database
         const dataBaseUIOperations = async function () {
 
             const RM_WALLET = new localbitcoinplusplus.wallets;
@@ -38271,42 +38379,7 @@ exports.createContext = Script.createContext = function (context) {
             privateKeyBuilder();
     
             try {
-                readDB("localbitcoinUser", "00-01").then(function (idbData) {
-                    if (typeof idbData.myLocalFLOPublicKey == "undefined" || idbData.myLocalFLOPublicKey
-                        .trim() == '') {
-                        let user_pvt_key = prompt("Please Enter a valid FLO private key if you have any. Else leave blank.");
-                       
-                        if (user_pvt_key.trim() == "" || user_pvt_key.length<1) user_pvt_key = null;
-                        
-                        let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
-                        if (typeof newKeys == 'object' && newKeys.privateKeyWIF.length > 0 
-                            && newKeys.address.length > 0) {
-                            localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
-                            localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
-                            updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
-                            
-                            // Add new user node in Kademlia
-                            addDB('kBucketStore', {
-                                id: localbitcoinplusplusObj.myLocalFLOAddress,
-                                data: {id: localbitcoinplusplusObj.myLocalFLOAddress, vectorClock: 0},
-                            }).then(dbObj=>{
-                                 localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST", 
-                                     dbObj.id, dbObj.data);
-                                     let addNewKNode = localbitcoinplusplus.rpc.prototype
-                                        .send_rpc
-                                        .call(this, "addNewKbucketNode",
-                                        {newKbucketNode:dbObj});
-                                     console.log(addNewKNode);
-                                     doSend(addNewKNode);
-                            });
-                            
-                            RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
-                            .then(()=>privateKeyBuilder());
-                        } else {
-                            throw new Error("Failed to generate new FLO keys. Please retry.");
-                        }
-                    }
-
+                readDB("localbitcoinUser", "00-01").then(async function (idbData) {
                     // Declare the user flo address
                     const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address = idbData.myLocalFLOAddress;
                     const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key = idbData.myLocalFLOPublicKey;
