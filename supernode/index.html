@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Document</title>
+    <title>P2P Exchange</title>
 
     <style>
         .tradebox {
@@ -34685,7 +34685,7 @@ exports.createContext = Script.createContext = function (context) {
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
                         #!#supernodesPubKeys=02B2D2F40EC5BC9D336BAF14017D629B3A96892D5E86095923A50A734E2364FB34,
                         #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
-                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"167.99.5.116","port":"9002"}}`;
+                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"167.99.5.116","port":"9002","kbucketId":"88031fd65ed787b235724f21eff03e8c1a729422"}}`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -34777,12 +34777,12 @@ exports.createContext = Script.createContext = function (context) {
                 if (typeof withdraw_data == "object" && withdraw_data.length>0) {
                     let action_req = ``;
                     let t = `<table>
-                                    <tr>
-                                        <th>Withdrawer Flo Id</th>
-                                        <th>Depositor Flo Id</th>
-                                        <th>Amount</th>
-                                        <th>Action required</th>
-                                    </tr>`;
+                                <tr>
+                                    <th>Withdrawer Flo Id</th>
+                                    <th>Depositor Flo Id</th>
+                                    <th>Amount</th>
+                                    <th>Action required</th>
+                                </tr>`;
                     withdraw_data.filter(wdf=>(wdf.status==2 || wdf.status==3)).map(wd=>{
                         if(typeof localbitcoinplusplus.wallets.my_local_flo_address=="string") {
                             let claim_id = `${wd.id}!!${localbitcoinplusplus.wallets.my_local_flo_address}`;
@@ -34795,12 +34795,12 @@ exports.createContext = Script.createContext = function (context) {
                                 action_req += `<button onclick="localbitcoinplusplus.actions.claim_deposit_withdraw('${claim_id}')" >I deposited the money.</button>`;
                             } 
                         }
-                        t += `      <tr>
-                                        <td>${wd.trader_flo_address}</td>
-                                        <td>${wd.depositor_flo_id}</td>
-                                        <td>${wd.withdraw_amount}</td>
-                                        <td>${action_req}</td>`;
-                        t += `      </tr>`;
+                        t += `<tr>
+                                <td>${wd.trader_flo_address}</td>
+                                <td>${wd.depositor_flo_id}</td>
+                                <td>${wd.withdraw_amount}</td>
+                                <td>${action_req}</td>`;
+                        t += `</tr>`;
                     });
                                     
                         t += `      </table>`;
@@ -34893,11 +34893,17 @@ exports.createContext = Script.createContext = function (context) {
                         },
                     };
 
+                    // supernodeSeedsObj.filter(seed=>{
+                    //     seedbytes = Crypto.util.hexToBytes(seed.kbucketId);
+                    //     localbitcoinplusplus.kademlia.floIdToKbucketId("FLO_TEST", seedbytes);
+                    // })
+
                     if (!localbitcoinplusplus.master_configurations
                         .supernodesPubKeys.includes(flo_pub_key)) {
                         seedContactArray.transport = {
                             host: supernodeSeedsObj.ranchimall1.ip,
-                            port: supernodeSeedsObj.ranchimall1.port
+                            port: supernodeSeedsObj.ranchimall1.port,
+                            //id: supernodeSeedsObj.ranchimall1.kbucketId
                         }
                     }
 
@@ -35032,14 +35038,14 @@ exports.createContext = Script.createContext = function (context) {
 
             // This function is only useful when sender and receiver are both online.
             // If receiver is not online he might never get the message
-            testMessageBroadcasting: function(message, flo_id) {
+            messageBroadcasting: function(message, flo_id) {
                 readDB('userPublicData', flo_id).then((res)=>{
                     pubKey = res.trader_flo_pubKey;
                     let foo = localbitcoinplusplus.encrypt.encryptMessage(message, pubKey);
                     const RM_RPC = new localbitcoinplusplus.rpc;
                     let bar = RM_RPC
                             .send_rpc
-                            .call(this, "testMessageBroadcasting", foo);
+                            .call(this, "messageBroadcasting", foo);
                     doSend(bar);
                 });
             },
@@ -37190,8 +37196,8 @@ exports.createContext = Script.createContext = function (context) {
                         }
                     }
 
-                    wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(localbitcoinplusplusObj.myLocalFLOAddress,
-                        localbitcoinplusplusObj.myLocalFLOPublicKey);
+                    wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress,
+                    idbData.myLocalFLOPublicKey);
                     
                     resolve(startWebSocket(wsUri));
                 });
@@ -37279,7 +37285,9 @@ exports.createContext = Script.createContext = function (context) {
                                                 buyOrders_data.supernodePubKey);
                                         if (isDataSignedBySuperNode === true) {
                                             // Add buy order
-                                            addDB("buyOrders", buyOrders_data);
+                                            addDB("buyOrders", buyOrders_data).then(()=>{
+                                                showMessage(`Your buy order is placed successfully.`);
+                                            });
                                         }
                                     }
                                 }
@@ -37300,7 +37308,9 @@ exports.createContext = Script.createContext = function (context) {
                                                 sellOrders_data.supernodePubKey);
                                         if (isDataSignedBySuperNode === true) {
                                             // Add buy order
-                                            addDB("sellOrders", sellOrders_data);
+                                            addDB("sellOrders", sellOrders_data).then(()=>{
+                                                showMessage(`Your sell order is placed successfully.`);
+                                            });;
                                         }
                                     }
                                 }
@@ -37392,7 +37402,9 @@ exports.createContext = Script.createContext = function (context) {
                                     if (RM_WALLET
                                         .verify(res_obj.params[0].withdrawDataHash, res_obj.params[0].order_validator_sign,
                                             res_obj.params[0].order_validator_public_key)) {
-                                        addDB('withdraw_cash', res_obj.params[0]);
+                                        addDB('withdraw_cash', res_obj.params[0]).then(()=>{
+                                            showMessage(`Your cash withdrawal request is placed successfully.`);
+                                        });
                                     }
                                 }
                                 break;
@@ -37408,13 +37420,13 @@ exports.createContext = Script.createContext = function (context) {
                                             if(RM_WALLET
                                             .verify(cancel_request.trade_id, cancel_request.signed_trade_id, trader_data.trader_flo_pubKey)) {
                                                 removeinDB(tradeDB, cancel_request.trade_id)
-                                                .then((id)=>console.info(`Trade Id ${id} deleted.`));
+                                                .then((id)=>showMessage(`Trade Id ${id} deleted.`));
                                             } else {
-                                                console.error(`Failed to verify trade for trade id ${cancel_request.trade_id}`);
+                                                showMessage(`Failed to verify trade for trade id ${cancel_request.trade_id}`);
                                             }
                                         })
                                     } else {
-                                        console.error("Failed to cancel trade.");
+                                        showMessage("Failed to cancel trade.");
                                     }
                                 }
                                 break;
@@ -37639,25 +37651,25 @@ exports.createContext = Script.createContext = function (context) {
                             }
                                 break;
                             case "update_all_deposit_withdraw_success":
-                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                let withdraw_success_response = res_obj.params[0];
-                                let update_cash_balance_obj_res = {
-                                    depositor_cash_data:withdraw_success_response.depositor_cash_data
-                                }
-                                let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
-                                let update_cash_balance_obj_res_hash = Crypto.SHA256(update_cash_balance_obj_res_str);
-                                let update_cash_balance_obj_res_verification = RM_WALLET
-                                    .verify(update_cash_balance_obj_res_hash, withdraw_success_response.sign, withdraw_success_response.publicKey);
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    let withdraw_success_response = res_obj.params[0];
+                                    let update_cash_balance_obj_res = {
+                                        depositor_cash_data:withdraw_success_response.depositor_cash_data
+                                    }
+                                    let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
+                                    let update_cash_balance_obj_res_hash = Crypto.SHA256(update_cash_balance_obj_res_str);
+                                    let update_cash_balance_obj_res_verification = RM_WALLET
+                                        .verify(update_cash_balance_obj_res_hash, withdraw_success_response.sign, withdraw_success_response.publicKey);
 
-                                if ((update_cash_balance_obj_res_hash==withdraw_success_response.hash) && update_cash_balance_obj_res_verification==true) {
-                                    updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
-                                    updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
-                                    removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data.trader_flo_address);
-                                    removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
-                                    return true;
+                                    if ((update_cash_balance_obj_res_hash==withdraw_success_response.hash) && update_cash_balance_obj_res_verification==true) {
+                                        updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
+                                        updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
+                                        removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data.trader_flo_address);
+                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
+                                        return true;
+                                    }
+                                    return false;
                                 }
-                                return false;
-                            }
                                 break;
 
                             case "add_user_public_data":
@@ -37835,7 +37847,7 @@ exports.createContext = Script.createContext = function (context) {
                                     }
                                 break;
 
-                            case "testMessageBroadcasting":
+                            case "messageBroadcasting":
                                 console.log(res_obj);
                                 try {
                                     let data = res_obj.params[0];
@@ -37992,9 +38004,17 @@ exports.createContext = Script.createContext = function (context) {
             last_updated_on: null,
         }
 
+        const messages_table = {
+            id: null,
+            trader_flo_address: null,
+            supernode_flo_address: null,
+            timestamp: null,
+            message: null
+        }
+
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 1);
+        var request = window.indexedDB.open(DBName, 2);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -38139,6 +38159,17 @@ exports.createContext = Script.createContext = function (context) {
                 var objectStore = db.createObjectStore('kBucketStore', {
                     keyPath: "id"
                 })
+            }
+            if (!db.objectStoreNames.contains('messages_table')) {
+                var objectStore = db.createObjectStore("messages_table", {
+                    keyPath: 'id'
+                });
+                objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                    unique: true
+                });
+                objectStore.createIndex('supernode_flo_address', 'supernode_flo_address', {
+                    unique: false
+                });
             }
 
         }
@@ -38949,6 +38980,10 @@ exports.createContext = Script.createContext = function (context) {
                 }
             }, false);
 
+        }
+
+        function showMessage(message) {
+            console.log(message);
         }
 
         //Function to check current balance of a BTC address
