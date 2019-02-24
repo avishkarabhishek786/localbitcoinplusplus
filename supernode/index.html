@@ -445,12 +445,12 @@
     
     <div class="sidenav">
         <div class="w3-sidebar w3-bar-block" style="display:none" id="mySidebar">
-            <div onclick="w3_close()" class="w3-bar-item w3-button w3-large bg-black">Close</div>
+            <div onclick="closeMessage()" class="w3-bar-item w3-button w3-large bg-black">Close</div>
             <pre id="log">Event information log
                 =====================
             </pre>
         </div>
-        <div class="w3-button w3-teal w3-xlarge" onclick="w3_open()">☰</div>
+        <div class="w3-button w3-teal w3-xlarge" onclick="displayMessages()">☰</div>
     </div>     
 
     <div class="box bg-purple">
@@ -476,7 +476,7 @@
         </div>
         <div class="center-div">
             <span> Lorem ipsum dolor sit amet, consectetur adipisicing elit.
-                Aliquam, ipsum recusandae voluptatibus mollitia quidem.
+                   Aliquam, ipsum recusandae voluptatibus mollitia quidem.
             </span>
         </div>
     </div>
@@ -501,9 +501,6 @@
     <div class="box bg-grey">
         <div class="center-div" id="my_trades_div"></div>
         <div class="center-div" id="withdraw_deposit_table"></div>
-    </div>
-    <div class="box bg-green">
-        
     </div>
     <div class="box bg-lightblue">
         <div class="center-div">
@@ -36354,7 +36351,7 @@
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
                         #!#supernodesPubKeys=02B2D2F40EC5BC9D336BAF14017D629B3A96892D5E86095923A50A734E2364FB34,
                         #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
-                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"167.99.5.116","port":"9002","kbucketId":"88031fd65ed787b235724f21eff03e8c1a729422"}}`;
+                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"167.99.5.116","port":"9002","kbucketId":"oJXNwJNNTt9SYaBZ1H3gjPkrZcpBhxspsM"}}`;
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -36563,30 +36560,42 @@
                         },
                     };
 
-                    // supernodeSeedsObj.filter(seed=>{
-                    //     seedbytes = Crypto.util.hexToBytes(seed.kbucketId);
-                    //     localbitcoinplusplus.kademlia.floIdToKbucketId("FLO_TEST", seedbytes);
-                    // })
+                    let nearestSupernode = Object.keys(supernodeSeedsObj).map(function(key) {
+                        return supernodeSeedsObj[key];
+                    }).map(seed=> {
+                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
+                            "FLO_TEST", seed.kbucketId, { id: seed.kbucketId, vectorClock: 0 });
+                        return seed;
+                    }).filter(su_seed=>{
+                        bucketId = localbitcoinplusplus.kademlia.floIdToKbucketId("FLO_TEST", su_seed.kbucketId);
+                        let distance = KBucket.closest(bucketId);
+                        console.log(distance);
+                        return distance;
+                    });
 
                     if (!localbitcoinplusplus.master_configurations
                         .supernodesPubKeys.includes(flo_pub_key)) {
                         seedContactArray.transport = {
-                            host: supernodeSeedsObj.ranchimall1.ip,
-                            port: supernodeSeedsObj.ranchimall1.port,
-                            //id: supernodeSeedsObj.ranchimall1.kbucketId
+                            host: nearestSupernode[0].ip,
+                            port: nearestSupernode[0].port,
+                            id: nearestSupernode[0].kbucketId
                         }
                     }
 
                     const nodeDiscoveryOptions = {
                         seeds: seedContactArray
                     }
-
+                    
                     const kdiscover = new tristanDiscover(nodeDiscoveryOptions);
                     console.log(kdiscover);
 
-                    let supernodeAddress = `ws://ranchimall1.duckdns.org:9002`;
-
-                    resolve(supernodeAddress);
+                    try {
+                        let supernodeAddressUrl = `ws://${kdiscover.seeds.transport.host}:${kdiscover.seeds.transport.port}`;
+                        console.log(supernodeAddressUrl);
+                        resolve(supernodeAddressUrl);
+                    } catch (error) {
+                        reject(error);
+                    }
                 });
             },
         }
@@ -36891,7 +36900,7 @@
                     enumerable: true
                 });
                 if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY == "undefined") {
-                    alert(`Failed to create your private keys.`);
+                    showMessage(`WARNING: Failed to create your private keys.`);
                     throw new Error(`Failed to create your private keys.`);
                 }
             },
@@ -37034,6 +37043,7 @@
                     let respective_trader_id = '';
                     if (typeof params.trader_flo_address == "string") respective_trader_id = params.trader_flo_address;
                     request.response = {};
+                    let err_msg;
 
                     if (method=="sync_with_supernode") {
                         RM_RPC.filter_legit_requests(function (is_valid_request) {
@@ -37080,6 +37090,7 @@
                                                 "server_msg": request.response
                                             });
                                         doSend(server_response);
+                                        showMessage(request.response);
                                         throw new Error(request.response);
                                         return false;
                                     }
@@ -37106,6 +37117,7 @@
                                                         "server_msg": server_msg
                                                     });
                                                 doSend(server_response);
+                                                showMessage(server_msg);
                                                 throw new Error(
                                                     "User has not finished previous pending actions."
                                                 );
@@ -37147,12 +37159,14 @@
                                                 }
                                             });
                                     } else {
-                                        throw new Error(
-                                            `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`
-                                        );
+                                        err_msg = `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
+                                        showMessage(err_msg);
+                                        throw new Error(err_msg);
                                     }
                                 } else {
-                                    throw new Error("Invalid trade margin figures.");
+                                    err_msg = "Invalid trade margin figures.";
+                                    showMessage(err_msg);
+                                    throw new Error(err_msg);
                                 }
 
                             });
@@ -37186,12 +37200,16 @@
                                             }
                                         );
                                     } else {
-                                        throw new Error(
-                                            `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`
-                                        );
+                                        err_msg = `WARNING: Trade Margin Check Failed: 
+                                        You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
+                                        
+                                        showMessage(err_msg);
+                                        throw new Error(err_msg);
                                     }
                                 } else {
-                                    throw new Error("Invalid trade margin figures.");
+                                    err_msg = "Invalid trade margin figures.";
+                                    showMessage(err_msg);
+                                    throw new Error(err_msg);
                                 }
                             });
                             break;
@@ -37223,9 +37241,9 @@
                                         async function (requester_public_key) {
                                             if (requester_public_key == undefined ||
                                                 requester_public_key == null) {
-                                                throw new Error(
-                                                    'Failed to get public key of the user.'
-                                                );
+                                                err_msg = 'Failed to get public key of the user.';
+                                                showMessage(err_msg);
+                                                throw new Error(err_msg);
                                             }
                                             params.depositor_public_key = requester_public_key;
 
@@ -37253,9 +37271,9 @@
 
                                                 if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
                                                     "undefined") {
-                                                    throw new Error(
-                                                        'Failed to determine Super node signing key.'
-                                                    );
+                                                    err_msg = 'Failed to determine Super node signing key.';
+                                                    showMessage(err_msg);
+                                                    throw new Error(err_msg);
                                                 }
 
                                                 readDB("localbitcoinUser", "00-01").then(
@@ -37419,8 +37437,7 @@
                                                                                 system_btc_reserves_private_keys_object
                                                                             );
                                                                         } catch (error) {
-                                                                            throw new Error(
-                                                                                error);
+                                                                            throw new Error( error);
                                                                         }
                                                                     }
                                                                     return true;
@@ -37584,10 +37601,9 @@
                                                                                                     );
                                                                                                 return true;
                                                                                             } else {
-                                                                                                console
-                                                                                                    .warning(
-                                                                                                        "Deposit request failed: We could not find a withdrawer."
-                                                                                                    );
+                                                                                                err_msg = "Deposit request failed: We could not find a withdrawer.";
+                                                                                                showMessage(err_msg);
+                                                                                                throw new Error(err_msg);
                                                                                             }
                                                                                         }
                                                                                     );
@@ -37629,10 +37645,9 @@
                                                                         }
                                                                     });
                                                             } catch (error) {
-                                                                console.error(
-                                                                    "Deposit request failed: We could not find a withdrawer. Come again later."
-                                                                );
-                                                                throw new Error(error);
+                                                                err_msg = "Deposit request failed: We could not find a withdrawer. Come again later.";
+                                                                showMessage(err_msg);
+                                                                throw new Error(err_msg);
                                                             }
 
                                                         }
@@ -37641,9 +37656,10 @@
                                         });
 
                                 } else {
-                                    console.log("deposit asset request error");
+                                    err_msg = "deposit asset request error";
+                                    showMessage(err_msg);
+                                    throw new Error(err_msg);
                                 }
-
                             });
                             break;
                         case "withdraw_request_method":
@@ -37679,16 +37695,16 @@
                                             params.withdrawing_amount);
                                         if (trade_margin.remaining_crypto_credit < 0 &&
                                             trade_margin.remaining_crypto_credit < eqCrypto) {
-                                            throw new Error(
-                                                `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
-                                            );
+                                            err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
+                                            showMessage(err_msg);
+                                            throw new Error(err_msg);
                                         }
                                     } else {
                                         if (trade_margin.remaining_fiat_credit < 0 && trade_margin.remaining_fiat_credit <
                                             params.withdrawing_amount) {
-                                            throw new Error(
-                                                `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`
-                                            );
+                                            err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
+                                            showMessage(err_msg);
+                                            throw new Error(err_msg);
                                         }
                                     }
 
@@ -37712,9 +37728,9 @@
                                                 if (!localbitcoinplusplus.master_configurations
                                                     .tradableAsset2.includes(params.currency)
                                                 ) {
-                                                    throw new Error(
-                                                        "Invalid or unsupported currency."
-                                                    );
+                                                    err_msg = "Invalid or unsupported currency.";
+                                                    showMessage(err_msg);
+                                                    throw new Error(err_msg);
                                                 }
                                                 let eqBTC = RM_TRADE.calculateCryptoEquivalentOfCash(
                                                     withdrawing_btc_amount_in_cash,
@@ -37822,9 +37838,7 @@
                                                                                     .product,
                                                                                 change_adress: deposit_arr
                                                                                     .btc_address,
-                                                                                timestamp:
-                                                                                    +
-                                                                                    new Date()
+                                                                                timestamp: + new Date()
                                                                             }
                                                                         addDB(
                                                                             'withdraw_btc',
@@ -37888,9 +37902,9 @@
                                                     });
 
                                                 } else {
-                                                    console.error(
-                                                        `Withdrawal request failed: You are trying to withdraw more Bitcoins than you have.`
-                                                    );
+                                                    err_msg = `Withdrawal request failed: You are trying to withdraw more Bitcoins than you have.`;
+                                                    showMessage(err_msg);
+                                                    throw new Error(err_msg);
 
                                                     // Return error to the requester
                                                     return {
@@ -37900,10 +37914,10 @@
                                                     };
                                                 }
                                             } else {
-                                                console.error(
+                                                err_msg =
                                                     `Withdrawal request failed: You don't seem to have any Bitcoin balance in the system yet.
-                                                        Please buy some Bitcoins to withdraw.`
-                                                );
+                                                        Please buy some Bitcoins to withdraw.`;
+                                                showMessage(err_msg);
 
                                                 // Return error to the requester
                                                 return {
@@ -38015,14 +38029,16 @@
 
                                                 } else {
                                                     // Return error to the requester
-                                                    console.error(
-                                                        "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account."
-                                                    );
+                                                    err_msg = "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account.";
+                                                    showMessage(err_msg);
+                                                    throw new Error(err_msg);
                                                 }
                                             }
                                         });
                                     } else {
-                                        console.log("withdraw request error");
+                                        err_msg = "withdraw request error";
+                                        showMessage(err_msg);
+                                        throw new Error(err_msg);
                                     }
                                 }
                             });
@@ -38191,10 +38207,8 @@
                                                                     } catch (
                                                                         error
                                                                     ) {
-                                                                        console
-                                                                            .warn(
-                                                                                error
-                                                                            );
+                                                                        console.warn(error);
+                                                                        showMessage(error);
                                                                     }
                                                                 }
 
@@ -38313,12 +38327,12 @@
                                         return true;
                                     }
                                 }
-                                console.warn(`Failed to update external files from server.`);
+                                showMessage(`WARNING: Failed to update external files from server.`);
                             }
                             break;
 
                         default:
-                            console.warn("Unknown method called for execution.");
+                            showMessage("WARNING: Unknown method called for execution.");
                             break;
                     }
                 }
@@ -38427,17 +38441,19 @@
                 } else if (typeof is_valid_order == "object") {
                     var err;
                     for (err = 0; err < is_valid_order.length; err++) {
-                        alert(is_valid_order[err]);
+                        showMessage(`ERROR: ${is_valid_order[err]}`);
                     }
                     return false;
                 }
             },
             trade_buy(params, callback) {
-
+                let err_msg;
                 for (var key in params) {
                     if (params.hasOwnProperty(key)) {
                         if (typeof key == undefined || key.trim() == "" || key == null) {
-                            throw new Error("Incomplete or invalid request!");
+                            err_msg = "Incomplete or invalid request!";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
                         }
                     }
                 }
@@ -38445,7 +38461,9 @@
                         params.product) ||
                     !localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.currency) ||
                     params.currency == params.product) {
-                    throw new Error("Invalid buy request.");
+                    err_msg = "WARNING: Invalid buy request.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
 
                 const RM_WALLET = new localbitcoinplusplus.wallets;
@@ -38459,7 +38477,9 @@
                         let buyer_cash_balance = parseFloat(res.cash_balance);
                         let buy_price_btc = parseFloat(params.buy_price);
                         if (buyer_cash_balance < buy_price_btc) {
-                            throw new Error("Insufficient balance.");
+                            err_msg = "WARNING: Insufficient balance of buyer.";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
                         }
                         // calculate equivalent BTC for x amount of Cash
                         let eqBTC = RM_TRADE.calculateCryptoEquivalentOfCash(buy_price_btc, params.currency,
@@ -38502,18 +38522,25 @@
                             });
                             callback(false);
                         } else {
-                            throw new Error("Failed to fetch current BTC price.");
+                            err_msg = "Failed to fetch current BTC price.";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
                         }
                     } else {
-                        throw new Error("Failed to read cash balance from DB.");
+                        err_msg = "Failed to read cash balance from DB.";
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
                     }
                 });
             },
             trade_sell(params, callback) {
+                let err_msg;
                 for (var key in params) {
                     if (params.hasOwnProperty(key)) {
                         if (typeof key == "undefined" || key.trim() == "" || key == null) {
-                            throw new Error("Incomplete or invalid request!");
+                            err_msg = "Incomplete or invalid request!";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
                         }
                     }
                 }
@@ -38521,7 +38548,9 @@
                     !localbitcoinplusplus.master_configurations.tradableAsset1.includes(params.product) ||
                     !localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.currency) ||
                     params.currency == params.product) {
-                    throw new Error("Invalid sell request.");
+                    err_msg = "Invalid sell request.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
 
                 const RM_WALLET = new localbitcoinplusplus.wallets;
@@ -38541,7 +38570,9 @@
                         if (typeof eqBTC == "number" && eqBTC > 0) {
 
                             if (seller_btc_balance < eqBTC) {
-                                throw new Error("Insufficient BTC balance.");
+                                err_msg = "Insufficient BTC balance.";
+                                showMessage(err_msg);
+                                throw new Error(err_msg);
                             }
 
                             // supernode data query
@@ -38571,10 +38602,14 @@
                             });
                             callback(false);
                         } else {
-                            throw new Error("Failed to fetch current BTC price.");
+                            err_msg = "Failed to fetch current BTC price.";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
                         }
                     } else {
-                        throw new Error("Failed to read BTC balance from DB.");
+                        err_msg = "Failed to read BTC balance from DB.";
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
                     }
                 });
             },
@@ -38583,11 +38618,17 @@
                     typeof localbitcoinplusplus.master_configurations.tradableAsset2 == 'undefined' ||
                     (!localbitcoinplusplus.master_configurations.tradableAsset1.includes(assetType) &&
                         !localbitcoinplusplus.master_configurations.tradableAsset2.includes(assetType))) {
-                    throw new Error("Invalid asset error");
+                    err_msg = "Invalid asset error";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 } else if (parseFloat(amount) <= 0) {
-                    throw new Error("Invalid amount error.");
+                    err_msg = "Invalid amount error.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 } else if (userFLOaddress.length < 0) {
-                    throw new Error("User address required.");
+                    err_msg = "User address required.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 let deposit_request_object = {
                     trader_flo_address: userFLOaddress,
@@ -38605,18 +38646,27 @@
                 doSend(deposit_request);
             },
             withdrawAsset(assetType, amount, receivinAddress, userFLOaddress, currency, callback) {
+                let err_msg;
                 if (typeof localbitcoinplusplus.master_configurations.tradableAsset1 == 'undefined' ||
                     typeof localbitcoinplusplus.master_configurations.tradableAsset2 == 'undefined' ||
                     (!localbitcoinplusplus.master_configurations.tradableAsset1.includes(assetType) &&
                         !localbitcoinplusplus.master_configurations.tradableAsset2.includes(assetType) &&
                         !localbitcoinplusplus.master_configurations.tradableAsset1.includes(currency))) {
-                    throw new Error("Invalid asset error");
+                    err_msg = "Invalid asset error";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 } else if (parseFloat(amount) <= 0) {
-                    throw new Error("Invalid amount error.");
+                    err_msg = "Invalid amount error.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 } else if (userFLOaddress.length < 0) {
-                    throw new Error("User address required.");
+                    err_msg = "User address required.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 } else if (receivinAddress.trim() == "") {
-                    throw new Error("You must provide a vaid Bitcoin address to receive funds.");
+                    err_msg = "You must provide a vaid Bitcoin address to receive funds.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
 
                 let withdraw_request_object = {
@@ -38645,7 +38695,9 @@
                         return parseFloat(price / current_crypto_price.rate).toFixed(8);
                     }
                 }
-                throw new Error("Failed to calculate crypto equivalent of cash.");
+                let err_msg = `Failed to calculate crypto equivalent of cash.`;
+                showMessage(err_msg);
+                throw new Error(err_msg);
             },
             get_current_crypto_price_in_fiat(crypto_code, currency_code) {
                 return localbitcoinplusplus.trade[`current_${crypto_code}_price_in_${currency_code}`];
@@ -38705,6 +38757,7 @@
 
                 let url = `${blockchain_explorer}/api/addr/${utxo_addr}/utxo`;
                 console.log(url);
+                let err_msg;
 
                 helper_functions.ajaxGet(url).then(utxo_list => {
 
@@ -38715,7 +38768,9 @@
                             if (typeof receiving_amount_currency == "string") {
                                 if (!localbitcoinplusplus.master_configurations.validTradingAmount.includes(
                                         receiving_amount)) {
-                                    throw new Error('Invalid amount');
+                                    err_msg = `ERROR: Amount value is invalid.`;
+                                    showMessage(err_msg);
+                                    throw new Error(err_msg);
                                 }
                                 const RM_TRADE = new localbitcoinplusplus.trade;
                                 btc_eq_receiving_amount = RM_TRADE.calculateCryptoEquivalentOfCash(
@@ -38756,7 +38811,7 @@
                                 console.log(trx);
 
                                 let signedTxHash = trx.sign(utxo_addr_wif, 1); //SIGHASH_ALL DEFAULT 1
-                                console.log(signedTxHash);
+                                showMessage(`Signed Transaction Hash: ${signedTxHash}`);
 
                                 var http = new XMLHttpRequest();
                                 var tx_send_url = `${blockchain_explorer}/api/tx/send`;
@@ -38765,13 +38820,14 @@
                                 http.setRequestHeader('Content-type', 'application/json');
                                 http.onreadystatechange = function () { //Call a function when the state changes.
                                     if (http.readyState == 4 && http.status == 200) {
-                                        console.log(http.responseText);
+                                        showMessage(http.responseText);
                                         callback(http.responseText);
                                     }
                                 }
                                 http.send(params);
 
                             } catch (error) {
+                                showMessage(error);
                                 throw new Error(error);
                             }
 
@@ -38855,6 +38911,7 @@
                 ) {
                     const RM_TRADE = new localbitcoinplusplus.trade;
                     const RM_WALLET = new localbitcoinplusplus.wallets;
+                    let err_msg;
                     // Check buyer's cash balance
                     const buyer_cash_id = `${buyPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
                     readDB("cash_balances", buyer_cash_id).then(function (buyPipeCashRes) {
@@ -38863,7 +38920,9 @@
                             let buyer_cash_balance = parseFloat(buyPipeCashRes.cash_balance);
                             let buy_price_btc = parseFloat(buyPipeObj.buy_price);
                             if (buyer_cash_balance < buy_price_btc) {
-                                throw new Error("Insufficient cash balance of buyer.");
+                                err_msg = "Insufficient cash balance of buyer.";
+                                showMessage(err_msg);
+                                throw new Error(err_msg);
                             }
                             // calculate equivalent BTC for x amount of Cash
                             let eqBTCBuyer = RM_TRADE.calculateCryptoEquivalentOfCash(buy_price_btc,
@@ -38888,7 +38947,9 @@
                                         undefined) {
                                         eqBTCSeller = parseFloat(eqBTCSeller);
                                         if (seller_btc_balance < eqBTCSeller) {
-                                            throw new Error("Insufficient BTC balance of seller.");
+                                            err_msg = "Insufficient BTC balance of seller.";
+                                            showMessage(err_msg);
+                                            throw new Error(err_msg);
                                         }
 
                                         // Increase buyer's crypto balance
@@ -38990,8 +39051,8 @@
                                                                                 .id);
                                                                         } catch (error) {
                                                                             callback(false);
-                                                                            throw new Error(
-                                                                                error);
+                                                                            showMessage(`WARNING: Failed to delete respective buy and sell orders in an operation.`);
+                                                                            throw new Error(error);
                                                                         }
 
                                                                         // Update balances
@@ -39021,9 +39082,9 @@
                                                                                 .trader_flo_address
                                                                             );
                                                                         } catch (error) {
+                                                                            showMessage(`WARNING: Failed to update cash and crypto balances during launch trade operation.`);
                                                                             callback(false);
-                                                                            throw new Error(
-                                                                                error);
+                                                                            throw new Error(error);
                                                                         }
 
                                                                         // Prepare response
@@ -39091,9 +39152,7 @@
                                                                                 "supernodePubKey": user_data
                                                                                     .myLocalFLOPublicKey
                                                                             }
-                                                                        callback(
-                                                                            response_for_client
-                                                                        );
+                                                                        callback(response_for_client);
                                                                         return true;
                                                                     }
                                                                 });
@@ -39109,7 +39168,7 @@
             },
             cancelTrade(trade_id, trader_flo_address, trade_type) {
                 if (typeof trade_id !== "string") {
-                    alert("Failed to cancel the trade.");
+                    showMessage("WARNING: Failed to cancel the trade.");
                     return false;
                 }
                 const RM_WALLET = new localbitcoinplusplus.wallets;
@@ -39216,6 +39275,7 @@
                     //proceed only when the second promise is resolved
                     return data;
                 } catch (error) {
+                    showMessage(`WARNING: Failed to get data from ${url}.`);
                     throw new Error(error);
                 }
             },
@@ -39425,7 +39485,7 @@
 
         var output;
 
-        function init() {
+        function kickInit() {
             output = document.getElementById("output_div");
             const RM_WALLET = new localbitcoinplusplus.wallets;
             return new Promise(resolve => {
@@ -39470,9 +39530,8 @@
                                     .call(this, "addNewKbucketNode", {
                                         newKbucketNode: dbObj
                                     });
-                                console.log(addNewKNode);
                                 doSend(addNewKNode);
-                            });
+                            }).catch(e=>console.warn(e));
 
                             RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
                                 .then(() => privateKeyBuilder());
@@ -39481,7 +39540,9 @@
                             return;
 
                         } else {
-                            throw new Error("Failed to generate new FLO keys. Please retry.");
+                            err_msg = "Failed to generate new FLO keys. Please retry.";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
                         }
                     }
 
@@ -39547,8 +39608,7 @@
                                             readDB("localbitcoinUser", "00-01").then(function (res) {
                                                 if (typeof res == "object" && res.myLocalFLOAddress.length > 0) {
                                                     if (res.myLocalFLOAddress === received_resp.trader_flo_id) {
-                                                        writeToScreen(received_resp.server_msg);
-                                                        alert(received_resp.server_msg);
+                                                        showMessage(received_resp.server_msg);
                                                         return false;
                                                     }
                                                 }
@@ -39655,8 +39715,6 @@
                                     // Pass data to build_deposit_withdraw_table function
                                     try {
                                         console.log(su_db_data.withdraw_cash);
-                                        console.log("djfhsdjhjkdsfhksjdhfkjh");
-                                        
                                         localbitcoinplusplus.actions.build_deposit_withdraw_table(su_db_data.withdraw_cash);
                                     } catch (error) {
                                         console.error(error);
@@ -39712,7 +39770,9 @@
                                         readDB("userPublicData", cancel_request.trader_flo_address).then((trader_data) => {
                                             if (typeof trader_data.trader_flo_address !== "string" || typeof trader_data
                                                 .trader_flo_pubKey !== "string") {
-                                                throw new Error("Unverified user");
+                                                    err_msg="ERROR: Failed to cancel the trade. User is unknown.";
+                                                    showMessage(err_msg);
+                                                    throw new Error(err_msg);
                                             }
                                             tradeDB = cancel_request.trade_type == "buy" ? "buyOrders" :
                                                 "sellOrders";
@@ -40201,11 +40261,11 @@
                                             if (localbitcoinplusplus.wallets.my_local_flo_address ==
                                                 updateUserCryptoBalanceResponseObject.trader_flo_address) {
                                                 displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
-                                                alert(`Your balance is updated.`);
+                                                showMessage(`INFO: Your balance is updated.`);
                                             }
                                             return true;
                                         } else {
-                                            console.warn(`Failed to update balance in your DB. Please refresh.`);
+                                            showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
                                         }
                                     });
                                 break;
@@ -40703,12 +40763,15 @@
         const doShreeGanesh = () => {
             try {
                 var rm_configs = localbitcoinplusplus.actions.fetch_configs(async function (...fetch_configs_res) {
+                    showMessage(`Connecting to Supernode server. Please wait...`);
                     window.bitjs = []; // Launch bitjs
                     localbitcoinplusplus.master_configurations.tradableAsset1.map(asset => bitjslib(
                         asset));
-                    init();
+                    kickInit();
                 });
             } catch (error) {
+                showMessage(`WARNING: System failed to collect configurations. 
+                Please refresh the page to try again.`);
                 throw new Error(`Failed to fetch configurations: ${error}`);
             }
         }
@@ -40734,8 +40797,10 @@
                 const user_flo_details = await readDB("localbitcoinUser", "00-01");
 
                 if (typeof user_flo_details.myLocalFLOAddress == "undefined" || user_flo_details.myLocalFLOAddress
-                    .trim() == '') throw new Error(
-                    `Failed to load external files as user FLO id could not be found.`);
+                    .trim() == '') {
+                        showMessage(`WARNING: Failed to load external files. Please refresh the page.`);
+                        throw new Error(
+                    `Failed to load external files as user FLO id could not be found.`);}
 
                 const ext_scripts_hashes_object = JSON.parse(localbitcoinplusplus.master_configurations.externalFiles);
 
@@ -40876,9 +40941,11 @@
 
                     localbitcoinplusplus.actions.sync_with_supernode(MY_LOCAL_FLO_ADDRESS);
 
+                    showMessage(`Connection successfull. Welcome to Local Bitcoin Plus Plus P2P trading platform.`);
                 });
 
             } catch (e) {
+                showMessage("ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment.");
                 throw new Error(
                     "ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment."
                 );
@@ -40964,9 +41031,9 @@
                     )) {
                     localbitcoinplusplus.actions.reset_flo_keys().then(reset_success => {
                         if (reset_success) {
-                            alert("FLO keys have been reset successfully.");
+                            showMessage("INFO: FLO keys have been reset successfully.");
                         } else {
-                            alert(`Failed to reset FLO keys.`)
+                            showMessage(`INFO: Failed to reset FLO keys.`);
                         }
                     });
                 }
@@ -41031,9 +41098,9 @@
             trade_buy_button.onclick = function (event) {
                 if (typeof idbData.myLocalFLOAddress !== "string" || idbData.myLocalFLOAddress
                     .trim() == "") {
-                    throw new Error(
-                        "You must have a BTC address to receive Bitcoin. No Bitcoin address found in database."
-                    );
+                    let err_msg = "You must have a BTC address to receive Bitcoin. No Bitcoin address found in database.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 let buytrade = RM_TRADE.place_order("buy", idbData.myLocalFLOAddress,
                     selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
@@ -41043,9 +41110,9 @@
             trade_sell_button.onclick = function (event) {
                 if (typeof idbData.myLocalFLOAddress == undefined || idbData.myLocalFLOAddress
                     .trim() == "") {
-                    throw new Error(
-                        "You must have a FLO address to trade. No such address found in database."
-                    );
+                    let err_msg =     "You must have a FLO address to trade. No such address found in database."
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 let selltrade = RM_TRADE.place_order("sell", idbData.myLocalFLOAddress,
                     selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
@@ -41064,6 +41131,7 @@
 
             let asset_box = document.getElementById("asset_box");
             let asset_button_box = document.getElementById("asset_button_box");
+            let err_msg = '';
 
             // Create a select input for asset type
             let assetTypeInput = document.createElement('select');
@@ -41134,7 +41202,9 @@
                 let tradeAmount = parseFloat(tradeAmountSelect.value);
                 let fiatCurrency = currencySelect.value;
                 if (typeof userFLOaddress == undefined || userFLOaddress.trim().length < 1) {
-                    throw new Error("Invalid or empty user FLO address.");
+                    err_msg = "Invalid or empty user FLO address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
@@ -41145,17 +41215,18 @@
                 ) {
                     RM_TRADE.depositAsset(asset_type, tradeAmount, fiatCurrency, userFLOaddress);
                 } else {
-                    throw new Error("Error while depositing your address.");
+                    err_msg = "Error while depositing your address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
             });
 
             withdrawAssetButton.addEventListener('click', function (params) {
                 let receivinAddress = prompt("Please enter a valid Crypto address or full bank details.");
                 if (receivinAddress.trim == "") {
-                    alert(
-                        "You must specify either a Bitcoin address to withdraw Bitcoin or your bank detail to withdraw cash."
-                    );
-                    return false;
+                    err_msg = "You must specify either a Bitcoin address to withdraw Bitcoin or your bank detail to withdraw cash.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
 
                 let asset_type = assetTypeInput.value;
@@ -41163,7 +41234,9 @@
                 let fiatCurrency = currencySelect.value;
 
                 if (typeof userFLOaddress == undefined || userFLOaddress.trim().length < 1) {
-                    throw new Error("Invalid or empty user FLO address.");
+                    err_msg = "Invalid or empty user FLO address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
@@ -41175,7 +41248,9 @@
                     RM_TRADE.withdrawAsset(asset_type, tradeAmount, receivinAddress, userFLOaddress,
                         fiatCurrency);
                 } else {
-                    throw new Error("Error while depositing your address.");
+                    err_msg = "Error while depositing your address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
             });
 
@@ -41268,12 +41343,33 @@
             broadcast_tx_ui_form.appendChild(change_adress_input);
             broadcast_tx_ui_form.appendChild(tx_send_button);
 
+            let err_msg;
             tx_send_button.onclick = function () {
-                if (utxo_addr_input.value.length < 1) throw new Error("Empty UTXO Address.");
-                if (utxo_addr_wif_input.value.length < 1) throw new Error("Empty Private Key.");
-                if (receiver_address_input.value.length < 1) throw new Error("Empty Receiving Address.");
-                if (receiving_crypto_amount_input.value < 0) throw new Error("Empty Sending Amount.");
-                if (change_adress_input.value.length < 1) throw new Error("Empty Change Address.");
+                if (utxo_addr_input.value.length < 1) {
+                    err_msg = "Empty UTXO Address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                };
+                if (utxo_addr_wif_input.value.length < 1) {
+                    err_msg = "Empty Private Key.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                };
+                if (receiver_address_input.value.length < 1) {
+                    err_msg = "Empty Receiving Address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                };
+                if (receiving_crypto_amount_input.value < 0) {
+                    err_msg = "Empty Sending Amount.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                };
+                if (change_adress_input.value.length < 1) {
+                    err_msg = "Empty Change Address.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                };
 
                 const RM_TRADE = new localbitcoinplusplus.trade;
                 RM_TRADE.sendTransaction(send_crypto_type.value, utxo_addr_input.value, utxo_addr_wif_input.value,
@@ -41286,11 +41382,11 @@
                                 let resp_obj = JSON.parse(res);
                                 let resp_txid = resp_obj.txid.result || resp_obj.txid;
                                 let msg = `Transaction Id for your deposited crypto asset: ${resp_txid}`;
-                                writeToScreen(msg);
-                                alert(msg);
+                                showMessage(msg);
                                 return true;
                             } catch (error) {
                                 console.warn(error);
+                                showMessage(error);
                             }
                         }
                     });
@@ -41367,7 +41463,11 @@
 
             if (!files.length) return ('Please select a file!');
 
-            if (typeof file_name !== "string") throw new Error('Please provide a valid file name.');
+            if (typeof file_name !== "string") {
+                let err_msg='Please provide a valid file name.';
+                showMessage(err_msg);
+                throw new Error(err_msg);
+            };
 
             var file = files[0];
             var start = 0;
@@ -41422,10 +41522,6 @@
                 }
             }, false);
 
-        }
-
-        function showMessage(message) {
-            console.log(message);
         }
 
         //Function to check current balance of a BTC address
@@ -41594,17 +41690,25 @@
 
         // log event in the console
         function LogEvent(msg) {
-            log.textContent += msg + "\n";
+            log.textContent += "> " + msg + "\n";
             var ot = log.scrollHeight - log.clientHeight;
             if (ot > 0) log.scrollTop = ot;
         }
 
-        function w3_open() {
+        function showMessage(msg='') {
+            if (msg.length>0) LogEvent(msg);
+            displayMessages();
+            setTimeout(function(){
+                closeMessage();
+            },10000); 
+        }
+
+        function displayMessages() {
             document.getElementById("mySidebar").style.width = "98%";
             document.getElementById("mySidebar").style.display = "block";
         }
 
-        function w3_close() {
+        function closeMessage() {
            document.getElementById("mySidebar").style.display = "none";
         }
     </script>
