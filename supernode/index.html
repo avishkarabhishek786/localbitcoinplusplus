@@ -36351,7 +36351,9 @@
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
                         #!#supernodesPubKeys=02B2D2F40EC5BC9D336BAF14017D629B3A96892D5E86095923A50A734E2364FB34,
                         #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
-                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"167.99.5.116","port":"9002","kbucketId":"oJXNwJNNTt9SYaBZ1H3gjPkrZcpBhxspsM"}}`;
+                        #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"ranchimall1.duckdns.org","port":"9002","kbucketId":"oJeYebjgWV4Hszj5oP7sfXcj1U98P5M6q4"},
+                        "ranchimall":{"ip":"ranchimall.duckdns.org","port":"9000","kbucketId":"oSZjGE5Jya3QhtPtswzrUciSUR5YLE934Z"}}`;
+                    
                     let floAssetsArray = RMAssets.split('#!#');
 
                     if (floAssetsArray.length > 0 && typeof floAssetsArray[0] !== undefined &&
@@ -36547,8 +36549,8 @@
                     const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
                     if (typeof supernodeSeeds !== "object") throw new Error(
                         "Failed to get supernode seeds.");
-                    const supernodeSeedsObj = JSON.parse(supernodeSeeds);
-
+                    let supernodeSeedsObj = JSON.parse(supernodeSeeds);
+                    
                     const contactId = localbitcoinplusplus.kademlia.newBase64DiscoverId(flo_pub_key);
 
                     const seedContactArray = {
@@ -36560,26 +36562,23 @@
                         },
                     };
 
-                    let nearestSupernode = Object.keys(supernodeSeedsObj).map(function(key) {
-                        return supernodeSeedsObj[key];
-                    }).map(seed=> {
+                    Object.entries(supernodeSeedsObj).map(seedObj=>{
                         localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
-                            "FLO_TEST", seed.kbucketId, { id: seed.kbucketId, vectorClock: 0 });
-                        return seed;
-                    }).filter(su_seed=>{
-                        bucketId = localbitcoinplusplus.kademlia.floIdToKbucketId("FLO_TEST", su_seed.kbucketId);
-                        let distance = KBucket.closest(bucketId);
-                        console.log(distance);
-                        return distance;
+                            "FLO_TEST", seedObj[1].kbucketId, 
+                            { id: seedObj[1].kbucketId, vectorClock: 0 });
                     });
 
-                    if (!localbitcoinplusplus.master_configurations
-                        .supernodesPubKeys.includes(flo_pub_key)) {
-                        seedContactArray.transport = {
-                            host: nearestSupernode[0].ip,
-                            port: nearestSupernode[0].port,
-                            id: nearestSupernode[0].kbucketId
-                        }
+                    let currentNodeBucketId = localbitcoinplusplus.kademlia
+                        .floIdToKbucketId("FLO_TEST", flo_addr);
+                    let nearestSupernode = KBucket.closest(currentNodeBucketId, 1);
+                    
+                    nearestSupernodeAddress = Object.values(supernodeSeedsObj).filter(seed=>
+                        nearestSupernode[0].data.id == seed.kbucketId);
+
+                    seedContactArray.transport = {
+                        host: nearestSupernodeAddress[0].ip,
+                        port: nearestSupernodeAddress[0].port,
+                        id: nearestSupernodeAddress[0].kbucketId
                     }
 
                     const nodeDiscoveryOptions = {
@@ -36587,7 +36586,6 @@
                     }
                     
                     const kdiscover = new tristanDiscover(nodeDiscoveryOptions);
-                    console.log(kdiscover);
 
                     try {
                         let supernodeAddressUrl = `ws://${kdiscover.seeds.transport.host}:${kdiscover.seeds.transport.port}`;
@@ -40464,7 +40462,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        var request = window.indexedDB.open(DBName, 2);
+        var request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
