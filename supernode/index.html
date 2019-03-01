@@ -36349,10 +36349,10 @@
                         `tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
                         #!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
                         #!#MASTER_RECEIVING_ADDRESS=oVRq2nka1GtALQT8pbuLHAGjqAQ7PAo6uy#!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
-                        #!#supernodesPubKeys=02B2D2F40EC5BC9D336BAF14017D629B3A96892D5E86095923A50A734E2364FB34,
+                        #!#supernodesPubKeys=02598B9BDBC74C4364EB9EB2D0B2E70B27FF9B28B59F708F8C3B41B351C1DE2F8A,03998939E5E2F93A0648B16F481BE4A9299BCBF0CFAA7F25C716D9A5C80B20DFFC,
                         #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
                         #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"ranchimall1.duckdns.org","port":"9002","kbucketId":"oJeYebjgWV4Hszj5oP7sfXcj1U98P5M6q4"},
-                        "ranchimall2":{"ip":"ranchimall1.duckdns.org","port":"9003","kbucketId":"oH47fmrVEbSDcoXJG28BQZ4kzUpD9VTM6U"}}`;
+                        "ranchimall2":{"ip":"ranchimall1.duckdns.org","port":"9003","kbucketId":"ofo48uKuhoepiv6k7QbDgsPxrFUMipqmUh"}}`;
                     
                     let floAssetsArray = RMAssets.split('#!#');
 
@@ -36570,11 +36570,18 @@
 
                     let currentNodeBucketId = localbitcoinplusplus.kademlia
                         .floIdToKbucketId("FLO_TEST", flo_addr);
-                    let nearestSupernode = KBucket.closest(currentNodeBucketId, 1);
+                    let nearestSupernode = KBucket.closest(currentNodeBucketId);
                     
-                    nearestSupernodeAddress = Object.values(supernodeSeedsObj).filter(seed=>
-                        nearestSupernode[0].data.id == seed.kbucketId);
-
+                    let supernodeSeedsArray = Object.values(supernodeSeedsObj).map(seed=>seed.kbucketId);
+                                                
+                    nearestSupernodeAddressId = nearestSupernode
+                        .filter(suSeed=>supernodeSeedsArray.includes(suSeed.data.id))
+                        .filter(suSeed=>suSeed.data.id !== flo_addr)
+                        .map(suSeed=>suSeed.data);
+                        
+                    let nearestSupernodeAddress = Object.values(supernodeSeedsObj)
+                        .filter(seed=>seed.kbucketId==nearestSupernodeAddressId[0].id)
+                    
                     seedContactArray.transport = {
                         host: nearestSupernodeAddress[0].ip,
                         port: nearestSupernodeAddress[0].port,
@@ -39495,8 +39502,7 @@
                             "Please Enter a valid FLO private key if you have any. Else leave blank."
                         );
 
-                        if (user_pvt_key.trim() == "" || user_pvt_key.length < 1) user_pvt_key =
-                            null;
+                        if (user_pvt_key.trim() == "" || user_pvt_key.length < 1) user_pvt_key = null;
 
                         let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
                         if (typeof newKeys == 'object' && newKeys.privateKeyWIF.length > 0 &&
@@ -39842,14 +39848,22 @@
                                 break;
                             case "send_back_shamirs_secret_supernode_pvtkey":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
-                                        res) {
-                                        let send_pvtkey_req = RM_RPC
+                                    readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val)
+                                    .then(function (res) {
+                                        if (typeof res=="string") {
+                                            let send_pvtkey_req = RM_RPC
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_supernode_pvtkey", {
                                                 private_key_chunk: res
                                             });
-                                        doSend(send_pvtkey_req);
+                                            doSend(send_pvtkey_req);
+                                            return;
+                                        }
+                                        // Supernode does not have this user's private key shares. Request shares from others
+                                        let currentNodeBucketId = localbitcoinplusplus.kademlia
+                                            .floIdToKbucketId("FLO_TEST", flo_addr);
+                                        let nearestSupernode = KBucket.closest(currentNodeBucketId, 1);
+
                                     });
                                 }
                                 break;
@@ -40763,8 +40777,7 @@
                 var rm_configs = localbitcoinplusplus.actions.fetch_configs(async function (...fetch_configs_res) {
                     showMessage(`Connecting to Supernode server. Please wait...`);
                     window.bitjs = []; // Launch bitjs
-                    localbitcoinplusplus.master_configurations.tradableAsset1.map(asset => bitjslib(
-                        asset));
+                    localbitcoinplusplus.master_configurations.tradableAsset1.map(asset => bitjslib(asset));
                     kickInit();
                 });
             } catch (error) {
