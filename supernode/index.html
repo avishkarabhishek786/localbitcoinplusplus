@@ -36545,12 +36545,10 @@
                 return Crypto.util.bytesToBase64(pubKeyBytes);
             },
             getSupernodeSeed: function (flo_addr, flo_pub_key) {
-                return new Promise((resolve, reject) => {
-                    const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
-                    if (typeof supernodeSeeds !== "object") throw new Error(
-                        "Failed to get supernode seeds.");
-                    let supernodeSeedsObj = JSON.parse(supernodeSeeds);
-                    
+                return new Promise(async (resolve, reject) => {
+
+                    let nearestSupernodeAddress = await localbitcoinplusplus.kademlia.determineMySupernode(flo_addr);
+
                     const contactId = localbitcoinplusplus.kademlia.newBase64DiscoverId(flo_pub_key);
 
                     const seedContactArray = {
@@ -36562,6 +36560,44 @@
                         },
                     };
 
+                    seedContactArray.transport = {
+                        host: nearestSupernodeAddress[0].ip,
+                        port: nearestSupernodeAddress[0].port,
+                        id: nearestSupernodeAddress[0].kbucketId
+                    }
+
+                    const nodeDiscoveryOptions = {
+                        seeds: seedContactArray
+                    }
+                    
+                    const kdiscover = new tristanDiscover(nodeDiscoveryOptions);
+
+                    try {
+                        let supernodeAddressUrl = `ws://${kdiscover.seeds.transport.host}:${kdiscover.seeds.transport.port}`;
+                        resolve(supernodeAddressUrl);
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            },
+            isNodePresentInMyKbucket: function(flo_id) {
+                return new Promise((resolve, reject)=>{
+                    let kArray  = KBucket.toArray();
+                    let kArrayFloIds = kArray.map(k=>k.data.id);
+                    if (kArrayFloIds.includes(flo_id)) {
+                        resolve(true);
+                    } else {
+                        reject(false);
+                    }
+                });
+            }, 
+            determineMySupernode: function(flo_addr) {
+                return new Promise((resolve, reject)=>{
+                    const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
+                    if (typeof supernodeSeeds !== "object") reject(
+                        "Failed to get supernode seeds.");
+                    let supernodeSeedsObj = JSON.parse(supernodeSeeds);
+                    
                     Object.entries(supernodeSeedsObj).map(seedObj=>{
                         localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
                             "FLO_TEST", seedObj[1].kbucketId, 
@@ -36581,28 +36617,14 @@
                         
                     let nearestSupernodeAddress = Object.values(supernodeSeedsObj)
                         .filter(seed=>seed.kbucketId==nearestSupernodeAddressId[0].id)
-                    
-                    seedContactArray.transport = {
-                        host: nearestSupernodeAddress[0].ip,
-                        port: nearestSupernodeAddress[0].port,
-                        id: nearestSupernodeAddress[0].kbucketId
-                    }
 
-                    const nodeDiscoveryOptions = {
-                        seeds: seedContactArray
+                    if (nearestSupernodeAddress.length>0) {
+                        resolve(nearestSupernodeAddress);
+                    } else {
+                        reject(false);
                     }
-                    
-                    const kdiscover = new tristanDiscover(nodeDiscoveryOptions);
-
-                    try {
-                        let supernodeAddressUrl = `ws://${kdiscover.seeds.transport.host}:${kdiscover.seeds.transport.port}`;
-                        console.log(supernodeAddressUrl);
-                        resolve(supernodeAddressUrl);
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            },
+                })
+            }
         }
     </script>
 
@@ -36769,6 +36791,166 @@
         }
     </script>
 
+    <!-- Misc functions -->
+    <script>
+        // log event in the console
+        function LogEvent(msg) {
+            log.textContent += "> " + msg + "\n";
+            var ot = log.scrollHeight - log.clientHeight;
+            if (ot > 0) log.scrollTop = ot;
+        }
+
+        function showMessage(msg='', t=10000) {
+            if (msg.length>0) LogEvent(msg);
+            displayMessages();
+            setTimeout(function(){
+                closeMessage();
+            }, t); 
+        }
+
+        function displayMessages() {
+            document.getElementById("mySidebar").style.width = "98%";
+            document.getElementById("mySidebar").style.display = "block";
+        }
+
+        function closeMessage() {
+            document.getElementById("mySidebar").style.display = "none";
+        }
+
+        function rand(a, b, multiple) {
+            return Math.floor(Math.random(a, b) * multiple);
+        }
+
+        /*https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze*/
+        function deepFreeze(object) {
+            // Retrieve the property names defined on object
+            var propNames = Object.getOwnPropertyNames(object);
+
+            // Freeze properties before freezing self
+            for (let name of propNames) {
+                let value = object[name];
+
+                object[name] = value && typeof value === "object" ?
+                    deepFreeze(value) : value;
+            }
+            return Object.freeze(object);
+        }
+
+        function randomNoRepeats(array) {
+            var copy = array.slice(0);
+            return function () {
+                if (copy.length < 1) {
+                    copy = array.slice(0);
+                }
+                var index = Math.floor(Math.random() * copy.length);
+                var item = copy[index];
+                copy.splice(index, 1);
+                return item;
+            };
+        }
+
+        function duplicatesInArray(arr) {
+            arr.reduce(function (acc, el, i, arr) {
+                if (arr.indexOf(el) !== i && acc.indexOf(el) < 0) acc.push(el);
+                return acc;
+            }, []);
+        }
+
+        /* Function to load files to db */
+        function readBlob(file_name) {
+
+            var files = document.getElementById('upload_file_db').files;
+
+            if (!files.length) return ('Please select a file!');
+
+            if (typeof file_name !== "string") {
+                let err_msg='Please provide a valid file name.';
+                showMessage(err_msg);
+                throw new Error(err_msg);
+            };
+
+            var file = files[0];
+            var start = 0;
+            var stop = file.size - 1;
+
+            var reader = new FileReader();
+
+            // If we use onloadend, we need to check the readyState.
+            reader.onloadend = function (evt) {
+                if (evt.target.readyState == FileReader.DONE) { // DONE == 2
+                    let data = evt.target.result;
+                    let hash = Crypto.SHA256(data);
+                    updateinDB("external_files", {
+                        filename: file_name,
+                        filehash: hash,
+                        content: data,
+                    });
+                };
+            };
+
+            var blob = file.slice(start, stop + 1);
+            reader.readAsBinaryString(blob);
+        }
+
+        function uploadFileToDB() {
+
+            const d3div = document.getElementById('d3div');
+            const fileUploadDiv = document.createElement('div');
+            const dbFileLabel = document.createElement('label');
+            const dbFileDivText = document.createTextNode('Choose File');
+            dbFileLabel.appendChild(dbFileDivText);
+            dbFileLabel.className += ` button bg-purple mg-5 `;
+            const dbFile = document.createElement('input');
+            dbFile.className += ` hidden `;
+            dbFile.setAttribute("type", "file");
+            dbFile.setAttribute("id", "upload_file_db");
+            const readBytesButtons = document.createElement("input");
+            readBytesButtons.type = 'button';
+            readBytesButtons.className += ` button bg-purple mg-5 `;
+            readBytesButtons.setAttribute("id", "uploadFileButton");
+            readBytesButtons.value = "Upload File";
+
+            dbFileLabel.appendChild(dbFile);
+            d3div.appendChild(dbFileLabel);
+            d3div.appendChild(readBytesButtons);
+            d3div.appendChild(fileUploadDiv);
+
+            document.querySelector('#uploadFileButton').addEventListener('click', function (evt) {
+                if (evt.target.tagName.toLowerCase() == 'button') {
+                    let fname = prompt("Enter name of this file.");
+                    readBlob(fname);
+                }
+            }, false);
+
+        }
+
+        function modalWindow(message) {
+
+            var modal = document.getElementById('myModal');
+
+            var msg = document.getElementById("modal_msg");
+            msg.innerHTML = message;
+
+            // Get the <span> element that closes the modal
+            var span = document.getElementsByClassName("close")[0];
+
+            // When the user clicks on <span> (x), close the modal
+            span.onclick = function () {
+                modal.style.display = "none";
+            }
+
+            // When the user clicks anywhere outside of the modal, close it
+            window.onclick = function (event) {
+                if (event.target == modal) {
+                    modal.style.display = "none";
+                }
+            }
+
+            modal.style.display = "block";
+
+        }
+    </script>
+        
     <!-- Wallet Operations (Generate, Sign and Verify) -->
     <script>
         var wallets = localbitcoinplusplus.wallets = function (wallets) {};
@@ -36898,16 +37080,17 @@
             rebuild_my_private_key: function (transactionKey) {
                 const RM_WALLET = new localbitcoinplusplus.wallets;
                 let my_pvt_key = RM_WALLET.rebuild_private_key(MY_PRIVATE_KEY_SHAMIRS_SHARES, transactionKey);
+                
+                if (typeof my_pvt_key == "undefined") {
+                    showMessage(`WARNING: Failed to create your private keys.`);
+                    throw new Error(`Failed to create your private keys.`);
+                }
                 Object.defineProperty(localbitcoinplusplus.wallets, 'MY_SUPERNODE_PRIVATE_KEY', {
                     value: my_pvt_key,
                     writable: false,
                     configurable: false,
                     enumerable: true
                 });
-                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY == "undefined") {
-                    showMessage(`WARNING: Failed to create your private keys.`);
-                    throw new Error(`Failed to create your private keys.`);
-                }
             },
             rebuild_private_key: function (private_key_shamirs_shares, transactionKey) {
                 let decoded_shares = private_key_shamirs_shares.map(encryptedShares => {
@@ -37050,7 +37233,7 @@
                     request.response = {};
                     let err_msg;
 
-                    if (method=="sync_with_supernode") {
+                    if (method=="sync_with_supernode") { 
                         RM_RPC.filter_legit_requests(function (is_valid_request) {
                             if (is_valid_request === true && params.job ==
                                 "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length >
@@ -37071,7 +37254,7 @@
                                     });
                             }
                         });
-                    }
+                    } 
 
                     if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                             localbitcoinplusplus.wallets.my_local_flo_public_key)) {
@@ -39580,10 +39763,12 @@
         function onOpen(evt) {
             loadExternalFiles();
             dataBaseUIOperations();
+            showMessage(`Connected successfully to Supernode: ${wsUri}.`);
             writeToScreen("CONNECTED");
         }
 
         function onClose(evt) {
+            showMessage(`Disconnected to Supernode sever: ${wsUri}.`);
             writeToScreen("DISCONNECTED");
         }
 
@@ -40124,8 +40309,7 @@
                                         throw new Error("Failed to identify as supernode.");
                                     }
 
-                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] ==
-                                        "object") {
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                         let req_data = res_obj.params[0].public_data;
                                         try {
                                             let flo_address = bitjs.FLO_TEST.pubkey2address(req_data.trader_flo_pubKey);
@@ -40142,27 +40326,6 @@
                                                 }
 
                                                 addDB('userPublicData', public_req_object);
-
-                                                let public_req_object_str = JSON.stringify(public_req_object);
-                                                let public_req_object_hash = Crypto.SHA256(
-                                                    public_req_object_str);
-                                                let public_req_object_sign = RM_WALLET.sign(
-                                                    public_req_object_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                );
-
-                                                let userPublicDataResponseObject = {
-                                                    data: public_req_object,
-                                                    data_hash: public_req_object_hash,
-                                                    sign: public_req_object_sign,
-                                                    su_pubKey: localbitcoinplusplus.wallets.my_local_flo_public_key
-                                                }
-
-                                                let send_pvtkey_req = RM_RPC
-                                                    .send_rpc
-                                                    .call(this, "superNodeSignedAddUserPublicData",
-                                                        userPublicDataResponseObject);
-
-                                                doSend(send_pvtkey_req);
 
                                             }
                                         } catch (error) {
@@ -40487,6 +40650,7 @@
 
         request.onsuccess = function (event) {
             db = request.result;
+            loadLocalDBData();
         };
 
         request.onupgradeneeded = function (event) {
@@ -40782,7 +40946,7 @@
                 });
             } catch (error) {
                 showMessage(`WARNING: System failed to collect configurations. 
-                Please refresh the page to try again.`);
+                    Please refresh the page to try again.`);
                 throw new Error(`Failed to fetch configurations: ${error}`);
             }
         }
@@ -40790,6 +40954,21 @@
     </script>
 
     <script>
+        const loadLocalDBData = () => {
+            // load local db
+            showMessage(`Loading your local database.`);
+            readDB('localbitcoinUser', "00-01").then(userInfo=>{
+                let my_flo_id = userInfo.myLocalFLOAddress.length > 0 
+                    ? userInfo.myLocalFLOAddress : `No FLO Id found`; 
+                showMessage(`Your FLO Id: ${my_flo_id}`);
+                const localbitcoinuserdiv = document.getElementById('localbitcoinuserdiv')
+                localbitcoinuserdiv.innerHTML = `${my_flo_id}`;
+
+                // showMessage ->updating your balances
+                displayBalances(my_flo_id);
+            });
+        }
+
         const createScript = (id, content) => {
             let getScriptId = document.getElementById(id);
             if (getScriptId == null) {
@@ -41002,18 +41181,26 @@
     <script>
         const displayBalances = (flo_id) => {
             if (typeof flo_id !== "string") return;
+            showMessage(`Loading your balances.`);
             const balances_div = document.getElementById("balances_div");
             const user_crypto_balances = readDBbyIndex("crypto_balances", "trader_flo_address", flo_id);
             const user_fiat_balances = readDBbyIndex("cash_balances", "trader_flo_address", flo_id);
             let t = ``;
             Promise.all([user_crypto_balances, user_fiat_balances]).then((balances) => {
-                balances[0].concat(balances[1]).map((user_balance_data) => {
+                let all_balances = balances[0].concat(balances[1]);
+                if (all_balances.length == 0) {
+                    showMessage(`You don't have any balance. You can deposit crypto or fiat
+                    asset from DEPOSIT dection below.`);        
+                }
+                
+                all_balances.map(user_balance_data => {
                     let code = user_balance_data.crypto_currency || user_balance_data.currency;
                     let value = user_balance_data.crypto_balance || user_balance_data.cash_balance;
                     t += `<span>${code}:${value}</span> &nbsp;`;
                 });
                 balances_div.innerHTML = t;
             });
+            showMessage(t);
         }
     </script>
 
@@ -41424,117 +41611,9 @@
         })();
     </script>
 
-    <!-- Misc functions -->
     <script>
-        function rand(a, b, multiple) {
-            return Math.floor(Math.random(a, b) * multiple);
-        }
-
-        /*https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze*/
-        function deepFreeze(object) {
-            // Retrieve the property names defined on object
-            var propNames = Object.getOwnPropertyNames(object);
-
-            // Freeze properties before freezing self
-            for (let name of propNames) {
-                let value = object[name];
-
-                object[name] = value && typeof value === "object" ?
-                    deepFreeze(value) : value;
-            }
-            return Object.freeze(object);
-        }
-
-        function randomNoRepeats(array) {
-            var copy = array.slice(0);
-            return function () {
-                if (copy.length < 1) {
-                    copy = array.slice(0);
-                }
-                var index = Math.floor(Math.random() * copy.length);
-                var item = copy[index];
-                copy.splice(index, 1);
-                return item;
-            };
-        }
-
-        function duplicatesInArray(arr) {
-            arr.reduce(function (acc, el, i, arr) {
-                if (arr.indexOf(el) !== i && acc.indexOf(el) < 0) acc.push(el);
-                return acc;
-            }, []);
-        }
-
-        /* Function to load files to db */
-        function readBlob(file_name) {
-
-            var files = document.getElementById('upload_file_db').files;
-
-            if (!files.length) return ('Please select a file!');
-
-            if (typeof file_name !== "string") {
-                let err_msg='Please provide a valid file name.';
-                showMessage(err_msg);
-                throw new Error(err_msg);
-            };
-
-            var file = files[0];
-            var start = 0;
-            var stop = file.size - 1;
-
-            var reader = new FileReader();
-
-            // If we use onloadend, we need to check the readyState.
-            reader.onloadend = function (evt) {
-                if (evt.target.readyState == FileReader.DONE) { // DONE == 2
-                    let data = evt.target.result;
-                    let hash = Crypto.SHA256(data);
-                    updateinDB("external_files", {
-                        filename: file_name,
-                        filehash: hash,
-                        content: data,
-                    });
-                };
-            };
-
-            var blob = file.slice(start, stop + 1);
-            reader.readAsBinaryString(blob);
-        }
-
-        function uploadFileToDB() {
-
-            const d3div = document.getElementById('d3div');
-            const fileUploadDiv = document.createElement('div');
-            const dbFileLabel = document.createElement('label');
-            const dbFileDivText = document.createTextNode('Choose File');
-            dbFileLabel.appendChild(dbFileDivText);
-            dbFileLabel.className += ` button bg-purple mg-5 `;
-            const dbFile = document.createElement('input');
-            dbFile.className += ` hidden `;
-            dbFile.setAttribute("type", "file");
-            dbFile.setAttribute("id", "upload_file_db");
-            const readBytesButtons = document.createElement("input");
-            readBytesButtons.type = 'button';
-            readBytesButtons.className += ` button bg-purple mg-5 `;
-            readBytesButtons.setAttribute("id", "uploadFileButton");
-            readBytesButtons.value = "Upload File";
-
-            dbFileLabel.appendChild(dbFile);
-            d3div.appendChild(dbFileLabel);
-            d3div.appendChild(readBytesButtons);
-            d3div.appendChild(fileUploadDiv);
-
-            document.querySelector('#uploadFileButton').addEventListener('click', function (evt) {
-                if (evt.target.tagName.toLowerCase() == 'button') {
-                    let fname = prompt("Enter name of this file.");
-                    readBlob(fname);
-                }
-            }, false);
-
-        }
-
-        //Function to check current balance of a BTC address
-        function validateDepositedBTCBalance(trader_deposits) {
+                //Function to check current balance of a BTC address
+                function validateDepositedBTCBalance(trader_deposits) {
             if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
                 .includes(localbitcoinplusplus.wallets.my_local_flo_public_key) &&
                 typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY !== "string"
@@ -41639,86 +41718,6 @@
                 console.error(error);
                 return false;
             }
-        }
-
-        function modalWindow(message) {
-
-            var modal = document.getElementById('myModal');
-
-            var msg = document.getElementById("modal_msg");
-            msg.innerHTML = message;
-
-            // Get the <span> element that closes the modal
-            var span = document.getElementsByClassName("close")[0];
-
-            // When the user clicks on <span> (x), close the modal
-            span.onclick = function () {
-                modal.style.display = "none";
-            }
-
-            // When the user clicks anywhere outside of the modal, close it
-            window.onclick = function (event) {
-                if (event.target == modal) {
-                    modal.style.display = "none";
-                }
-            }
-
-            modal.style.display = "block";
-
-        }
-    </script>
-
-    <script>
-        const makeKademliaNetwork = function (count) {
-            const RM_WALLET = new localbitcoinplusplus.wallets;
-            for (let index = 0; index < count; index++) {
-                let genAddr = RM_WALLET.generateFloKeys();
-                // let data = {
-                //     trader_flo_address: genAddr.address,
-                //     crypto_balances: {
-                //         crypto_balance: rand(1,100,100),
-                //         crypto_currency: "FLO_TEST",
-                //         id: genAddr.address+"_FLO_TEST",
-                //         trader_flo_address: genAddr.address
-                //     },
-                //     cash_balances: {
-                //         id: genAddr.address+"_USD",
-                //         trader_flo_address: genAddr.address,
-                //         cash_balance: rand(10000, 1000000, 1000000),
-                //         currency: "USD"
-                //     } 
-                // }
-                let data = {
-                    id: genAddr.address,
-                    vectorClock: 0
-                }
-                localbitcoinplusplus.kademlia
-                    .addNewUserNodeInKbucket("FLO_TEST", genAddr.address, data);
-            }
-        }
-
-        // log event in the console
-        function LogEvent(msg) {
-            log.textContent += "> " + msg + "\n";
-            var ot = log.scrollHeight - log.clientHeight;
-            if (ot > 0) log.scrollTop = ot;
-        }
-
-        function showMessage(msg='') {
-            if (msg.length>0) LogEvent(msg);
-            displayMessages();
-            setTimeout(function(){
-                closeMessage();
-            },10000); 
-        }
-
-        function displayMessages() {
-            document.getElementById("mySidebar").style.width = "98%";
-            document.getElementById("mySidebar").style.display = "block";
-        }
-
-        function closeMessage() {
-           document.getElementById("mySidebar").style.display = "none";
         }
     </script>
 
