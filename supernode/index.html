@@ -10254,10 +10254,23 @@
                 };
                 KBucket.add(contact)
             },
-            addNewUserNodeInKbucket: function (blockchain, address, data) {
-                const decodedId = this.decodeBase58Address(blockchain, address);
+            addNewUserNodeInKbucket: function(blockchain, address, data) {
+                let decodedId = address;   
+                try { // address is base58 encoded
+                    decodedId = this.decodeBase58Address(blockchain, address);
+                } catch(e) {
+                    decodedId = address;
+                } 
                 const addNewUserNode = this.addContact(decodedId, data);
-                return addNewUserNode;
+                return {decodedId:decodedId, data:data};
+            },
+            addNewUserNodeInKbucketAndDB: function (blockchain, address, data) {
+                let kbuck = this.addNewUserNodeInKbucket(blockchain, address, data);
+                updateinDB('kBucketStore', {
+                    id: kbuck.decodedId,
+                    data: data
+                }).then(ms=>showMessage(`INFO: Added/Updated new member in kBucket.`));
+                return Promise.resolve(kbuck);
             },
             floIdToKbucketId: function (blockchain, address) {
                 const decodedId = this.decodeBase58Address(blockchain, address);
@@ -10285,6 +10298,21 @@
                 let pubKeyBytes = Crypto.util.hexToBytes(pubKey);
                 return Crypto.util.bytesToBase64(pubKeyBytes);
             },
+            restoreKbucket: function(flo_addr, blockchain="FLO_TEST") {
+                return new Promise((resolve, reject)=>{
+                    readAllDB('kBucketStore')
+                    .then(dbObject => {
+                        if (typeof dbObject=="object") {
+                            dbObject.map(dbObj=>{
+                                this.addNewUserNodeInKbucket(blockchain, flo_addr, dbObj.data);
+                            });
+                        } else {
+                            reject(`Failed to restore kBucket.`);
+                        }
+                        resolve(dbObject);
+                    });
+                })
+            },
             updateClosestSupernodeSeeds: function(flo_addr) {
                 return new Promise(async (resolve, reject) => {
                     let nearestSupernodeAddresslist = await localbitcoinplusplus.kademlia.determineClosestSupernode(flo_addr);
@@ -10301,23 +10329,11 @@
             },
             getSupernodeSeed: function (flo_addr) {
                 return new Promise(async (resolve, reject) => {
-
                     let nearestSupernodeAddresslist = await readAllDB('myClosestSupernodes');
                     if (nearestSupernodeAddresslist.length<1) {
                         nearestSupernodeAddresslist = await this.updateClosestSupernodeSeeds(flo_addr);
                     }
-                    //let supernodeAddressUrls = [];
-
-                    // nearestSupernodeAddresslist.map(nearestSupernodeAddress=>{
-                    //     try {
-                    //         supernodeAddressUrls.push(`ws://${nearestSupernodeAddress.ip}:${nearestSupernodeAddress.port}`);
-                    //         return supernodeAddressUrls;
-                    //     } catch (error) {
-                    //         reject(error);
-                    //     }
-                    // });
-
-                    //resolve(supernodeAddressUrls);
+                    this.restoreKbucket(flo_addr, "FLO_TEST");
                     resolve(nearestSupernodeAddresslist);
                 });
             },
@@ -10340,7 +10356,7 @@
                     let supernodeSeedsObj = JSON.parse(supernodeSeeds);
                     
                     Object.entries(supernodeSeedsObj).map(seedObj=>{
-                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
+                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
                             "FLO_TEST", seedObj[1].kbucketId, 
                             { id: seedObj[1].kbucketId, vectorClock: 0 });
                     });
@@ -13441,23 +13457,23 @@
                             await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
 
                             // Add new user node in Kademlia
-                            addDB('kBucketStore', {
-                                id: localbitcoinplusplusObj.myLocalFLOAddress,
-                                data: {
-                                    id: localbitcoinplusplusObj.myLocalFLOAddress,
-                                    vectorClock: 0
-                                },
-                            }).then(dbObj => {
-                                localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
-                                    "FLO_TEST",
-                                    dbObj.id, dbObj.data);
-                                let addNewKNode = localbitcoinplusplus.rpc.prototype
-                                    .send_rpc
-                                    .call(this, "addNewKbucketNode", {
-                                        newKbucketNode: dbObj
-                                    });
-                                doSend(addNewKNode);
-                            }).catch(e=>console.warn(e));
+                            // addDB('kBucketStore', {
+                            //     id: localbitcoinplusplusObj.myLocalFLOAddress,
+                            //     data: {
+                            //         id: localbitcoinplusplusObj.myLocalFLOAddress,
+                            //         vectorClock: 0
+                            //     },
+                            // }).then(dbObj => {
+                            //     localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
+                            //         "FLO_TEST",
+                            //         dbObj.id, dbObj.data);
+                            //     let addNewKNode = localbitcoinplusplus.rpc.prototype
+                            //         .send_rpc
+                            //         .call(this, "addNewKbucketNode", {
+                            //             newKbucketNode: dbObj
+                            //         });
+                            //     doSend(addNewKNode);
+                            // }).catch(e=>console.warn(e));
 
                             RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
                                 .then(() => privateKeyBuilder());
@@ -14168,7 +14184,8 @@
                                     if (typeof update_script_request.file_to_update == "string") {
                                         readDB("external_files", update_script_request.file_to_update).then(
                                             file_details => {
-                                                if (typeof file_details.content == "string" && file_details
+                                                if (typeof file_details !== "undefined" 
+                                                && typeof file_details.content == "string" && file_details
                                                     .content.length > 0) {
                                                     let file_details_string = JSON.stringify(file_details);
                                                     let server_sign = RM_WALLET
@@ -14243,9 +14260,11 @@
 
                             case "addNewKbucketNode":
                                 try {
-                                    const newKbucketObject = res_obj.params[0];
-                                    localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST",
-                                        newKbucketObject.newKbucketNode.id, newKbucketObject.newKbucketNode.data);
+                                    const newKbucketObjectArr = res_obj.params[0];
+                                    newKbucketObjectArr.newKbucketNode.map(newKbucketObject=>{
+                                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB("FLO_TEST",
+                                        newKbucketObject.id, newKbucketObject.data);
+                                    });
                                 } catch (error) {
                                     console.error(error);
                                 }
@@ -15291,21 +15310,24 @@
                     const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key =
                         idbData.myLocalFLOPublicKey;
 
+                    // add/update yourself in your kbucket
+                    await localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
+                        "FLO_TEST", MY_LOCAL_FLO_ADDRESS, 
+                        { id: MY_LOCAL_FLO_ADDRESS, vectorClock: 0 });
+
                     // restore k-bucket
-                    readDB('kBucketStore', MY_LOCAL_FLO_ADDRESS).then(dbObj => {
-                        if (typeof dbObj=="object") {
-                            localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST",
-                                dbObj.id, dbObj.data);
-                            let addNewKNode = localbitcoinplusplus.rpc.prototype
-                                .send_rpc
-                                .call(this, "addNewKbucketNode", {
-                                    newKbucketNode: dbObj
-                                });
-                            doSend(addNewKNode);
-                        } else {
-                            console.warn(`Failed to restore kBucket.`);
-                        }
-                    });
+                    const dbObj = await localbitcoinplusplus.kademlia.restoreKbucket(MY_LOCAL_FLO_ADDRESS, "FLO_TEST");
+                    
+                    if (typeof dbObj=="object") {
+                        let addNewKNode = localbitcoinplusplus.rpc.prototype
+                            .send_rpc
+                            .call(this, "addNewKbucketNode", {
+                                newKbucketNode: dbObj
+                            });
+                        doSend(addNewKNode);
+                    } else {
+                        console.warn(`Failed to restore kBucket.`);
+                    }
 
                     readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function (
                         pubic_data_response) {
