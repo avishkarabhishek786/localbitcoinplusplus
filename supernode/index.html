@@ -9163,8 +9163,6 @@
             })();
         }
 
-
-
         reactor.registerEvent('added');
         reactor.addEventListener('added', function (someObject) {
             console.log('Added fired with data ' + someObject);
@@ -9180,6 +9178,10 @@
             console.log('Updated fired with data ' + someObject);
         });
 
+        reactor.registerEvent('bucket_full');
+        reactor.addEventListener('bucket_full', function (someObject) {
+            console.log('Bucket full ' + someObject);
+        });
 
         /*
         //Sample Usage
@@ -9200,441 +9202,420 @@
         //Checking if existing NodeID can be used
         //This first block of if will initialize the configuration of KBucket
         //Add Events, Messaging between different K-Buckets, and attach relevant distributed data
-        if (typeof KBucketOptions == "undefined" || !KBucketOptions) {
 
-            var KBucketOptions = {};
-            var sanitizedFLOAddress = new Uint8Array(20);
-            KBucketOptions.localNodeId = window.crypto.getRandomValues(sanitizedFLOAddress);
-
-        }
-
-        if (typeof KBucket == "undefined" || !KBucket) {
-            (function (options) {
-
-
-
-                var buf = new Uint8Array(20);
-                var randomBytes = window.crypto.getRandomValues(buf);
-
-
-                /**
-                * @param  {Uint8Array} array1
-                * @param  {Uint8Array} array2
-                * @return {Boolean}
-                */
-                function arrayEquals(array1, array2) {
-                    if (array1 === array2) {
-                        return true
-                    }
-                    if (array1.length !== array2.length) {
-                        return false
-                    }
-                    for (let i = 0, length = array1.length; i < length; ++i) {
-                        if (array1[i] !== array2[i]) {
-                            return false
-                        }
-                    }
+            /**
+            * @param  {Uint8Array} array1
+            * @param  {Uint8Array} array2
+            * @return {Boolean}
+            */
+            function arrayEquals(array1, array2) {
+                if (array1 === array2) {
                     return true
                 }
-
-                function createNode() {
-                    return {
-                        contacts: [],
-                        dontSplit: false,
-                        left: null,
-                        right: null
+                if (array1.length !== array2.length) {
+                    return false
+                }
+                for (let i = 0, length = array1.length; i < length; ++i) {
+                    if (array1[i] !== array2[i]) {
+                        return false
                     }
                 }
+                return true
+            }
 
-                function ensureInt8(name, val) {
-                    if (!(val instanceof Uint8Array)) {
-                        throw new TypeError(name + ' is not a Uint8Array')
-                    }
+            function createNode() {
+                return {
+                    contacts: [],
+                    dontSplit: false,
+                    left: null,
+                    right: null
+                }
+            }
+
+            function ensureInt8(name, val) {
+                if (!(val instanceof Uint8Array)) {
+                    throw new TypeError(name + ' is not a Uint8Array')
+                }
+            }
+
+            /**
+            * Implementation of a Kademlia DHT k-bucket used for storing
+            * contact (peer node) information.
+            *
+            * @extends EventEmitter
+            */
+            function BuildKBucket(options = {}) {
+                /**
+                * `options`:
+                *   `distance`: Function
+                *     `function (firstId, secondId) { return distance }` An optional
+                *     `distance` function that gets two `id` Uint8Arrays
+                *     and return distance (as number) between them.
+                *   `arbiter`: Function (Default: vectorClock arbiter)
+                *     `function (incumbent, candidate) { return contact; }` An optional
+                *     `arbiter` function that givent two `contact` objects with the same `id`
+                *     returns the desired object to be used for updating the k-bucket. For
+                *     more details, see [arbiter function](#arbiter-function).
+                *   `localNodeId`: Uint8Array An optional Uint8Array representing the local node id.
+                *     If not provided, a local node id will be created via `randomBytes(20)`.
+                *     `metadata`: Object (Default: {}) Optional satellite data to include
+                *     with the k-bucket. `metadata` property is guaranteed not be altered by,
+                *     it is provided as an explicit container for users of k-bucket to store
+                *     implementation-specific data.
+                *   `numberOfNodesPerKBucket`: Integer (Default: 20) The number of nodes
+                *     that a k-bucket can contain before being full or split.
+                *     `numberOfNodesToPing`: Integer (Default: 3) The number of nodes to
+                *     ping when a bucket that should not be split becomes full. KBucket will
+                *     emit a `ping` event that contains `numberOfNodesToPing` nodes that have
+                *     not been contacted the longest.
+                *
+                * @param {Object=} options optional
+                */
+
+                this.localNodeId = options.localNodeId || window.crypto.getRandomValues(new Uint8Array(20))
+                this.numberOfNodesPerKBucket = options.numberOfNodesPerKBucket || 20
+                this.numberOfNodesToPing = options.numberOfNodesToPing || 3
+                this.distance = options.distance || this.distance
+                // use an arbiter from options or vectorClock arbiter by default
+                this.arbiter = options.arbiter || this.arbiter
+                this.metadata = Object.assign({}, options.metadata)
+
+                ensureInt8('option.localNodeId as parameter 1', this.localNodeId)
+
+                this.root = createNode()
+
+
+                /**
+                * Default arbiter function for contacts with the same id. Uses
+                * contact.vectorClock to select which contact to update the k-bucket with.
+                * Contact with larger vectorClock field will be selected. If vectorClock is
+                * the same, candidat will be selected.
+                *
+                * @param  {Object} incumbent Contact currently stored in the k-bucket.
+                * @param  {Object} candidate Contact being added to the k-bucket.
+                * @return {Object}           Contact to updated the k-bucket with.
+                */
+                this.arbiter = function (incumbent, candidate) {
+                    return incumbent.vectorClock > candidate.vectorClock ? incumbent : candidate
                 }
 
                 /**
-                * Implementation of a Kademlia DHT k-bucket used for storing
-                * contact (peer node) information.
+                * Default distance function. Finds the XOR
+                * distance between firstId and secondId.
                 *
-                * @extends EventEmitter
+                * @param  {Uint8Array} firstId  Uint8Array containing first id.
+                * @param  {Uint8Array} secondId Uint8Array containing second id.
+                * @return {Number}              Integer The XOR distance between firstId
+                *                               and secondId.
                 */
-                function KBucket(options = {}) {
-                    /**
-                    * `options`:
-                    *   `distance`: Function
-                    *     `function (firstId, secondId) { return distance }` An optional
-                    *     `distance` function that gets two `id` Uint8Arrays
-                    *     and return distance (as number) between them.
-                    *   `arbiter`: Function (Default: vectorClock arbiter)
-                    *     `function (incumbent, candidate) { return contact; }` An optional
-                    *     `arbiter` function that givent two `contact` objects with the same `id`
-                    *     returns the desired object to be used for updating the k-bucket. For
-                    *     more details, see [arbiter function](#arbiter-function).
-                    *   `localNodeId`: Uint8Array An optional Uint8Array representing the local node id.
-                    *     If not provided, a local node id will be created via `randomBytes(20)`.
-                    *     `metadata`: Object (Default: {}) Optional satellite data to include
-                    *     with the k-bucket. `metadata` property is guaranteed not be altered by,
-                    *     it is provided as an explicit container for users of k-bucket to store
-                    *     implementation-specific data.
-                    *   `numberOfNodesPerKBucket`: Integer (Default: 20) The number of nodes
-                    *     that a k-bucket can contain before being full or split.
-                    *     `numberOfNodesToPing`: Integer (Default: 3) The number of nodes to
-                    *     ping when a bucket that should not be split becomes full. KBucket will
-                    *     emit a `ping` event that contains `numberOfNodesToPing` nodes that have
-                    *     not been contacted the longest.
-                    *
-                    * @param {Object=} options optional
-                    */
+                this.distance = function (firstId, secondId) {
+                    let distance = 0
+                    let i = 0
+                    const min = Math.min(firstId.length, secondId.length)
+                    const max = Math.max(firstId.length, secondId.length)
+                    for (; i < min; ++i) {
+                        distance = distance * 256 + (firstId[i] ^ secondId[i])
+                    }
+                    for (; i < max; ++i) distance = distance * 256 + 255
+                    return distance
+                }
 
-                    this.localNodeId = options.localNodeId || randomBytes
-                    this.numberOfNodesPerKBucket = options.numberOfNodesPerKBucket || 20
-                    this.numberOfNodesToPing = options.numberOfNodesToPing || 3
-                    this.distance = options.distance || KBucket.distance
-                    // use an arbiter from options or vectorClock arbiter by default
-                    this.arbiter = options.arbiter || KBucket.arbiter
-                    this.metadata = Object.assign({}, options.metadata)
+                /**
+                * Adds a contact to the k-bucket.
+                *
+                * @param {Object} contact the contact object to add
+                */
+                this.add = function (contact) {
+                    ensureInt8('contact.id', (contact || {}).id)
 
-                    ensureInt8('option.localNodeId as parameter 1', this.localNodeId)
+                    let bitIndex = 0
+                    let node = this.root
 
-                    this.root = createNode()
-
-
-                    /**
-                    * Default arbiter function for contacts with the same id. Uses
-                    * contact.vectorClock to select which contact to update the k-bucket with.
-                    * Contact with larger vectorClock field will be selected. If vectorClock is
-                    * the same, candidat will be selected.
-                    *
-                    * @param  {Object} incumbent Contact currently stored in the k-bucket.
-                    * @param  {Object} candidate Contact being added to the k-bucket.
-                    * @return {Object}           Contact to updated the k-bucket with.
-                    */
-                    this.arbiter = function (incumbent, candidate) {
-                        return incumbent.vectorClock > candidate.vectorClock ? incumbent : candidate
+                    while (node.contacts === null) {
+                        // this is not a leaf node but an inner node with 'low' and 'high'
+                        // branches; we will check the appropriate bit of the identifier and
+                        // delegate to the appropriate node for further processing
+                        node = this._determineNode(node, contact.id, bitIndex++)
                     }
 
-                    /**
-                    * Default distance function. Finds the XOR
-                    * distance between firstId and secondId.
-                    *
-                    * @param  {Uint8Array} firstId  Uint8Array containing first id.
-                    * @param  {Uint8Array} secondId Uint8Array containing second id.
-                    * @return {Number}              Integer The XOR distance between firstId
-                    *                               and secondId.
-                    */
-                    this.distance = function (firstId, secondId) {
-                        let distance = 0
-                        let i = 0
-                        const min = Math.min(firstId.length, secondId.length)
-                        const max = Math.max(firstId.length, secondId.length)
-                        for (; i < min; ++i) {
-                            distance = distance * 256 + (firstId[i] ^ secondId[i])
-                        }
-                        for (; i < max; ++i) distance = distance * 256 + 255
-                        return distance
-                    }
-
-                    /**
-                    * Adds a contact to the k-bucket.
-                    *
-                    * @param {Object} contact the contact object to add
-                    */
-                    this.add = function (contact) {
-                        ensureInt8('contact.id', (contact || {}).id)
-
-                        let bitIndex = 0
-                        let node = this.root
-
-                        while (node.contacts === null) {
-                            // this is not a leaf node but an inner node with 'low' and 'high'
-                            // branches; we will check the appropriate bit of the identifier and
-                            // delegate to the appropriate node for further processing
-                            node = this._determineNode(node, contact.id, bitIndex++)
-                        }
-
-                        // check if the contact already exists
-                        const index = this._indexOf(node, contact.id)
-                        if (index >= 0) {
-                            this._update(node, index, contact)
-                            return this
-                        }
-
-                        if (node.contacts.length < this.numberOfNodesPerKBucket) {
-                            node.contacts.push(contact)
-                            reactor.dispatchEvent('added', contact)
-                            return this
-                        }
-
-                        // the bucket is full
-                        if (node.dontSplit) {
-                            // we are not allowed to split the bucket
-                            // we need to ping the first this.numberOfNodesToPing
-                            // in order to determine if they are alive
-                            // only if one of the pinged nodes does not respond, can the new contact
-                            // be added (this prevents DoS flodding with new invalid contacts)
-                            this.emit('ping', node.contacts.slice(0, this.numberOfNodesToPing), contact)
-                            return this
-                        }
-
-                        this._split(node, bitIndex)
-                        return this.add(contact)
-                    }
-
-                    /**
-                    * Get the n closest contacts to the provided node id. "Closest" here means:
-                    * closest according to the XOR metric of the contact node id.
-                    *
-                    * @param  {Uint8Array} id  Contact node id
-                    * @param  {Number=} n      Integer (Default: Infinity) The maximum number of
-                    *                          closest contacts to return
-                    * @return {Array}          Array Maximum of n closest contacts to the node id
-                    */
-                    this.closest = function (id, n = Infinity) {
-                        ensureInt8('id', id)
-
-                        if ((!Number.isInteger(n) && n !== Infinity) || n <= 0) {
-                            throw new TypeError('n is not positive number')
-                        }
-
-                        let contacts = []
-
-                        for (let nodes = [this.root], bitIndex = 0; nodes.length > 0 && contacts.length < n;) {
-                            const node = nodes.pop()
-                            if (node.contacts === null) {
-                                const detNode = this._determineNode(node, id, bitIndex++)
-                                nodes.push(node.left === detNode ? node.right : node.left)
-                                nodes.push(detNode)
-                            } else {
-                                contacts = contacts.concat(node.contacts)
-                            }
-                        }
-
-                        return contacts
-                            .map(a => [this.distance(a.id, id), a])
-                            .sort((a, b) => a[0] - b[0])
-                            .slice(0, n)
-                            .map(a => a[1])
-                    }
-
-                    /**
-                    * Counts the total number of contacts in the tree.
-                    *
-                    * @return {Number} The number of contacts held in the tree
-                    */
-                    this.count = function () {
-                        // return this.toArray().length
-                        let count = 0
-                        for (const nodes = [this.root]; nodes.length > 0;) {
-                            const node = nodes.pop()
-                            if (node.contacts === null) nodes.push(node.right, node.left)
-                            else count += node.contacts.length
-                        }
-                        return count
-                    }
-
-                    /**
-                    * Determines whether the id at the bitIndex is 0 or 1.
-                    * Return left leaf if `id` at `bitIndex` is 0, right leaf otherwise
-                    *
-                    * @param  {Object} node     internal object that has 2 leafs: left and right
-                    * @param  {Uint8Array} id   Id to compare localNodeId with.
-                    * @param  {Number} bitIndex Integer (Default: 0) The bit index to which bit
-                    *                           to check in the id Uint8Array.
-                    * @return {Object}          left leaf if id at bitIndex is 0, right leaf otherwise.
-                    */
-                    this._determineNode = function (node, id, bitIndex) {
-                        // *NOTE* remember that id is a Uint8Array and has granularity of
-                        // bytes (8 bits), whereas the bitIndex is the bit index (not byte)
-
-                        // id's that are too short are put in low bucket (1 byte = 8 bits)
-                        // (bitIndex >> 3) finds how many bytes the bitIndex describes
-                        // bitIndex % 8 checks if we have extra bits beyond byte multiples
-                        // if number of bytes is <= no. of bytes described by bitIndex and there
-                        // are extra bits to consider, this means id has less bits than what
-                        // bitIndex describes, id therefore is too short, and will be put in low
-                        // bucket
-                        const bytesDescribedByBitIndex = bitIndex >> 3
-                        const bitIndexWithinByte = bitIndex % 8
-                        if ((id.length <= bytesDescribedByBitIndex) && (bitIndexWithinByte !== 0)) {
-                            return node.left
-                        }
-
-                        const byteUnderConsideration = id[bytesDescribedByBitIndex]
-
-                        // byteUnderConsideration is an integer from 0 to 255 represented by 8 bits
-                        // where 255 is 11111111 and 0 is 00000000
-                        // in order to find out whether the bit at bitIndexWithinByte is set
-                        // we construct (1 << (7 - bitIndexWithinByte)) which will consist
-                        // of all bits being 0, with only one bit set to 1
-                        // for example, if bitIndexWithinByte is 3, we will construct 00010000 by
-                        // (1 << (7 - 3)) -> (1 << 4) -> 16
-                        if (byteUnderConsideration & (1 << (7 - bitIndexWithinByte))) {
-                            return node.right
-                        }
-
-                        return node.left
-                    }
-
-                    /**
-                    * Get a contact by its exact ID.
-                    * If this is a leaf, loop through the bucket contents and return the correct
-                    * contact if we have it or null if not. If this is an inner node, determine
-                    * which branch of the tree to traverse and repeat.
-                    *
-                    * @param  {Uint8Array} id The ID of the contact to fetch.
-                    * @return {Object|Null}   The contact if available, otherwise null
-                    */
-                    this.get = function (id) {
-                        ensureInt8('id', id)
-
-                        let bitIndex = 0
-
-                        let node = this.root
-                        while (node.contacts === null) {
-                            node = this._determineNode(node, id, bitIndex++)
-                        }
-
-                        // index of uses contact id for matching
-                        const index = this._indexOf(node, id)
-                        return index >= 0 ? node.contacts[index] : null
-                    }
-
-                    /**
-                    * Returns the index of the contact with provided
-                    * id if it exists, returns -1 otherwise.
-                    *
-                    * @param  {Object} node    internal object that has 2 leafs: left and right
-                    * @param  {Uint8Array} id  Contact node id.
-                    * @return {Number}         Integer Index of contact with provided id if it
-                    *                          exists, -1 otherwise.
-                    */
-                    this._indexOf = function (node, id) {
-                        for (let i = 0; i < node.contacts.length; ++i) {
-                            if (arrayEquals(node.contacts[i].id, id)) return i
-                        }
-
-                        return -1
-                    }
-
-                    /**
-                    * Removes contact with the provided id.
-                    *
-                    * @param  {Uint8Array} id The ID of the contact to remove.
-                    * @return {Object}        The k-bucket itself.
-                    */
-                    this.remove = function (id) {
-                        ensureInt8('the id as parameter 1', id)
-
-                        let bitIndex = 0
-                        let node = this.root
-
-                        while (node.contacts === null) {
-                            node = this._determineNode(node, id, bitIndex++)
-                        }
-
-                        const index = this._indexOf(node, id)
-                        if (index >= 0) {
-                            const contact = node.contacts.splice(index, 1)[0]
-                            reactor.dispatchEvent('removed', contact)
-                        }
-
+                    // check if the contact already exists
+                    const index = this._indexOf(node, contact.id)
+                    if (index >= 0) {
+                        this._update(node, index, contact)
                         return this
                     }
 
-                    /**
-                    * Splits the node, redistributes contacts to the new nodes, and marks the
-                    * node that was split as an inner node of the binary tree of nodes by
-                    * setting this.root.contacts = null
-                    *
-                    * @param  {Object} node     node for splitting
-                    * @param  {Number} bitIndex the bitIndex to which byte to check in the
-                    *                           Uint8Array for navigating the binary tree
-                    */
-                    this._split = function (node, bitIndex) {
-                        node.left = createNode()
-                        node.right = createNode()
-
-                        // redistribute existing contacts amongst the two newly created nodes
-                        for (const contact of node.contacts) {
-                            this._determineNode(node, contact.id, bitIndex).contacts.push(contact)
-                        }
-
-                        node.contacts = null // mark as inner tree node
-
-                        // don't split the "far away" node
-                        // we check where the local node would end up and mark the other one as
-                        // "dontSplit" (i.e. "far away")
-                        const detNode = this._determineNode(node, this.localNodeId, bitIndex)
-                        const otherNode = node.left === detNode ? node.right : node.left
-                        otherNode.dontSplit = true
+                    if (node.contacts.length < this.numberOfNodesPerKBucket) {
+                        node.contacts.push(contact)
+                        reactor.dispatchEvent('added', contact)
+                        return this
                     }
 
-                    /**
-                    * Returns all the contacts contained in the tree as an array.
-                    * If this is a leaf, return a copy of the bucket. `slice` is used so that we
-                    * don't accidentally leak an internal reference out that might be
-                    * accidentally misused. If this is not a leaf, return the union of the low
-                    * and high branches (themselves also as arrays).
-                    *
-                    * @return {Array} All of the contacts in the tree, as an array
-                    */
-                    this.toArray = function () {
-                        let result = []
-                        for (const nodes = [this.root]; nodes.length > 0;) {
-                            const node = nodes.pop()
-                            if (node.contacts === null) nodes.push(node.right, node.left)
-                            else result = result.concat(node.contacts)
-                        }
-                        return result
+                    // the bucket is full
+                    if (node.dontSplit) {
+                        // we are not allowed to split the bucket
+                        // we need to ping the first this.numberOfNodesToPing
+                        // in order to determine if they are alive
+                        // only if one of the pinged nodes does not respond, can the new contact
+                        // be added (this prevents DoS flodding with new invalid contacts)
+                        reactor.dispatchEvent('bucket_full', {1: node.contacts.slice(0, this.numberOfNodesToPing),2: contact})
+                        return this
                     }
 
-                    /**
-                    * Updates the contact selected by the arbiter.
-                    * If the selection is our old contact and the candidate is some new contact
-                    * then the new contact is abandoned (not added).
-                    * If the selection is our old contact and the candidate is our old contact
-                    * then we are refreshing the contact and it is marked as most recently
-                    * contacted (by being moved to the right/end of the bucket array).
-                    * If the selection is our new contact, the old contact is removed and the new
-                    * contact is marked as most recently contacted.
-                    *
-                    * @param  {Object} node    internal object that has 2 leafs: left and right
-                    * @param  {Number} index   the index in the bucket where contact exists
-                    *                          (index has already been computed in a previous
-                    *                          calculation)
-                    * @param  {Object} contact The contact object to update.
-                    */
-                    this._update = function (node, index, contact) {
-                        // sanity check
-                        if (!arrayEquals(node.contacts[index].id, contact.id)) {
-                            throw new Error('wrong index for _update')
-                        }
-
-                        const incumbent = node.contacts[index]
-
-                        /***************Change made by Abhishek*************/
-                        const selection = this.arbiter(incumbent, contact)
-                        //const selection = localbitcoinplusplus.kademlia.arbiter(incumbent, contact);
-                        // if the selection is our old contact and the candidate is some new
-                        // contact, then there is nothing to do
-                        if (selection === incumbent && incumbent !== contact) return
-
-                        node.contacts.splice(index, 1) // remove old contact
-                        node.contacts.push(selection) // add more recent contact version
-                        /***************Change made by Abhishek*************/
-                        reactor.dispatchEvent('updated', {
-                            ...incumbent,
-                            ...selection
-                        })
-                        //reactor.dispatchEvent('updated', incumbent.concat(selection))
-                    }
+                    this._split(node, bitIndex)
+                    return this.add(contact)
                 }
 
-                window.KBucket = new KBucket(options)
+                /**
+                * Get the n closest contacts to the provided node id. "Closest" here means:
+                * closest according to the XOR metric of the contact node id.
+                *
+                * @param  {Uint8Array} id  Contact node id
+                * @param  {Number=} n      Integer (Default: Infinity) The maximum number of
+                *                          closest contacts to return
+                * @return {Array}          Array Maximum of n closest contacts to the node id
+                */
+                this.closest = function (id, n = Infinity) {
+                    ensureInt8('id', id)
 
-            })(KBucketOptions);
+                    if ((!Number.isInteger(n) && n !== Infinity) || n <= 0) {
+                        throw new TypeError('n is not positive number')
+                    }
 
-        }
+                    let contacts = []
+
+                    for (let nodes = [this.root], bitIndex = 0; nodes.length > 0 && contacts.length < n;) {
+                        const node = nodes.pop()
+                        if (node.contacts === null) {
+                            const detNode = this._determineNode(node, id, bitIndex++)
+                            nodes.push(node.left === detNode ? node.right : node.left)
+                            nodes.push(detNode)
+                        } else {
+                            contacts = contacts.concat(node.contacts)
+                        }
+                    }
+
+                    return contacts
+                        .map(a => [this.distance(a.id, id), a])
+                        .sort((a, b) => a[0] - b[0])
+                        .slice(0, n)
+                        .map(a => a[1])
+                }
+
+                /**
+                * Counts the total number of contacts in the tree.
+                *
+                * @return {Number} The number of contacts held in the tree
+                */
+                this.count = function () {
+                    // return this.toArray().length
+                    let count = 0
+                    for (const nodes = [this.root]; nodes.length > 0;) {
+                        const node = nodes.pop()
+                        if (node.contacts === null) nodes.push(node.right, node.left)
+                        else count += node.contacts.length
+                    }
+                    return count
+                }
+
+                /**
+                * Determines whether the id at the bitIndex is 0 or 1.
+                * Return left leaf if `id` at `bitIndex` is 0, right leaf otherwise
+                *
+                * @param  {Object} node     internal object that has 2 leafs: left and right
+                * @param  {Uint8Array} id   Id to compare localNodeId with.
+                * @param  {Number} bitIndex Integer (Default: 0) The bit index to which bit
+                *                           to check in the id Uint8Array.
+                * @return {Object}          left leaf if id at bitIndex is 0, right leaf otherwise.
+                */
+                this._determineNode = function (node, id, bitIndex) {
+                    // *NOTE* remember that id is a Uint8Array and has granularity of
+                    // bytes (8 bits), whereas the bitIndex is the bit index (not byte)
+
+                    // id's that are too short are put in low bucket (1 byte = 8 bits)
+                    // (bitIndex >> 3) finds how many bytes the bitIndex describes
+                    // bitIndex % 8 checks if we have extra bits beyond byte multiples
+                    // if number of bytes is <= no. of bytes described by bitIndex and there
+                    // are extra bits to consider, this means id has less bits than what
+                    // bitIndex describes, id therefore is too short, and will be put in low
+                    // bucket
+                    const bytesDescribedByBitIndex = bitIndex >> 3
+                    const bitIndexWithinByte = bitIndex % 8
+                    if ((id.length <= bytesDescribedByBitIndex) && (bitIndexWithinByte !== 0)) {
+                        return node.left
+                    }
+
+                    const byteUnderConsideration = id[bytesDescribedByBitIndex]
+
+                    // byteUnderConsideration is an integer from 0 to 255 represented by 8 bits
+                    // where 255 is 11111111 and 0 is 00000000
+                    // in order to find out whether the bit at bitIndexWithinByte is set
+                    // we construct (1 << (7 - bitIndexWithinByte)) which will consist
+                    // of all bits being 0, with only one bit set to 1
+                    // for example, if bitIndexWithinByte is 3, we will construct 00010000 by
+                    // (1 << (7 - 3)) -> (1 << 4) -> 16
+                    if (byteUnderConsideration & (1 << (7 - bitIndexWithinByte))) {
+                        return node.right
+                    }
+
+                    return node.left
+                }
+
+                /**
+                * Get a contact by its exact ID.
+                * If this is a leaf, loop through the bucket contents and return the correct
+                * contact if we have it or null if not. If this is an inner node, determine
+                * which branch of the tree to traverse and repeat.
+                *
+                * @param  {Uint8Array} id The ID of the contact to fetch.
+                * @return {Object|Null}   The contact if available, otherwise null
+                */
+                this.get = function (id) {
+                    ensureInt8('id', id)
+
+                    let bitIndex = 0
+
+                    let node = this.root
+                    while (node.contacts === null) {
+                        node = this._determineNode(node, id, bitIndex++)
+                    }
+
+                    // index of uses contact id for matching
+                    const index = this._indexOf(node, id)
+                    return index >= 0 ? node.contacts[index] : null
+                }
+
+                /**
+                * Returns the index of the contact with provided
+                * id if it exists, returns -1 otherwise.
+                *
+                * @param  {Object} node    internal object that has 2 leafs: left and right
+                * @param  {Uint8Array} id  Contact node id.
+                * @return {Number}         Integer Index of contact with provided id if it
+                *                          exists, -1 otherwise.
+                */
+                this._indexOf = function (node, id) {
+                    for (let i = 0; i < node.contacts.length; ++i) {
+                        if (arrayEquals(node.contacts[i].id, id)) return i
+                    }
+
+                    return -1
+                }
+
+                /**
+                * Removes contact with the provided id.
+                *
+                * @param  {Uint8Array} id The ID of the contact to remove.
+                * @return {Object}        The k-bucket itself.
+                */
+                this.remove = function (id) {
+                    ensureInt8('the id as parameter 1', id)
+
+                    let bitIndex = 0
+                    let node = this.root
+
+                    while (node.contacts === null) {
+                        node = this._determineNode(node, id, bitIndex++)
+                    }
+
+                    const index = this._indexOf(node, id)
+                    if (index >= 0) {
+                        const contact = node.contacts.splice(index, 1)[0]
+                        reactor.dispatchEvent('removed', contact)
+                    }
+
+                    return this
+                }
+
+                /**
+                * Splits the node, redistributes contacts to the new nodes, and marks the
+                * node that was split as an inner node of the binary tree of nodes by
+                * setting this.root.contacts = null
+                *
+                * @param  {Object} node     node for splitting
+                * @param  {Number} bitIndex the bitIndex to which byte to check in the
+                *                           Uint8Array for navigating the binary tree
+                */
+                this._split = function (node, bitIndex) {
+                    node.left = createNode()
+                    node.right = createNode()
+
+                    // redistribute existing contacts amongst the two newly created nodes
+                    for (const contact of node.contacts) {
+                        this._determineNode(node, contact.id, bitIndex).contacts.push(contact)
+                    }
+
+                    node.contacts = null // mark as inner tree node
+
+                    // don't split the "far away" node
+                    // we check where the local node would end up and mark the other one as
+                    // "dontSplit" (i.e. "far away")
+                    const detNode = this._determineNode(node, this.localNodeId, bitIndex)
+                    const otherNode = node.left === detNode ? node.right : node.left
+                    otherNode.dontSplit = true
+                }
+
+                /**
+                * Returns all the contacts contained in the tree as an array.
+                * If this is a leaf, return a copy of the bucket. `slice` is used so that we
+                * don't accidentally leak an internal reference out that might be
+                * accidentally misused. If this is not a leaf, return the union of the low
+                * and high branches (themselves also as arrays).
+                *
+                * @return {Array} All of the contacts in the tree, as an array
+                */
+                this.toArray = function () {
+                    let result = []
+                    for (const nodes = [this.root]; nodes.length > 0;) {
+                        const node = nodes.pop()
+                        if (node.contacts === null) nodes.push(node.right, node.left)
+                        else result = result.concat(node.contacts)
+                    }
+                    return result
+                }
+
+                /**
+                * Updates the contact selected by the arbiter.
+                * If the selection is our old contact and the candidate is some new contact
+                * then the new contact is abandoned (not added).
+                * If the selection is our old contact and the candidate is our old contact
+                * then we are refreshing the contact and it is marked as most recently
+                * contacted (by being moved to the right/end of the bucket array).
+                * If the selection is our new contact, the old contact is removed and the new
+                * contact is marked as most recently contacted.
+                *
+                * @param  {Object} node    internal object that has 2 leafs: left and right
+                * @param  {Number} index   the index in the bucket where contact exists
+                *                          (index has already been computed in a previous
+                *                          calculation)
+                * @param  {Object} contact The contact object to update.
+                */
+                this._update = function (node, index, contact) {
+                    // sanity check
+                    if (!arrayEquals(node.contacts[index].id, contact.id)) {
+                        throw new Error('wrong index for _update')
+                    }
+
+                    const incumbent = node.contacts[index]
+
+                    /***************Change made by Abhishek*************/
+                    const selection = this.arbiter(incumbent, contact)
+                    //const selection = localbitcoinplusplus.kademlia.arbiter(incumbent, contact);
+                    // if the selection is our old contact and the candidate is some new
+                    // contact, then there is nothing to do
+                    if (selection === incumbent && incumbent !== contact) return
+
+                    node.contacts.splice(index, 1) // remove old contact
+                    node.contacts.push(selection) // add more recent contact version
+                    /***************Change made by Abhishek*************/
+                    reactor.dispatchEvent('updated', {
+                        ...incumbent,
+                        ...selection
+                    })
+                    //reactor.dispatchEvent('updated', incumbent.concat(selection))
+                }
+            }
+          
     </script>
    
     <!---------------------------------------------------------------------------------- 
@@ -10133,7 +10114,8 @@
                 let sync_request = RM_RPC.send_rpc.call(this,
                     "sync_with_supernode", {
                         "trader_flo_address": trader_flo_address,
-                        "job": "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB"
+                        "job": "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB",
+                        "receiver_flo_address": localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                     });
                 doSend(sync_request);
             },
@@ -10165,6 +10147,7 @@
                         deposit_withdraw_user_claim_obj.hash = deposit_withdraw_user_claim_hash;
                         deposit_withdraw_user_claim_obj.sign = deposit_withdraw_user_claim_sign;
 
+                        deposit_withdraw_user_claim_obj.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
 
                         let deposit_withdraw_claim =
                             RM_RPC
@@ -10243,42 +10226,62 @@
                 k.splice(-4, 4)
                 return Crypto.util.bytesToHex(k)
             },
-            addContact: function (id, data) {
-                const nodeId = new Uint8Array(id.length)
-                for (let i = 0, len = nodeId.length; i < len; ++i) {
-                    nodeId[i] = id.charCodeAt(i)
-                }
+            launchKBucket: function(flo_id) {
+                return new Promise((resolve, reject)=>{
+                    try {
+                        const KBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', flo_id)
+                        const kbOptions = { localNodeId: KBucketId }
+                        window.KBucket = new BuildKBucket(kbOptions);
+                        window.supernodeKBucket = new BuildKBucket(kbOptions);
+                        resolve(true);
+                    } catch (error) {
+                        reject(error);
+                    }
+                })
+            },
+            addContact: function (id, data, KB=KBucket) {
                 const contact = {
-                    id: nodeId,
+                    id: id,
                     data: data
                 };
-                KBucket.add(contact)
+                KB.add(contact)
             },
-            addNewUserNodeInKbucket: function(blockchain, address, data) {
+            addNewUserNodeInKbucket: function(blockchain, address, data, KB=KBucket) {
                 let decodedId = address;   
-                try { // address is base58 encoded
-                    decodedId = this.decodeBase58Address(blockchain, address);
+                try { 
+                    decodedId = this.floIdToKbucketId(blockchain, address);
                 } catch(e) {
                     decodedId = address;
                 } 
-                const addNewUserNode = this.addContact(decodedId, data);
+                const addNewUserNode = this.addContact(decodedId, data, KB);
                 return {decodedId:decodedId, data:data};
             },
-            addNewUserNodeInKbucketAndDB: function (blockchain, address, data) {
-                let kbuck = this.addNewUserNodeInKbucket(blockchain, address, data);
-                updateinDB('kBucketStore', {
-                    id: kbuck.decodedId,
-                    data: data
-                }).then(ms=>showMessage(`INFO: Added/Updated new member in kBucket.`));
-                return Promise.resolve(kbuck);
+            addNewUserNodeInKbucketAndDB: function (blockchain, address, data, KB=KBucket) {
+                let kbuck = this.addNewUserNodeInKbucket(blockchain, address, data, KB);
+                readDB('kBucketStore', kbuck.decodedId).then(kres=>{
+                    if (typeof kres=="object") {
+                        kres.data = data;
+                    } else {
+                        kbuckObj={
+                            id: kbuck.decodedId,
+                            vectorClock: 0,
+                            data: kbuck.data,
+                            last_updated_on: + new Date(),
+                        }
+                        kres = kbuckObj;
+                    }
+                    updateinDB('kBucketStore', kres)
+                        .then(ms=>showMessage(`INFO: Added/Updated a node in DB.`))
+                        .catch(e=>{showMessage(`ERROR: Failed to add a node in DB.`)});
+                        return Promise.resolve(kbuck);
+                });
             },
             floIdToKbucketId: function (blockchain, address) {
                 const decodedId = this.decodeBase58Address(blockchain, address);
-                const nodeId = new Uint8Array(decodedId.length)
-                for (let i = 0, len = nodeId.length; i < len; ++i) {
-                    nodeId[i] = decodedId.charCodeAt(i)
-                }
-                return nodeId;
+                const nodeIdBigInt =  new BigInteger(decodedId, 16);
+                const nodeIdBytes = nodeIdBigInt.toByteArrayUnsigned();
+                const nodeIdNewInt8Array =  new Uint8Array(nodeIdBytes);
+                return nodeIdNewInt8Array;
             },
             arbiter: function (incumbent, candidate) {
                 // we create a new object so that our selection is guaranteed to replace
@@ -10298,18 +10301,31 @@
                 let pubKeyBytes = Crypto.util.hexToBytes(pubKey);
                 return Crypto.util.bytesToBase64(pubKeyBytes);
             },
-            restoreKbucket: function(flo_addr, blockchain="FLO_TEST") {
+            restoreKbucket: function(flo_addr, blockchain="FLO_TEST", KB=KBucket) {
                 return new Promise((resolve, reject)=>{
                     readAllDB('kBucketStore')
                     .then(dbObject => {
                         if (typeof dbObject=="object") {
                             dbObject.map(dbObj=>{
-                                this.addNewUserNodeInKbucket(blockchain, flo_addr, dbObj.data);
+                                this.addNewUserNodeInKbucket(blockchain, flo_addr, dbObj.data, KB);
                             });
                         } else {
                             reject(`Failed to restore kBucket.`);
                         }
                         resolve(dbObject);
+                    });
+                })
+            },
+            restoreSupernodeKBucket: function() {
+                return new Promise((resolve, reject)=>{
+                    const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
+                    if (typeof supernodeSeeds !== "object") reject(
+                        "Failed to get supernode seeds.");
+                    let supernodeSeedsObj = JSON.parse(supernodeSeeds);
+                    
+                    Object.entries(supernodeSeedsObj).map(seedObj=>{
+                        let kbuck = this.addNewUserNodeInKbucket("FLO_TEST", seedObj[1].kbucketId, 
+                            { id: seedObj[1].kbucketId }, supernodeKBucket);
                     });
                 })
             },
@@ -10333,13 +10349,13 @@
                     if (nearestSupernodeAddresslist.length<1) {
                         nearestSupernodeAddresslist = await this.updateClosestSupernodeSeeds(flo_addr);
                     }
-                    this.restoreKbucket(flo_addr, "FLO_TEST");
+                    this.restoreSupernodeKBucket(flo_addr, "FLO_TEST", supernodeKBucket);
                     resolve(nearestSupernodeAddresslist);
                 });
             },
-            isNodePresentInMyKbucket: function(flo_id) {
+            isNodePresentInMyKbucket: function(flo_id, KB=KBucket) {
                 return new Promise((resolve, reject)=>{
-                    let kArray  = KBucket.toArray();
+                    let kArray = KB.toArray();
                     let kArrayFloIds = kArray.map(k=>k.data.id);
                     if (kArrayFloIds.includes(flo_id)) {
                         resolve(true);
@@ -10348,7 +10364,7 @@
                     }
                 });
             }, 
-            determineClosestSupernode: function(flo_addr) {
+            determineClosestSupernode: function(flo_addr, KB=KBucket) {
                 return new Promise((resolve, reject)=>{
                     const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
                     if (typeof supernodeSeeds !== "object") reject(
@@ -10356,14 +10372,15 @@
                     let supernodeSeedsObj = JSON.parse(supernodeSeeds);
                     
                     Object.entries(supernodeSeedsObj).map(seedObj=>{
+                        console.log(seedObj);
                         localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
                             "FLO_TEST", seedObj[1].kbucketId, 
-                            { id: seedObj[1].kbucketId, vectorClock: 0 });
+                            { id: seedObj[1].kbucketId });
                     });
 
                     let currentNodeBucketId = localbitcoinplusplus.kademlia
                         .floIdToKbucketId("FLO_TEST", flo_addr);
-                    let nearestSupernode = KBucket.closest(currentNodeBucketId, 4);
+                    let nearestSupernode = KB.closest(currentNodeBucketId, 4);
                     let nearestSupernodeIds = nearestSupernode.map(f=>f.data.id);
                     let supernodeSeedsArray = Object.values(supernodeSeedsObj)
                     .filter(seed=>nearestSupernodeIds.includes(seed.kbucketId))
@@ -10524,11 +10541,11 @@
             messageBroadcasting: function (message, flo_id, rpc_subject="messageBroadcasting") {
                 readDB('userPublicData', flo_id).then((res) => {
                     pubKey = res.trader_flo_pubKey;
-                    let foo = localbitcoinplusplus.encrypt.encryptMessage(message, pubKey);
+                    let data = localbitcoinplusplus.encrypt.encryptMessage(message, pubKey);
                     const RM_RPC = new localbitcoinplusplus.rpc;
                     let bar = RM_RPC
                         .send_rpc
-                        .call(this, rpc_subject, foo);
+                        .call(this, rpc_subject, {data: data, receiver_flo_address: flo_id});
                     doSend(bar);
                 });
             },
@@ -10951,10 +10968,19 @@
                 var request = new JSON_RPC.Request(method, params);
                 var id = request.id;
                 this.rpc_req_id = id;
+
+                if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
+                    request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
+                }
+                
+                if (typeof params[0].receiver_flo_address == "string") {
+                    request.globalParams.receiverFloId = params[0].receiver_flo_address;
+                }
+
                 return request.toString();
             },
 
-            filter_legit_requests: function (callback) {
+            filter_legit_requests: function (flo_id=null, callback) {
                 if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY === "string" &&
                     localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length > 0
                 ) {
@@ -10963,7 +10989,14 @@
                     if (typeof user_keys == "object" && typeof user_keys.pubKeyHex == "string") {
                         if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                                 user_keys.pubKeyHex)) {
-                            return callback(true);
+                            if (typeof flo_id !== null || typeof flo_id !== 'undefined') {
+                                let karr = KBucket.toArray();
+                                let karr_floIds = karr.map(f=>f.data.id);
+                                if (!karr_floIds.includes(flo_id)) {
+                                    return callback(false);    
+                                }
+                            }
+                            return callback(true); 
                         }
                     }
                 }
@@ -10987,7 +11020,7 @@
                     let err_msg;
 
                     if (method=="sync_with_supernode") { 
-                        RM_RPC.filter_legit_requests(function (is_valid_request) {
+                        RM_RPC.filter_legit_requests(params.trader_flo_address, function (is_valid_request) {
                             if (is_valid_request === true && params.job ==
                                 "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
@@ -10998,6 +11031,7 @@
                                     function (su_db_data) {
                                         if (typeof su_db_data == "object") {
                                             su_db_data.trader_flo_address = params.trader_flo_address;
+                                            su_db_data.receiver_flo_address = params.trader_flo_address;
                                             let server_sync_response = RM_RPC
                                                 .send_rpc
                                                 .call(this, "server_sync_response",
@@ -11009,8 +11043,9 @@
                         });
                     } 
 
-                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                            localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                    RM_RPC.filter_legit_requests(params.trader_flo_address, async function (is_valid_request) {
+                        if (is_valid_request !== true) return false;
+
                         try {
                             // CHECK HERE IF USER IS INDULGED IN ANY MORE TRADE. IF TRUE RETURN ERROR 
                             await readAllDB("deposit").then(function (res) {
@@ -11028,6 +11063,7 @@
                                             .send_rpc
                                             .call(this, "supernode_message", {
                                                 "trader_flo_id": respective_trader_id,
+                                                "receiver_flo_address": respective_trader_id,
                                                 "server_msg": request.response
                                             });
                                         doSend(server_response);
@@ -11041,8 +11077,7 @@
                             // Check if user id is in deposit or withdraw. If true prevent him from  trading
                             await readAllDB('withdraw_cash').then(function (res) {
                                 if (typeof res == "object") {
-                                    let check_deposit_withdraw_id_array = res.filter(f => f.status ===
-                                            2)
+                                    let check_deposit_withdraw_id_array = res.filter(f => f.status === 2)
                                         .map(m => {
                                             if (m.trader_flo_address == respective_trader_id || m.deposit_withdraw_id_array ==
                                                 respective_trader_id) {
@@ -11055,6 +11090,7 @@
                                                     .send_rpc
                                                     .call(this, "supernode_message", {
                                                         "trader_flo_id": respective_trader_id,
+                                                        "receiver_flo_address": respective_trader_id,
                                                         "server_msg": server_msg
                                                     });
                                                 doSend(server_response);
@@ -11069,12 +11105,12 @@
                         } catch (error) {
                             throw new Error(error);
                         }
-                    }
+                    });
 
                     switch (method) {
                         case "trade_buy":
 
-                            RM_RPC.filter_legit_requests(async function (is_valid_request) {
+                            RM_RPC.filter_legit_requests(params.trader_flo_address, async function (is_valid_request) {
                                 if (is_valid_request !== true) return false;
                                 await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                     params.currency);
@@ -11087,6 +11123,7 @@
                                         request.response = RM_TRADE.trade_buy.call(this,
                                             ...request.params,
                                             function (supernode_signed_res) {
+                                                supernode_signed_res.receiver_flo_address = params.trader_flo_address;
                                                 if (typeof supernode_signed_res == "object") {
                                                     let buy_request_response = RM_RPC
                                                         .send_rpc
@@ -11113,7 +11150,7 @@
                             });
                             break;
                         case "trade_sell":
-                            RM_RPC.filter_legit_requests(async function (is_valid_request) {
+                            RM_RPC.filter_legit_requests(params.trader_flo_address, async function (is_valid_request) {
                                 if (is_valid_request !== true) return false;
                                 await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                     params.currency);
@@ -11128,6 +11165,7 @@
                                             this, ...request.params,
                                             function (supernode_signed_res) {
                                                 if (typeof supernode_signed_res == "object") {
+                                                    supernode_signed_res.receiver_flo_address = params.trader_flo_address;
                                                     let sell_request_response = RM_RPC
                                                         .send_rpc
                                                         .call(this,
@@ -11158,7 +11196,7 @@
                             // already processed above 
                         break;
                         case "deposit_asset_request":
-                            RM_RPC.filter_legit_requests(function (is_valid_request) {
+                            RM_RPC.filter_legit_requests(params.trader_flo_address, function (is_valid_request) {
 
                                 if (is_valid_request !== true) return false;
 
@@ -11206,9 +11244,7 @@
                                                     params.depositing_amount, params.currency,
                                                     params.product);
 
-                                                let receivedTradeInfo = {
-                                                    ...params
-                                                };
+                                                let receivedTradeInfo = { ...params };
 
                                                 if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
                                                     "undefined") {
@@ -11230,43 +11266,28 @@
                                                         ) {
 
                                                             let receivedTradeInfoHash =
-                                                                Crypto.SHA256(JSON.stringify(
-                                                                    receivedTradeInfo));
+                                                                Crypto.SHA256(JSON.stringify(receivedTradeInfo));
 
-                                                            receivedTradeInfo[
-                                                                    "depositDataHash"] =
-                                                                receivedTradeInfoHash;
-                                                            receivedTradeInfo[
-                                                                    "order_validator_sign"] =
-                                                                RM_WALLET.sign(
-                                                                    receivedTradeInfoHash,
-                                                                    localbitcoinplusplus.wallets
-                                                                    .MY_SUPERNODE_PRIVATE_KEY
+                                                            receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
+                                                            receivedTradeInfo["order_validator_sign"] =
+                                                                RM_WALLET.sign(receivedTradeInfoHash,
+                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
                                                                 );
-                                                            receivedTradeInfo[
-                                                                    "order_validator_public_key"
-                                                                ] =
-                                                                su_data.myLocalFLOPublicKey;
+                                                            receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
                                                             try {
                                                                 const this_btc_pvt_key =
-                                                                    generate_btc_keys_for_requester
-                                                                    .privateKeyWIF;
+                                                                    generate_btc_keys_for_requester.privateKeyWIF;
                                                                 const this_btc_tx_key =
-                                                                    Crypto.util.randomBytes(
-                                                                        64);
+                                                                    Crypto.util.randomBytes(64);
                                                                 const
                                                                     this_btc_pvt_key_shamirs_secret =
-                                                                    RM_WALLET.createShamirsSecretShares(
-                                                                        this_btc_pvt_key,
-                                                                        10, 5);
+                                                                    RM_WALLET.createShamirsSecretShares(this_btc_pvt_key, 10, 5);
                                                                 if (typeof this_btc_pvt_key_shamirs_secret ==
                                                                     "object" &&
                                                                     this_btc_pvt_key_shamirs_secret
                                                                     .length > 0) {
-                                                                    addDB("deposit",
-                                                                        receivedTradeInfo
-                                                                    );
+                                                                    addDB("deposit", receivedTradeInfo);
 
                                                                     // Send the address to the requester
                                                                     let
@@ -11276,6 +11297,7 @@
                                                                             msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
                                                                             data: receivedTradeInfo
                                                                         };
+                                                                    deposit_response_object.receiver_flo_address = params.trader_flo_address;
                                                                     let
                                                                         deposit_request_response =
                                                                         RM_RPC
@@ -11284,9 +11306,7 @@
                                                                             "deposit_asset_request_response",
                                                                             deposit_response_object
                                                                         );
-                                                                    doSend(
-                                                                        deposit_request_response
-                                                                    );
+                                                                    doSend(deposit_request_response);
 
                                                                     let
                                                                         this_btc_pvt_key_shamirs_secret_array =
@@ -11392,7 +11412,8 @@
                                                                 error: false,
                                                                 method: "deposit_asset_request_response",
                                                                 msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
-                                                                data: receivedTradeInfo
+                                                                data: receivedTradeInfo,
+                                                                receiver_flo_address: params.trader_flo_address,
                                                             };
 
                                                             let deposit_request_response =
@@ -11414,9 +11435,7 @@
                                                 params.status = 1;
                                                 // IMPORTANT - If deposit is a fiat make sure product and currency are both same
                                                 params.currency = params.product;
-                                                let receivedTradeInfo = {
-                                                    ...params
-                                                };
+                                                let receivedTradeInfo = { ...params };
 
                                                 readDB("localbitcoinUser", "00-01").then(
                                                     function (su_data) {
@@ -11460,86 +11479,50 @@
                                                                         if (typeof withdrawers_list ==
                                                                             "object") {
                                                                             if (
-                                                                                withdrawers_list
-                                                                                .length >
-                                                                                0) {
-                                                                                withdrawers_list
-                                                                                    .filter(
-                                                                                        wd =>
-                                                                                        wd
-                                                                                        .currency ==
-                                                                                        params
-                                                                                        .currency
-                                                                                    ).map(
-                                                                                        function (
-                                                                                            withdrawer
-                                                                                        ) {
+                                                                                withdrawers_list.length > 0) {
+                                                                                withdrawers_list.filter(
+                                                                                        wd => wd.currency ==
+                                                                                        params.currency).map(
+                                                                                        function (withdrawer) {
                                                                                             if (
-                                                                                                withdrawer
-                                                                                                .withdraw_amount ==
-                                                                                                params
-                                                                                                .depositing_amount &&
-                                                                                                withdrawer
-                                                                                                .currency ==
-                                                                                                params
-                                                                                                .currency
+                                                                                                withdrawer.withdraw_amount ==
+                                                                                                params.depositing_amount &&
+                                                                                                withdrawer.currency ==
+                                                                                                params.currency
                                                                                             ) {
-                                                                                                withdrawer
-                                                                                                    .status =
-                                                                                                    2; // A depositor has been asked to deposit money
-                                                                                                withdrawer
-                                                                                                    .depositor_found_at = +
-                                                                                                    new Date();
-                                                                                                withdrawer
-                                                                                                    .depositor_flo_id =
+                                                                                                withdrawer.status = 2; // A depositor has been asked to deposit money
+                                                                                                withdrawer.depositor_found_at = + new Date();
+                                                                                                withdrawer.depositor_flo_id = receivedTradeInfo.trader_flo_address;
+                                                                                                updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
+
+                                                                                                receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
+                                                                                                updateinDB(
+                                                                                                    "deposit",
+                                                                                                    receivedTradeInfo,
                                                                                                     receivedTradeInfo
-                                                                                                    .trader_flo_address;
-                                                                                                updateinDB
-                                                                                                    (
-                                                                                                        "withdraw_cash",
-                                                                                                        withdrawer,
-                                                                                                        withdrawer
-                                                                                                        .trader_flo_address
-                                                                                                    );
+                                                                                                    .trader_flo_address
+                                                                                                );
 
-                                                                                                receivedTradeInfo
-                                                                                                    .status =
-                                                                                                    2; // withdrawer found. Now deposit money to his account
-                                                                                                updateinDB
-                                                                                                    (
-                                                                                                        "deposit",
-                                                                                                        receivedTradeInfo,
-                                                                                                        receivedTradeInfo
-                                                                                                        .trader_flo_address
-                                                                                                    );
+                                                                                                let withdrawer_bank_account = withdrawer.receivinAddress;
 
-                                                                                                let
-                                                                                                    withdrawer_bank_account =
-                                                                                                    withdrawer
-                                                                                                    .receivinAddress;
+                                                                                                let deposit_response_object = {
+                                                                                                    error: false,
+                                                                                                    method: "deposit_asset_request_response",
+                                                                                                    msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                                                    data: receivedTradeInfo,
+                                                                                                    withdrawer_data: withdrawer,
+                                                                                                    receiver_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                                };
 
-                                                                                                let
-                                                                                                    deposit_response_object = {
-                                                                                                        error: false,
-                                                                                                        method: "deposit_asset_request_response",
-                                                                                                        msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
-                                                                                                        data: receivedTradeInfo,
-                                                                                                        withdrawer_data: withdrawer
-                                                                                                    };
                                                                                                 let
                                                                                                     deposit_request_response =
-                                                                                                    RM_RPC
-                                                                                                    .send_rpc
-                                                                                                    .call(
+                                                                                                    RM_RPC.send_rpc.call(
                                                                                                         this,
                                                                                                         "deposit_asset_request_response",
                                                                                                         deposit_response_object
                                                                                                     );
 
-                                                                                                doSend
-                                                                                                    (
-                                                                                                        deposit_request_response
-                                                                                                    );
+                                                                                                doSend(deposit_request_response);
                                                                                                 return true;
                                                                                             } else {
                                                                                                 err_msg = "Deposit request failed: We could not find a withdrawer.";
@@ -11555,7 +11538,8 @@
                                                                                         error: false,
                                                                                         method: "deposit_asset_request_response",
                                                                                         msg: `Plese send the money to following bank address: "System determined bank".`,
-                                                                                        data: receivedTradeInfo
+                                                                                        data: receivedTradeInfo,
+                                                                                        receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                     };
                                                                                 let
                                                                                     deposit_request_response =
@@ -11567,9 +11551,7 @@
                                                                                         deposit_response_object
                                                                                     );
 
-                                                                                receivedTradeInfo
-                                                                                    .status =
-                                                                                    2; // withdrawer found. Now deposit money to his account
+                                                                                receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
                                                                                 updateinDB
                                                                                     (
                                                                                         "deposit",
@@ -11578,9 +11560,7 @@
                                                                                         .trader_flo_address
                                                                                     );
 
-                                                                                doSend(
-                                                                                    deposit_request_response
-                                                                                );
+                                                                                doSend(deposit_request_response);
                                                                                 return true;
                                                                             }
                                                                         }
@@ -11604,7 +11584,7 @@
                             });
                             break;
                         case "withdraw_request_method":
-                            RM_RPC.filter_legit_requests(async function (is_valid_request) {
+                            RM_RPC.filter_legit_requests(params.trader_flo_address, async function (is_valid_request) {
 
                                 if (is_valid_request !== true) return false;
 
@@ -11826,8 +11806,7 @@
                                                                                                 "send_back_shamirs_secret_btc_pvtkey", {
                                                                                                     retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
                                                                                                     chunk_val: bpks,
-                                                                                                    withdraw_id: vbl
-                                                                                                        .withdraw_id
+                                                                                                    withdraw_id: vbl.withdraw_id
                                                                                                 }
                                                                                             );
                                                                                         doSend
@@ -11903,7 +11882,7 @@
                                                         withdraw_amount: withdrawing_cash_amount,
                                                         currency: params.currency,
                                                         receivinAddress: bank_details,
-                                                        status: 1 // withdraw request called
+                                                        status: 1, // withdraw request called
                                                     }
 
                                                     readDB("localbitcoinUser", "00-01").then(
@@ -11951,6 +11930,8 @@
                                                                         withdraw_request_db_object
                                                                     );
                                                                     // return back the response to client 
+                                                                    withdraw_request_db_object.receiver_flo_address = 
+                                                                    params.trader_flo_address; 
                                                                     let
                                                                         withdrawal_request_response =
                                                                         RM_RPC.send_rpc
@@ -11986,7 +11967,7 @@
                             break;
 
                         case "retrieve_shamirs_secret_btc_pvtkey":
-                            RM_RPC.filter_legit_requests(function (is_valid_request) {
+                            RM_RPC.filter_legit_requests(null, function (is_valid_request) {
                                 if (is_valid_request !== true) return false;
 
                                 if (typeof params.btc_private_key_array !== "string" || typeof params.retrieve_pvtkey_req_id !==
@@ -12024,8 +12005,7 @@
                                                         withdraw_res.receiverBTCEquivalentInCash,
                                                         withdraw_res.currency,
                                                         withdraw_res.product);
-                                                    EqCryptoWd = parseFloat(
-                                                        EqCryptoWd);
+                                                    EqCryptoWd = parseFloat(EqCryptoWd);
 
                                                     let transaction_key =
                                                         btc_reserves.supernode_transaction_key;
@@ -12124,8 +12104,8 @@
                                                                                                     updateUserCryptoBalanceObject = {
                                                                                                         updatedBTCBalanceObject: res_bal,
                                                                                                         updatedBTCBalanceObjectSign: res_obj_sign,
-                                                                                                        trader_flo_address: withdraw_res
-                                                                                                            .trader_flo_address
+                                                                                                        trader_flo_address: withdraw_res.trader_flo_address,
+                                                                                                        receiver_flo_address: withdraw_res.trader_flo_address,
                                                                                                     }
 
                                                                                                 const
@@ -12228,22 +12208,27 @@
 
                         case "superNodeSignedAddUserPublicData":
                             if (typeof params == "object" && typeof params.data == "object") {
-                                if (typeof params.su_pubKey == "string" && localbitcoinplusplus
+                                RM_RPC.filter_legit_requests(params.data.trader_flo_address, 
+                                function (is_valid_request) {
+                                    if (is_valid_request !== true) return false;
+
+                                    if (typeof params.su_pubKey == "string" && localbitcoinplusplus
                                     .master_configurations.supernodesPubKeys.includes(params.su_pubKey)) {
-                                    let res_data_obj = {
-                                        trader_flo_address: params.data.trader_flo_address,
-                                        trader_flo_pubKey: params.data.trader_flo_pubKey,
-                                        trader_status: params.data.trader_status,
-                                        timestamp: params.data.timestamp
-                                    };
-                                    let res_data_hash = Crypto.SHA256(JSON.stringify(res_data_obj));
-                                    let res_data_verification = RM_WALLET
-                                        .verify(res_data_hash, params.sign, params.su_pubKey);
-                                    if ((res_data_verification == true) && res_data_hash == params.data_hash) {
-                                        addDB('userPublicData', params.data);
-                                        return true;
+                                        let res_data_obj = {
+                                            trader_flo_address: params.data.trader_flo_address,
+                                            trader_flo_pubKey: params.data.trader_flo_pubKey,
+                                            trader_status: params.data.trader_status,
+                                            timestamp: params.data.timestamp
+                                        };
+                                        let res_data_hash = Crypto.SHA256(JSON.stringify(res_data_obj));
+                                        let res_data_verification = RM_WALLET
+                                            .verify(res_data_hash, params.sign, params.su_pubKey);
+                                        if ((res_data_verification == true) && res_data_hash == params.data_hash) {
+                                            addDB('userPublicData', params.data);
+                                            return true;
+                                        }
                                     }
-                                }
+                                });
                             }
                             break;
 
@@ -12372,7 +12357,8 @@
                         "trader_flo_address": this.user_flo_address,
                         "product": this.product,
                         "currency": this.currency,
-                        "buy_price": this.buy_price
+                        "buy_price": this.buy_price,
+                        "receiver_flo_address":localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                     }
                     const RM_RPC = new localbitcoinplusplus.rpc;
                     let placeNewOrder = RM_RPC.send_rpc.call(this, this
@@ -12579,7 +12565,8 @@
                     depositor_public_key: null,
                     operation_type: "deposit",
                     order_validator_public_key: null,
-                    product: assetType
+                    product: assetType,
+                    receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
                 const RM_RPC = new localbitcoinplusplus.rpc;
                 let deposit_request = RM_RPC.send_rpc.call(this,
@@ -12619,7 +12606,8 @@
                     operation_type: "withdraw",
                     order_validator_public_key: null,
                     product: assetType,
-                    currency: currency
+                    currency: currency,
+                    receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
                 const RM_RPC = new localbitcoinplusplus.rpc;
                 let withdraw_request = RM_RPC.send_rpc.call(this,
@@ -13090,8 +13078,8 @@
                                                                                 "seller_btc_data": sellerBTCResponseObject,
                                                                                 "data_hash": hashed_data,
                                                                                 "supernode_sign": signed_data,
-                                                                                "supernodePubKey": user_data
-                                                                                    .myLocalFLOPublicKey
+                                                                                "supernodePubKey": user_data.myLocalFLOPublicKey,
+                                                                                "receiver_flo_address": "BROADCAST_TO_NODES",
                                                                             }
                                                                         callback(response_for_client);
                                                                         return true;
@@ -13121,7 +13109,8 @@
                     trade_id: trade_id,
                     signed_trade_id: signed_trade_id,
                     trader_flo_address: trader_flo_address,
-                    trade_type: trade_type
+                    trade_type: trade_type,
+                    receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
 
                 let cancel_trade_request = RM_RPC.send_rpc.call(this,
@@ -13259,13 +13248,13 @@
         * @param method A String containing the name of the method to be invoked. 
         * @param params (optional) A Structured value that holds the parameter values to be used during the invocation of the method.
         */
-        JSON_RPC.Request = function (method, params) {
+        JSON_RPC.Request = function (method, params, globalParams={}) {
             this.jsonrpc = "2.0";
             this.method = method;
             if (typeof params !== "undefined") {
                 this.params = params;
             }
-
+            this.globalParams = globalParams;
             this.id = id++;
         };
 
@@ -13279,6 +13268,7 @@
                 delete this.method; // remove the method name
                 delete this.params; // remove the params
                 delete this.error; // remove error state if it exists
+                delete this.globalParams; // remove globalParams
                 this._result = result;
             }
         });
@@ -13293,6 +13283,7 @@
                 delete this.method; // remove the method name
                 delete this.params; // remove the params
                 delete this.result; // remove result state if it exists
+                delete this.globalParams; // remove globalParams if it exists
                 this._error = error;
             }
         });
@@ -13311,6 +13302,7 @@
             if (this.params !== undefined) rpc.params = this.params;
             if (this.result !== undefined) rpc.result = this.result;
             if (this.error !== undefined) rpc.error = this.error;
+            if (this.globalParams !== undefined) rpc.globalParams = this.globalParams;
 
             return JSON.stringify(rpc);
         };
@@ -13320,11 +13312,14 @@
         * @param method A String containing the name of the method to be invoked. 
         * @param params (optional) A Structured value that holds the parameter values to be used during the invocation of the method.
         */
-        JSON_RPC.Notification = function (method, params) {
+        JSON_RPC.Notification = function (method, params, globalParams) {
             this.jsonrpc = "2.0";
             this.method = method;
             if (typeof params !== "undefined") {
                 this.params = params;
+            }
+            if (typeof globalParams !== "undefined") {
+                this.globalParams = globalParams;
             }
         };
 
@@ -13336,7 +13331,8 @@
             var rpc = {
                 jsonrpc: this.jsonrpc,
                 method: this.method,
-                params: this.params
+                params: this.params,
+                globalParams: this.globalParams, 
             };
 
             return JSON.stringify(rpc);
@@ -13429,7 +13425,7 @@
         function kickInit() {
             output = document.getElementById("output_div");
             const RM_WALLET = new localbitcoinplusplus.wallets;
-            const BACKUP_DB = {};
+            const BACKUP_DB = localbitcoinplusplus.newBackupDatabase.db = [];
             const backUpSupernodesWS = localbitcoinplusplus.backupWS = [];
             return new Promise(resolve => {
 
@@ -13449,31 +13445,28 @@
                             localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
                             localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
 
+                            // launch KBucekts
+                            launchKBuckects = await localbitcoinplusplus.kademlia.launchKBucket(newKeys.address);
+
+                            if (!launchKBuckects) {
+                                const kmsg = `ERROR: Failed to build KBuckets. System cannot proceed further.`;
+                                showMessage(kmsg);
+                                throw new Error(kmsg);
+                            }
+
                             updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
 
                             wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(
                                 localbitcoinplusplusObj.myLocalFLOAddress);
 
-                            await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
+                            // Add close supernodes to KBucket                    
+                            wsUri.map(d=>{
+                                localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
+                                    "FLO_TEST", d.trader_flo_address, { id: d.trader_flo_address })
+                                showMessage(`INFO: Added Supernode Id ${d.trader_flo_address} to KBucket.`);
+                            });
 
-                            // Add new user node in Kademlia
-                            // addDB('kBucketStore', {
-                            //     id: localbitcoinplusplusObj.myLocalFLOAddress,
-                            //     data: {
-                            //         id: localbitcoinplusplusObj.myLocalFLOAddress,
-                            //         vectorClock: 0
-                            //     },
-                            // }).then(dbObj => {
-                            //     localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
-                            //         "FLO_TEST",
-                            //         dbObj.id, dbObj.data);
-                            //     let addNewKNode = localbitcoinplusplus.rpc.prototype
-                            //         .send_rpc
-                            //         .call(this, "addNewKbucketNode", {
-                            //             newKbucketNode: dbObj
-                            //         });
-                            //     doSend(addNewKNode);
-                            // }).catch(e=>console.warn(e));
+                            await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
 
                             RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
                                 .then(() => privateKeyBuilder());
@@ -13486,8 +13479,8 @@
                                 }
                             }).map((uri, index)=>{
                                 console.log(uri);
-                                backUpSupernodesWS[index] = new backupSupernodesWebSocketObject(`ws://${uri.ip}:${uri.port}`);
-                                backUpSupernodesWS[index].connectWS();
+                                backUpSupernodesWS[uri.trader_flo_address] = new backupSupernodesWebSocketObject(`ws://${uri.ip}:${uri.port}`);
+                                backUpSupernodesWS[uri.trader_flo_address].connectWS();
 
                                 let dbname = `su_backup_${uri.trader_flo_address}`;
                                 BACKUP_DB[uri.trader_flo_address] = new newBackupDB(dbname);
@@ -13504,10 +13497,28 @@
                         }
                     }
 
+                    // launch KBucekts
+                    launchKBuckects = await localbitcoinplusplus.kademlia.launchKBucket(idbData.myLocalFLOAddress);
+
+                    if (!launchKBuckects) {
+                        const kmsg = `ERROR: Failed to build KBuckets. System cannot proceed further.`;
+                        showMessage(kmsg);
+                        throw new Error(kmsg);
+                    }
+
                     wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
-                    
+
+                    // Add close supernodes to KBucket                    
+                    wsUri.map(d=>{
+                        localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
+                            "FLO_TEST", d.trader_flo_address, { id: d.trader_flo_address })
+                        showMessage(`INFO: Added Supernode Id ${d.trader_flo_address} to KBucket.`);
+                    });
+
                     // Connect with primary supernodes
                     startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
+
+                    localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS = wsUri[0].trader_flo_address;
 
                     // Connect with backup supernodes
                     wsUri.filter((uri, index)=>{
@@ -13517,8 +13528,8 @@
                         }
                     }).map((uri, index)=>{
                         console.log(uri);
-                        backUpSupernodesWS[index] = new backupSupernodesWebSocketObject(`ws://${uri.ip}:${uri.port}`);
-                        backUpSupernodesWS[index].connectWS();
+                        backUpSupernodesWS[uri.trader_flo_address] = new backupSupernodesWebSocketObject(`ws://${uri.ip}:${uri.port}`);
+                        backUpSupernodesWS[uri.trader_flo_address].connectWS();
 
                         let dbname = `su_backup_${uri.trader_flo_address}`;
                         BACKUP_DB[uri.trader_flo_address] = new newBackupDB(dbname);
@@ -13540,6 +13551,41 @@
             handle_backup_server_messages(evt) {
                 var response = evt.data;
                 console.log('backup response: '+response);
+
+                var res_pos = response.indexOf('{');
+                if (res_pos >= 0) {
+                    var res = response.substr(res_pos);
+                    try {
+                        var res_obj = JSON.parse(res);
+
+                        if (typeof res_obj.method !== undefined) {
+                            let response_from_sever;
+
+                            const RM_WALLET = new localbitcoinplusplus.wallets;
+                            const RM_TRADE = new localbitcoinplusplus.trade;
+                            const RM_RPC = new localbitcoinplusplus.rpc;
+
+                            switch (res_obj.method) {
+                                case "give_me_your_backup":
+                                    if (typeof res_obj.params == "object" 
+                                    && typeof res_obj.params[0] == "object") {
+                                        let received_resp = res_obj.params[0];
+                                        RM_RPC.filter_legit_requests(received_resp.trader_flo_address, 
+                                        function (is_valid_request) {
+                                            if(!is_valid_request) return;
+
+                                            //received_resp.requesters_pub_key
+                                            console.log(received_resp);
+                                            
+                                        });
+                                    }
+                                break;
+                            }
+                        }
+                    } catch(e) {
+                        console.warn(e);
+                    }
+                }
             },
 
             connectWS() {
@@ -13633,19 +13679,24 @@
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let buyOrders_data = res_obj.params[0];
 
-                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            buyOrders_data.supernodePubKey)) {
-                                        let isDataSignedBySuperNode = RM_WALLET
-                                            .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
-                                                buyOrders_data.supernodePubKey);
-                                        if (isDataSignedBySuperNode === true) {
-                                            // Add buy order
-                                            addDB("buyOrders", buyOrders_data).then(() => {
-                                                showMessage(`Your buy order is placed successfully.`);
-                                            });
+                                    RM_RPC.filter_legit_requests(params.trader_flo_address, 
+                                    function (is_valid_request) {
+                                        if (is_valid_request !== true) return false;
+
+                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                                buyOrders_data.supernodePubKey)) {
+                                            let isDataSignedBySuperNode = RM_WALLET
+                                                .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
+                                                    buyOrders_data.supernodePubKey);
+                                            if (isDataSignedBySuperNode === true) {
+                                                // Add buy order
+                                                addDB("buyOrders", buyOrders_data).then(() => {
+                                                    showMessage(`Your buy order is placed successfully.`);
+                                                });
+                                            }
                                         }
-                                    }
+                                    });
                                 }
                                 break;
                             case "trade_sell":
@@ -13655,20 +13706,24 @@
                             case "trade_sell_request_response":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let sellOrders_data = res_obj.params[0];
-                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            sellOrders_data
-                                            .supernodePubKey)) {
-                                        let isDataSignedBySuperNode = RM_WALLET
-                                            .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
-                                                sellOrders_data.supernodePubKey);
-                                        if (isDataSignedBySuperNode === true) {
-                                            // Add buy order
-                                            addDB("sellOrders", sellOrders_data).then(() => {
-                                                showMessage(`Your sell order is placed successfully.`);
-                                            });;
+                                    RM_RPC.filter_legit_requests(params.trader_flo_address, 
+                                    function (is_valid_request) {
+                                        if (is_valid_request !== true) return false;
+                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                                sellOrders_data
+                                                .supernodePubKey)) {
+                                            let isDataSignedBySuperNode = RM_WALLET
+                                                .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
+                                                    sellOrders_data.supernodePubKey);
+                                            if (isDataSignedBySuperNode === true) {
+                                                // Add buy order
+                                                addDB("sellOrders", sellOrders_data).then(() => {
+                                                    showMessage(`Your sell order is placed successfully.`);
+                                                });;
+                                            }
                                         }
-                                    }
+                                    });
                                 }
                                 break;
                             case "sync_with_supernode":
@@ -13747,6 +13802,7 @@
                                                 let counterTraderAccountAddress =
                                                     `<p><strong>Please pay the amount to following address:</strong></p>
                                                     <p>${resp.msg}</p>`;
+                                                    showMessage(counterTraderAccountAddress);
                                                     modalWindow(counterTraderAccountAddress);
                                             }
                                         });
@@ -13812,35 +13868,40 @@
                                         `${trade_info_str}${buyer_cash_data_str}${seller_cash_data_str}${buyer_btc_data_str}${seller_btc_data_str}`;
                                     let hashed_data = Crypto.SHA256(res_str);
 
-                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            trade_balance_res.supernodePubKey)) {
-                                        if (RM_WALLET.verify(hashed_data,
-                                                trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
-                                            // Delete orders in clients DB
-                                            try {
-                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
-                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
-                                            } catch (error) {
-                                                callback(false);
-                                                throw new Error(error);
-                                            }
+                                    RM_RPC.filter_legit_requests(trade_balance_res.trade_infos.buyer_flo_id, 
+                                    function (is_valid_request) {
+                                        if (is_valid_request !== true) return false;
 
-                                            // Update balances in clients DB
-                                            try {
-                                                updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
-                                                    trade_balance_res.trade_infos.buyer_flo_id);
-                                                updateinDB("cash_balances", trade_balance_res.seller_cash_data,
-                                                    trade_balance_res.trade_infos.seller_flo_id);
-                                                updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
-                                                    trade_balance_res.trade_infos.buyer_flo_id);
-                                                updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
-                                                    trade_balance_res.trade_infos.seller_flo_id);
-                                            } catch (error) {
-                                                callback(false);
-                                                throw new Error(error);
+                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                            trade_balance_res.supernodePubKey)) {
+                                            if (RM_WALLET.verify(hashed_data,
+                                                    trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
+                                                // Delete orders in clients DB
+                                                try {
+                                                    removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                    removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
+                                                } catch (error) {
+                                                    callback(false);
+                                                    throw new Error(error);
+                                                }
+
+                                                // Update balances in clients DB
+                                                try {
+                                                    updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
+                                                        trade_balance_res.trade_infos.buyer_flo_id);
+                                                    updateinDB("cash_balances", trade_balance_res.seller_cash_data,
+                                                        trade_balance_res.trade_infos.seller_flo_id);
+                                                    updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
+                                                        trade_balance_res.trade_infos.buyer_flo_id);
+                                                    updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
+                                                        trade_balance_res.trade_infos.seller_flo_id);
+                                                } catch (error) {
+                                                    callback(false);
+                                                    throw new Error(error);
+                                                }
                                             }
                                         }
-                                    }
+                                    });
                                 }
                                 break;
                             case "store_shamirs_secret_pvtkey_shares":
@@ -13917,9 +13978,8 @@
                                 }
                                 break;
                             case "deposit_withdraw_user_claim":
-                                RM_RPC.filter_legit_requests(function (is_valid_request) {
-                                    if (is_valid_request !== true) return false;
-                                    if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
+                               
+                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
                                         "undefined") throw new Error("Supernode Private Keys is undefind.");
                                     if (typeof res_obj.params == "object" && typeof res_obj.params[0] ==
                                         "object") {
@@ -13928,7 +13988,10 @@
                                         let withdraw_order_id = user_claim_id[0];
                                         let user_id = user_claim_id[1];
 
-                                        let deposit_withdraw_user_claim_obj = {
+                                        RM_RPC.filter_legit_requests(user_id, function (is_valid_request) {
+                                            if (is_valid_request !== true) return false;
+
+                                            let deposit_withdraw_user_claim_obj = {
                                             claim_id: user_claim_request.claim_id
                                         }
 
@@ -13945,8 +14008,7 @@
                                             readDB("withdraw_cash", withdraw_order_id).then(async function (
                                                 withdraw_data) {
                                                 if (typeof withdraw_data == "object") {
-                                                    if (withdraw_data.trader_flo_address ==
-                                                        user_id) {
+                                                    if (withdraw_data.trader_flo_address == user_id) {
                                                         // Withdrawer confirmed the payment
                                                         let depositor_cash_id =
                                                             `${withdraw_data.depositor_flo_id}_${withdraw_data.currency}`;
@@ -14014,6 +14076,8 @@
                                                             update_cash_balance_obj.withdraw_id =
                                                                 withdraw_data.id;
 
+                                                            update_cash_balance_obj.receiver_flo_address = user_id;
+
                                                             let update_cash_balance_req = RM_RPC
                                                                 .send_rpc
                                                                 .call(this,
@@ -14048,6 +14112,9 @@
                                                             update_withdraw_cash_obj_data_sign;
                                                         update_withdraw_cash_obj_data.publicKey =
                                                             localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                        
+                                                        update_withdraw_cash_obj_data.receiver_flo_address = user_id;
+
                                                         let update_withdraw_cash_obj = RM_RPC
                                                             .send_rpc
                                                             .call(this,
@@ -14057,10 +14124,11 @@
                                                     } 
                                                     return true;
                                                 }
-                                            });
-                                        }
+                                            });                                            
+                                            }                                            
+                                        });
+
                                     }
-                                });
                                 break;
                             case "update_all_withdraw_cash_depositor_claim":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -14112,39 +14180,35 @@
                                 break;
 
                             case "add_user_public_data":
-                                RM_RPC.filter_legit_requests(function (is_valid_request) {
-                                    if (is_valid_request !== true) return false;
-
                                     let supernode_flo_public_key = localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                    if (!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            supernode_flo_public_key)) {
-                                        throw new Error("Failed to identify as supernode.");
-                                    }
+                                    RM_RPC.filter_legit_requests(res_obj.params[0].public_data.trader_flo_address, 
+                                    function (is_valid_request) {
+                                        if (is_valid_request !== true) return false;
 
-                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                        let req_data = res_obj.params[0].public_data;
-                                        try {
-                                            let flo_address = bitjs.FLO_TEST.pubkey2address(req_data.trader_flo_pubKey);
+                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                            let req_data = res_obj.params[0].public_data;
+                                            try {
+                                                let flo_address = bitjs.FLO_TEST.pubkey2address(req_data.trader_flo_pubKey);
 
-                                            if (flo_address == req_data.trader_flo_address && req_data.trader_flo_address
-                                                .length > 0) {
+                                                if (flo_address == req_data.trader_flo_address && req_data.trader_flo_address
+                                                    .length > 0) {
 
-                                                let public_req_object = {
-                                                    trader_flo_address: req_data.trader_flo_address,
-                                                    trader_flo_pubKey: req_data.trader_flo_pubKey,
-                                                    supernode_flo_public_key: supernode_flo_public_key,
-                                                    trader_status: 0,
-                                                    timestamp: +new Date()
+                                                    let public_req_object = {
+                                                        trader_flo_address: req_data.trader_flo_address,
+                                                        trader_flo_pubKey: req_data.trader_flo_pubKey,
+                                                        supernode_flo_public_key: supernode_flo_public_key,
+                                                        trader_status: 0,
+                                                        timestamp: +new Date()
+                                                    }
+
+                                                    addDB('userPublicData', public_req_object);
+
                                                 }
-
-                                                addDB('userPublicData', public_req_object);
-
+                                            } catch (error) {
+                                                throw new Error('Invalid public key and flo address combination.');
                                             }
-                                        } catch (error) {
-                                            throw new Error('Invalid public key and flo address combination.');
                                         }
-                                    }
-                                });
+                                    });
                                 break;
 
                             case "superNodeSignedAddUserPublicData":
@@ -14168,16 +14232,12 @@
                                 break;
 
                             case "update_external_file_request":
-                                RM_RPC.filter_legit_requests(is_valid_request => {
+                                RM_RPC.filter_legit_requests(res_obj.params[0].user_flo_address, is_valid_request => {
                                     if (is_valid_request !== true) return false;
                                     let update_script_request = res_obj.params[0];
 
                                     if (typeof update_script_request.user_flo_address !== "string") throw new Error(
                                         "Unknown user");
-
-                                    if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) throw new Error(
-                                        "Unauthorized server.");
 
                                     let server_pubkey = localbitcoinplusplus.wallets.my_local_flo_public_key;
 
@@ -14193,11 +14253,12 @@
                                                             .MY_SUPERNODE_PRIVATE_KEY);
                                                     response_from_sever = RM_RPC.send_rpc
                                                         .call(this, "update_external_file_server_response", {
-                                                            user_flo_address: update_script_request.user_flo_address,
+                                                            trader_flo_address: update_script_request.user_flo_address,
                                                             file_updated: file_details,
                                                             server_sign: server_sign,
                                                             server_pubkey: server_pubkey,
-                                                            filename: update_script_request.file_to_update
+                                                            filename: update_script_request.file_to_update,
+                                                            receiver_flo_address: update_script_request.user_flo_address
                                                         });
                                                     doSend(response_from_sever);
                                                 }
@@ -14211,11 +14272,12 @@
                                                         .MY_SUPERNODE_PRIVATE_KEY);
                                                 response_from_sever = RM_RPC.send_rpc
                                                     .call(this, "update_external_file_server_response", {
-                                                        user_flo_address: update_script_request.user_flo_address,
+                                                        trader_flo_address: update_script_request.user_flo_address,
                                                         file_updated: file_details,
                                                         server_sign: server_sign,
                                                         server_pubkey: server_pubkey,
-                                                        filename: "UPDATE_ALL_FILES"
+                                                        filename: "UPDATE_ALL_FILES",
+                                                        receiver_flo_address: update_script_request.user_flo_address,
                                                     });
                                                 doSend(response_from_sever);
                                             }
@@ -14262,8 +14324,10 @@
                                 try {
                                     const newKbucketObjectArr = res_obj.params[0];
                                     newKbucketObjectArr.newKbucketNode.map(newKbucketObject=>{
+                                        newKbucketObject_id_array = Object.values(newKbucketObject.id);
+                                        newKbucketObject_idu8 = new Uint8Array(newKbucketObject_id_array);
                                         localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB("FLO_TEST",
-                                        newKbucketObject.id, newKbucketObject.data);
+                                        newKbucketObject_idu8, newKbucketObject.data);
                                     });
                                 } catch (error) {
                                     console.error(error);
@@ -14375,8 +14439,8 @@
                             case "messageBroadcasting":
                                 console.log(res_obj);
                                 try {
-                                    let data = res_obj.params[0];
-                                    let msg = localbitcoinplusplus.encrypt.decryptMessage(data.secret, data.senderPublicKeyString);
+                                    let response = res_obj.params[0];
+                                    let msg = localbitcoinplusplus.encrypt.decryptMessage(response.data.secret, response.data.senderPublicKeyString);
                                     console.log(msg);
                                 } catch (error) {
                                     console.error(error);
@@ -14384,7 +14448,11 @@
                                 break;
 
                             case "MessageForMiddleman":
-                                console.log(res_obj);
+                                RM_RPC.filter_legit_requests(trade_balance_res.trade_infos.buyer_flo_id, 
+                                    function (is_valid_request) {
+                                        console.log(is_valid_request);
+                                    }
+                                );
                                 break;
 
                             default:
@@ -14526,6 +14594,7 @@
 
         const kBucketStore = {
             id: null,
+            vectorClock: 0,
             data: null,
             last_updated_on: null,
         }
@@ -15183,7 +15252,8 @@
             showMessage(`Loading your local database.`);
             readDB('localbitcoinUser', "00-01").then(userInfo=>{
                 let my_flo_id = userInfo.myLocalFLOAddress.length > 0 
-                    ? userInfo.myLocalFLOAddress : `No FLO Id found`; 
+                    ? userInfo.myLocalFLOAddress : `No FLO Id found`;
+                
                 showMessage(`Your FLO Id: ${my_flo_id}`);
                 const localbitcoinuserdiv = document.getElementById('localbitcoinuserdiv')
                 localbitcoinuserdiv.innerHTML = `${my_flo_id}`;
@@ -15238,7 +15308,8 @@
                 .send_rpc
                 .call(this, "update_external_file_request", {
                     user_flo_address: user_flo_address,
-                    file_to_update: filename
+                    file_to_update: filename,
+                    receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 });
             doSend(update_external_file);
             let file_to_be_updated = (filename == null ? 'each' : filename);
@@ -15313,17 +15384,20 @@
                     // add/update yourself in your kbucket
                     await localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
                         "FLO_TEST", MY_LOCAL_FLO_ADDRESS, 
-                        { id: MY_LOCAL_FLO_ADDRESS, vectorClock: 0 });
+                        { id: MY_LOCAL_FLO_ADDRESS });
 
                     // restore k-bucket
-                    const dbObj = await localbitcoinplusplus.kademlia.restoreKbucket(MY_LOCAL_FLO_ADDRESS, "FLO_TEST");
-                    
+                    const dbObj = await localbitcoinplusplus.kademlia.restoreKbucket(MY_LOCAL_FLO_ADDRESS, "FLO_TEST", KBucket);
+                    const dbObjSuKB = await localbitcoinplusplus.kademlia.restoreKbucket(MY_LOCAL_FLO_ADDRESS, "FLO_TEST", supernodeKBucket);
+
                     if (typeof dbObj=="object") {
                         let addNewKNode = localbitcoinplusplus.rpc.prototype
                             .send_rpc
                             .call(this, "addNewKbucketNode", {
                                 newKbucketNode: dbObj
                             });
+                        console.log(addNewKNode);
+                        
                         doSend(addNewKNode);
                     } else {
                         console.warn(`Failed to restore kBucket.`);
@@ -15338,6 +15412,7 @@
                                 trader_status: 0,
                                 timestamp: +new Date()
                             }
+                            user_public_data_object.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
                             let add_user_public_data_req = RM_RPC
                                 .send_rpc
                                 .call(this, "add_user_public_data", {
@@ -15708,7 +15783,7 @@
             asset_button_box.appendChild(refresh_crypto_status_btn);
             refresh_crypto_status_btn.addEventListener('click', function () {
                 let refresh_deposit_status = RM_RPC.send_rpc.call(this,
-                    "refresh_deposit_status_request", null);
+                    "refresh_deposit_status_request", {receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS});
                 doSend(refresh_deposit_status);
             });
 
@@ -15950,7 +16025,8 @@
                                         let updateUserCryptoBalanceObject = {
                                             updatedBTCBalanceObject: updatedBTCBalanceObject,
                                             updatedBTCBalanceObjectSign: updatedBTCBalanceObjectSign,
-                                            trader_flo_address: trader_deposits.trader_flo_address
+                                            trader_flo_address: trader_deposits.trader_flo_address,
+                                            receiver_flo_address: trader_deposits.trader_flo_address
                                         }
 
                                         let updateUserCryptoBalanceRequestObject = RM_RPC
@@ -15969,6 +16045,18 @@
                 return false;
             }
         }
+    
+        function giveMeYourBackup(backup_server_flo_id) {
+            const RM_RPC = new localbitcoinplusplus.rpc;
+            let send_backup_request = RM_RPC.send_rpc.call(this,
+                "give_me_your_backup", {
+                    "JOB": "BACKUP_SERVER_REQUEST",
+                    requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
+                    trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                });
+                doSend(send_backup_request);
+        }
+    
     </script>
 
 </body>
