@@ -13572,13 +13572,87 @@
                                         let received_resp = res_obj.params[0];
                                         RM_RPC.filter_legit_requests(received_resp.trader_flo_address, 
                                         function (is_valid_request) {
-                                            if(!is_valid_request) return;
+                                            if(!is_valid_request || received_resp.JOB!=="BACKUP_SERVER_REQUEST") return;
+                                            const requester_supernode_pubkey = received_resp.requesters_pub_key;
+                                            const requester_supernode_flo_address = received_resp.trader_flo_address;
 
-                                            //received_resp.requesters_pub_key
-                                            console.log(received_resp);
-                                            
+                                            const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                                                "crypto_balances", "cash_balances", "userPublicData"
+                                            ];
+                                            localbitcoinplusplus.actions.get_sharable_db_data(tableArray).then(
+                                                function (su_db_data) {
+                                                    if (typeof su_db_data == "object") {
+                                                        su_db_data.trader_flo_address = localbitcoinplusplus.wallets.my_local_flo_address;
+                                                        su_db_data.receiver_flo_address = requester_supernode_flo_address;
+                                                        let server_sync_response = RM_RPC
+                                                            .send_rpc
+                                                            .call(this, "backup_server_sync_response",
+                                                                su_db_data);
+                                                        doSend(server_sync_response);
+                                                    }
+                                            });
+
                                         });
                                     }
+                                break;
+
+                                case "backup_server_sync_response":
+                                if (typeof res_obj.params == "object" 
+                                    && typeof res_obj.params[0] == "object") {
+                                    let su_backup_db_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_requests(su_backup_db_data.trader_flo_address, 
+                                    function (is_valid_request) {
+                                        if(!is_valid_request) return false;
+
+                                        if (typeof localbitcoinplusplus.wallets.my_local_flo_address !== "string" ||
+                                        su_backup_db_data.receiver_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
+                                        ) return false;
+
+                                        const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[su_backup_db_data.trader_flo_address];
+
+                                        if(typeof backup_server_db_instance !== "object") {
+                                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                            showMessage(backup_db_error_msg);
+                                            throw new Error(backup_db_error_msg);
+                                        };
+
+                                        (async function () {
+                                        for (let tableStoreName in su_backup_db_data) {
+                                            // skip loop if the property is from prototype
+                                            if (tableStoreName == 'trader_flo_address' || !su_backup_db_data.hasOwnProperty(
+                                                    tableStoreName)) continue;
+
+                                            try {
+                                                let obj = su_backup_db_data[tableStoreName];
+                                                if (["crypto_balances", "cash_balances", "userPublicData"]
+                                                    .includes(tableStoreName)) {
+                                                    if (obj.length > 0) {
+                                                        for (var prop in obj) {
+                                                            if (!obj.hasOwnProperty(prop)) continue;
+                                                            await backup_server_db_instance.backup_updateinDB(tableStoreName, 
+                                                                obj[prop], obj[prop].trader_flo_address);
+                                                        }
+                                                    }
+                                                } else {
+                                                    let resdbdata = await backup_server_db_instance.backup_removeAllinDB(tableStoreName);
+                                                    if (resdbdata !== false) {
+                                                        if (obj.length > 0) {
+                                                            for (var prop in obj) {
+                                                                if (!obj.hasOwnProperty(prop)) continue;
+                                                                await backup_server_db_instance.backup_addDB(resdbdata, obj[prop]);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                            } catch (error) {
+                                                console.log(error);
+                                            }
+                                        }
+                                    })();
+                                        
+                                    });
+                                }
                                 break;
                             }
                         }
