@@ -10415,6 +10415,7 @@
                     }
                 })
             }, 
+            
             addClosestSupernodeInDB: function(flo_addr, KB=KBucket) {
                 return new Promise((resolve, reject)=>{
                     const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
@@ -10446,6 +10447,7 @@
                 })
             }
         }
+    
     </script>
 
     <!-- Encryption -->
@@ -13689,9 +13691,23 @@
             async handle_backup_server_messages(evt) {
                 var response = evt.data;
                 console.log('backup response: '+response);
+                
+                // let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
+                // if (isRequestToLinkIp>=0) {
+                //     linkIpToFloId(response);
+                //     return;
+                // }
 
                 var res_pos = response.indexOf('{');
                 if (res_pos >= 0) {
+                    let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
+                    let incoming_msg_local_ip = ``;
+                    if (isRequestToLinkIp>=0) {
+                        let index_of_ip = response.indexOf(' ');
+                        if (incoming_msg_local_ip>=0) {
+                            incoming_msg_local_ip = response.substr(0, index_of_ip);
+                        }
+                    }
                     var res = response.substr(res_pos);
                     try {
 
@@ -14034,7 +14050,36 @@
                                         }
                                     });
                                 break;
+                                case "requestSupernodesToRemoveAUserFloIdFromTheirKBucket":
+                                    RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                        function (is_valid_request) {
+                                            if(!is_valid_request) return false;
+                                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                                const removeKBReq = res_obj.params[0];
+                                                const currentSupernodeFloIdOfUser = removeKBReq.currentSupernodeFloId;
+                                                if(localbitcoinplusplus.wallets.my_local_flo_address == currentSupernodeFloIdOfUser) return;
+                                                const userKbucketObject_id_array = Object.values(removeKBReq.redundantKbucketNodeU8Id);
+                                                const userKBId = new Uint8Array(userKbucketObject_id_array);
+                                                KBucket.remove(userKBId);
+                                                return true;
+                                            }
+                                    });
+                                break;
+                                case "link_My_Local_IP_To_My_Flo_Id":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        const req_params = res_obj.params[0];
+                                        if(typeof req_params.requesters_pub_key !== "string") return;
+                                        let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(req_params.requesters_pub_key);
+                                        if(typeof flo_addr_for_pubkey !== "string") return;
+                                        if(flo_addr_for_pubkey !== res_obj.globalParams.senderFloId) return;
+                                        updateinDB('ipTable', {
+                                            'flo_public_key': req_params.requesters_pub_key,
+                                            'temporary_ip': incoming_msg_local_ip
+                                        });
+                                    }
+                                break;
                             }
+                            
                         }
                     } catch(e) {
                         console.warn(e);
@@ -14046,12 +14091,18 @@
                 this.ws_connection = new WebSocket(this.ws_url);
                 const switchMyWS = new backupSupernodesWebSocketObject();
                 this.ws_connection.onopen = function (evt) {
-                    showMessage(`Connected to backup Supernode sever: ${this.ws_url}.`);
-                    switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, true);
+                    reactor.addEventListener('backup_supernode_up', function() {
+                        showMessage(`Connected to backup Supernode sever: ${evt.srcElement.url}.`);
+                        switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, true);
+                    });
+                    reactor.dispatchEvent('backup_supernode_up');
                 }.bind(this);
                 this.ws_connection.onclose = function (evt) {
-                    showMessage(`Disconnected to backup Supernode sever: ${this.ws_url}.`);
-                    switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
+                    reactor.addEventListener('backup_supernode_down', function() {
+                        showMessage(`Disconnected to backup Supernode sever: ${evt.srcElement.url}.`);
+                        switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
+                    });
+                    reactor.dispatchEvent('backup_supernode_down');
                 }.bind(this);
                 this.ws_connection.onmessage = function (evt) {
                     this.handle_backup_server_messages(evt);
@@ -14104,6 +14155,8 @@
                 || localbitcoinplusplus.master_configurations.supernodesPubKeys
                 .includes(user_flo_address)) return false;
 
+                let ideal_supernode = '';
+
                 const myClosestSupernodesArray = await readAllDB(`myClosestSupernodes`);
 
                 // Learn about the previous connection. If it was primary supernode continue
@@ -14116,7 +14169,7 @@
 
                     // Get the status of last_connect_supernode
                     if(status_of_last_connected_backup_su[0].is_live===true) {
-                        await startWebSocket(`ws://${status_of_last_connected_backup_su[0].ip}:${status_of_last_connected_backup_su[0].port}`);
+                        ideal_supernode = `ws://${status_of_last_connected_backup_su[0].ip}:${status_of_last_connected_backup_su[0].port}`;
                     }
                 } else {
                     // Connection to last connected backup supernode failed, 
@@ -14133,10 +14186,11 @@
                             if(ww==disconnected_url) z = true;
                         })
 
-                    let nextClosestSupernode = `ws://${nextClosestSupernodeElem[0].ip}:${nextClosestSupernodeElem[0].port}`;
+                    ideal_supernode = `ws://${nextClosestSupernodeElem[0].ip}:${nextClosestSupernodeElem[0].port}`;
                     
-                    await startWebSocket(nextClosestSupernode); 
                 }
+
+                await startWebSocket(ideal_supernode); 
                     
                 if(websocket.readyState===1) {
    
@@ -14161,7 +14215,7 @@
                 }
                 
             },
-        } 
+        }
 
         function startWebSocket(wsUri) {
             
@@ -14183,38 +14237,52 @@
         }
 
         function onOpen(evt) {
-            showMessage(`Connected successfully to Supernode: ${evt.srcElement.url}`);
-            writeToScreen("CONNECTED");
-            const switchMyWS = new backupSupernodesWebSocketObject();
-            switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, true);
+            reactor.addEventListener('primary_supernode_up', function() {
+                const switchMyWS = new backupSupernodesWebSocketObject();
+                switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, true);
+                showMessage(`Connected successfully to Supernode: ${evt.srcElement.url}`);
+                writeToScreen("CONNECTED");
+            });
+           reactor.dispatchEvent('primary_supernode_up');
         }
 
         function onClose(evt) {
 
-            showMessage(`Disconnected to Supernode server: ${evt.srcElement.url}`);
-            writeToScreen("DISCONNECTED");
-            
-            const switchMyWS = new backupSupernodesWebSocketObject();
-            switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
-            showMessage(`INFO: Waiting for primary Supernode connection to come back within 20 seconds.`);
-            localbitcoinplusplus.actions.delay(20000).then(async ()=>{
-                const disconnectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
-                const getSubjectSupernodeDetails = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', disconnectedWSServerFloId);
-                if (typeof getSubjectSupernodeDetails=="object" && getSubjectSupernodeDetails[0].is_live!==true) {
-                    showMessage(`INFO: Connection to primary Supernode failed. Attempting to connect to secondary Supernode.`);
-                    switchMyWS.switchToBackupWS(evt.srcElement.url);        
-                } 
+            reactor.addEventListener('primary_supernode_down', function() {
+                showMessage(`Disconnected to Supernode server: ${evt.srcElement.url}`);
+                writeToScreen("DISCONNECTED");
+                
+                const switchMyWS = new backupSupernodesWebSocketObject();
+                switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
+                showMessage(`INFO: Waiting for primary Supernode connection to come back within 20 seconds.`);
+                localbitcoinplusplus.actions.delay(20000).then(async ()=>{
+                    const disconnectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
+                    const getSubjectSupernodeDetails = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', disconnectedWSServerFloId);
+                    if (typeof getSubjectSupernodeDetails=="object" && getSubjectSupernodeDetails[0].is_live!==true) {
+                        showMessage(`INFO: Connection to primary Supernode failed. Attempting to connect to secondary Supernode.`);
+                        switchMyWS.switchToBackupWS(evt.srcElement.url);        
+                    } 
+                });
             });
-            
+            reactor.dispatchEvent('primary_supernode_down');
+
         }
 
         async function onMessage(evt) {
             var response = evt.data;
-            //let is_user_leaving = response.search("-- left");
-            //console.log("is_user_leaving", is_user_leaving);
             
             var res_pos = response.indexOf('{');
             if (res_pos >= 0) {
+
+                let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
+                let incoming_msg_local_ip = ``;
+                if (isRequestToLinkIp>=0) {
+                    let index_of_ip = response.indexOf(' ');
+                    if (incoming_msg_local_ip>=0) {
+                        incoming_msg_local_ip = response.substr(0, index_of_ip);
+                    }
+                }
+
                 var res = response.substr(res_pos);
                 try {
                     var res_obj = JSON.parse(res);
@@ -14938,12 +15006,23 @@
                                                 newKbucketObject_id_array = Object.values(newKbucketObject.id);
                                                 newKbucketObject_idu8 = new Uint8Array(newKbucketObject_id_array);
                                                 if (localbitcoinplusplus.wallets.my_local_flo_address !== my_closest_su[0].data.id) {
+                                                    // User is connected to backup supernode
                                                     localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST",
                                                         newKbucketObject_idu8, newKbucketObject.data);
                                                 } else {
+                                                    // User is connected to primary supernode
                                                     localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB("FLO_TEST",
                                                         newKbucketObject_idu8, newKbucketObject.data);
                                                 }
+
+                                                let removeRedundantKNode = localbitcoinplusplus.rpc.prototype
+                                                .send_rpc
+                                                .call(this, "requestSupernodesToRemoveAUserFloIdFromTheirKBucket",  { 
+                                                    redundantKbucketNodeU8Id: newKbucketObject_idu8, 
+                                                    currentSupernodeFloId: localbitcoinplusplus.wallets.my_local_flo_address 
+                                                });
+                                                doSend(removeRedundantKNode);
+
                                             } else {
                                                 mss = `WARNING: Failed to add ${res_obj.globalParams.senderFloId} to KBucket.`;
                                                 showMessage(mss)
@@ -14970,7 +15049,21 @@
                                 } catch (error) {
                                     console.error(error);
                                 }
-                                break;
+                            break;
+
+                            case "link_My_Local_IP_To_My_Flo_Id":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    const req_params = res_obj.params[0];
+                                    if(typeof req_params.requesters_pub_key !== "string") return;
+                                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(req_params.requesters_pub_key);
+                                    if(typeof flo_addr_for_pubkey !== "string") return;
+                                    if(flo_addr_for_pubkey !== res_obj.globalParams.senderFloId) return;
+                                    updateinDB('ipTable', {
+                                        'flo_public_key': req_params.requesters_pub_key,
+                                        'temporary_ip': incoming_msg_local_ip
+                                    });
+                                }
+                            break;
 
                             case "supernode_to_supernode_backup_request":
 
@@ -15057,7 +15150,7 @@
 
                             }
                             break;
-
+                            
                             case "messageBroadcasting":
                                 console.log(res_obj);
                                 try {
@@ -15317,9 +15410,14 @@
             message: null
         }
 
+        const ipTable = {
+            flo_public_key: null,
+            temporary_ip: null
+        }
+
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 1);
+        const request = window.indexedDB.open(DBName, 2);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -15488,6 +15586,11 @@
                 });
                 objectStore.createIndex('ip', 'ip', {
                     unique: false
+                });
+            }
+            if (!db.objectStoreNames.contains('ipTable')) {
+                var objectStore = db.createObjectStore("ipTable", {
+                    keyPath: 'flo_public_key'
                 });
             }
         }
@@ -15804,6 +15907,11 @@
                                 unique: false
                             });
                         }
+                        if (!db.objectStoreNames.contains('ipTable')) {
+                            var objectStore = db.createObjectStore("ipTable", {
+                                keyPath: 'flo_public_key'
+                            });
+                        }
 
                     }.bind(this)
 
@@ -16077,6 +16185,9 @@
                         idbData.myLocalFLOAddress;
                     const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key =
                         idbData.myLocalFLOPublicKey;
+
+                    // Send request to others to link your flo id to your local ip
+                    linkMyLocalIPToMyFloId();
 
                     // restore k-bucket
                      const dbObj = await localbitcoinplusplus.kademlia.restoreKbucket(MY_LOCAL_FLO_ADDRESS, "FLO_TEST", KBucket);
@@ -16755,7 +16866,29 @@
                 });
                 doSend(send_backup_request);
         }
+
+        function linkMyLocalIPToMyFloId() {
+            const RM_RPC = new localbitcoinplusplus.rpc;
+            let request = RM_RPC.send_rpc.call(this,
+                "link_My_Local_IP_To_My_Flo_Id", {
+                    "JOB": "linkMyLocalIPToMyFloId",
+                    requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
+                    requesters_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                });
+            doSend(request);
+        }
+
+        function linkIpToFloId(params) {
+            console.log(params);
+        }
     
+    </script>
+
+    <script>
+        reactor.registerEvent('primary_supernode_up');
+        reactor.registerEvent('primary_supernode_down');
+        reactor.registerEvent('backup_supernode_up');
+        reactor.registerEvent('backup_supernode_down');
     </script>
 
 </body>
