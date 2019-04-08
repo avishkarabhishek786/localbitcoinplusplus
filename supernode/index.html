@@ -13691,13 +13691,13 @@
             async handle_backup_server_messages(evt) {
                 var response = evt.data;
                 console.log('backup response: '+response);
-                
-                // let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
-                // if (isRequestToLinkIp>=0) {
-                //     linkIpToFloId(response);
-                //     return;
-                // }
 
+                let isItANodeLeavingMessage = response.search(`\\-- left`);
+            
+                if(isItANodeLeavingMessage >= 0) {
+                    reactor.dispatchEvent('fireNodeGoodByeEvent', response);
+                }
+                
                 var res_pos = response.indexOf('{');
                 if (res_pos >= 0) {
                     let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
@@ -14075,6 +14075,25 @@
                                         updateinDB('ipTable', {
                                             'flo_public_key': req_params.requesters_pub_key,
                                             'temporary_ip': incoming_msg_local_ip
+                                        }).then((ipRes)=>{
+                                            reactor.dispatchEvent('fireNodeWelcomeBackEvent', ipRes);
+                                        }).finally(()=>{
+                                            linkBackOthersLocalIPToTheirFloId();
+                                        });
+                                    }
+                                break;
+                                case "link_Others_Local_IP_To_Their_Flo_Id":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        const req_params = res_obj.params[0];
+                                        if(typeof req_params.requesters_pub_key !== "string") return;
+                                        let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(req_params.requesters_pub_key);
+                                        if(typeof flo_addr_for_pubkey !== "string") return;
+                                        if(flo_addr_for_pubkey !== res_obj.globalParams.senderFloId) return;
+                                        updateinDB('ipTable', {
+                                            'flo_public_key': req_params.requesters_pub_key,
+                                            'temporary_ip': incoming_msg_local_ip
+                                        }).then((ipRes)=>{
+                                            reactor.dispatchEvent('fireNodeWelcomeBackEvent', ipRes);
                                         });
                                     }
                                 break;
@@ -14270,19 +14289,33 @@
 
         async function onMessage(evt) {
             var response = evt.data;
+
+            // If the message is about leaving of a node determine its FLO Id
+            // and fire respective events
+            let isItANodeLeavingMessage = response.search(`\\-- left`);
+            
+            if(isItANodeLeavingMessage >= 0) {
+                reactor.dispatchEvent('fireNodeGoodByeEvent', response);
+            }
+            
+            // let isItANodeJoiningMessage = response.search(`\\++ joined`);
+            
+            // if(isItANodeJoiningMessage >= 0) {
+            //     reactor.dispatchEvent('fireNodeWelcomeBackEvent', response);
+            // }
             
             var res_pos = response.indexOf('{');
             if (res_pos >= 0) {
-
+                // Link Temporary IP Address to FLO ID
                 let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
                 let incoming_msg_local_ip = ``;
                 if (isRequestToLinkIp>=0) {
                     let index_of_ip = response.indexOf(' ');
-                    if (incoming_msg_local_ip>=0) {
+                    if (index_of_ip>=0) {
                         incoming_msg_local_ip = response.substr(0, index_of_ip);
                     }
                 }
-
+                
                 var res = response.substr(res_pos);
                 try {
                     var res_obj = JSON.parse(res);
@@ -14850,7 +14883,7 @@
                                     }
                                     return false;
                                 }
-                                break;
+                            break;
 
                             case "add_user_public_data":
                                     let supernode_flo_public_key = localbitcoinplusplus.wallets.my_local_flo_public_key;
@@ -15052,6 +15085,24 @@
                             break;
 
                             case "link_My_Local_IP_To_My_Flo_Id":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        const req_params = res_obj.params[0];
+                                        if(typeof req_params.requesters_pub_key !== "string") return;
+                                        let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(req_params.requesters_pub_key);
+                                        if(typeof flo_addr_for_pubkey !== "string") return;
+                                        if(flo_addr_for_pubkey !== res_obj.globalParams.senderFloId) return;
+                                        updateinDB('ipTable', {
+                                            'flo_public_key': req_params.requesters_pub_key,
+                                            'temporary_ip': incoming_msg_local_ip
+                                        }).then((ipRes)=>{
+                                            reactor.dispatchEvent('fireNodeWelcomeBackEvent', ipRes);
+                                        }).finally(()=>{
+                                            linkBackOthersLocalIPToTheirFloId();
+                                        });
+                                    }
+                            break;
+
+                            case "link_Others_Local_IP_To_Their_Flo_Id":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     const req_params = res_obj.params[0];
                                     if(typeof req_params.requesters_pub_key !== "string") return;
@@ -15061,6 +15112,8 @@
                                     updateinDB('ipTable', {
                                         'flo_public_key': req_params.requesters_pub_key,
                                         'temporary_ip': incoming_msg_local_ip
+                                    }).then((ipRes)=>{
+                                        reactor.dispatchEvent('fireNodeWelcomeBackEvent', ipRes);
                                     });
                                 }
                             break;
@@ -15417,7 +15470,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 2);
+        const request = window.indexedDB.open(DBName, 3);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -15591,6 +15644,9 @@
             if (!db.objectStoreNames.contains('ipTable')) {
                 var objectStore = db.createObjectStore("ipTable", {
                     keyPath: 'flo_public_key'
+                });
+                objectStore.createIndex('temporary_ip', 'temporary_ip', {
+                    unique: false
                 });
             }
         }
@@ -16196,11 +16252,13 @@
                     if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                         let kbuck = localbitcoinplusplus.kademlia.floIdToKbucketId("FLO_TEST", MY_LOCAL_FLO_ADDRESS);
-                        readDB('kBucketStore', kbuck).then(userKBData=>{
+                        readDB('kBucketStore', kbuck).then(async userKBData=>{
                             if(typeof userKBData == "undefined") {
-                                msf = `WARNING: Failed to determine KBucket Id and hence failed to send Kbucket Id to Supernode.`
-                                showMessage(msf)
-                                throw new Error(msf)
+                                userKBData = await localbitcoinplusplus.kademlia
+                                .addNewUserNodeInKbucketAndDB("FLO_TEST", MY_LOCAL_FLO_ADDRESS, {id:MY_LOCAL_FLO_ADDRESS}, KB=KBucket);
+                                // msf = `WARNING: Failed to determine KBucket Id and hence failed to send Kbucket Id to Supernode.`
+                                // showMessage(msf)
+                                // throw new Error(msf)
                             };
                             let addNewKNode = localbitcoinplusplus.rpc.prototype
                             .send_rpc
@@ -16864,7 +16922,7 @@
                     requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
                     trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
                 });
-                doSend(send_backup_request);
+            doSend(send_backup_request);
         }
 
         function linkMyLocalIPToMyFloId() {
@@ -16877,9 +16935,15 @@
                 });
             doSend(request);
         }
-
-        function linkIpToFloId(params) {
-            console.log(params);
+        function linkBackOthersLocalIPToTheirFloId() {
+            const RM_RPC = new localbitcoinplusplus.rpc;
+            let request = RM_RPC.send_rpc.call(this,
+                "link_Others_Local_IP_To_Their_Flo_Id", {
+                    "JOB": "linkBackOthersLocalIPToTheirFloId",
+                    requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
+                    requesters_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                });
+            doSend(request);
         }
     
     </script>
@@ -16889,6 +16953,39 @@
         reactor.registerEvent('primary_supernode_down');
         reactor.registerEvent('backup_supernode_up');
         reactor.registerEvent('backup_supernode_down');
+        reactor.registerEvent('fireNodeWelcomeBackEvent');
+        reactor.addEventListener('fireNodeWelcomeBackEvent', function(evt) {
+            let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
+            if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+                .includes(evt.flo_public_key)) {
+                    msg = `INFO: Supernode ${getFLOId} joined.`;
+                } else {
+                    msg = `INFO: User node ${getFLOId} joined.`;
+                }                
+            showMessage(msg);
+        })
+        
+        reactor.registerEvent('fireNodeGoodByeEvent');
+        reactor.addEventListener('fireNodeGoodByeEvent', function(evt_msg) {
+            console.log(evt_msg);
+            let i = evt_msg.indexOf(' ')
+            let temp_ip = evt_msg.substr(0, i)
+            console.log(temp_ip);
+            
+            readDBbyIndex('ipTable', 'temporary_ip', temp_ip).then((op)=>{
+                console.log(op);
+                if(op.length < 1 || typeof op[0].temporary_ip !== 'string') return;
+                let getFLOId = bitjs.FLO_TEST.pubkey2address(op[0].flo_public_key);
+                if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+                    .includes(op[0].flo_public_key)) {
+                        msg = `INFO: Supernode ${getFLOId} left.`;
+                    } else {
+                        msg = `INFO: User node ${getFLOId} left.`;
+                    }
+                    
+                showMessage(msg);
+            });
+        })
     </script>
 
 </body>
