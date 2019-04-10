@@ -9635,7 +9635,8 @@
                 btc_mainnet: "https://blockexplorer.com",
                 btc_testnet: "https://testnet.blockexplorer.com",
                 flo_mainnet: "https://livenet.flocha.in",
-                flo_testnet: "https://testnet.flocha.in"
+                flo_testnet: "http://ranchimall1.duckdns.org:8080"
+                //flo_testnet: "https://testnet.flocha.in"
             },
             writable: false,
             configurable: false,
@@ -10048,7 +10049,7 @@
 
                     if (request.status >= 200 && request.status < 400) {
                         data.txs.forEach(tx => {
-                            if (typeof tx !== undefined && typeof tx.floData == 'string' && tx.floData
+                            if (typeof tx !== "undefined" && typeof tx.floData == 'string' && tx.floData
                                 .length > 0) {
                                 callback(tx.floData);
                             }
@@ -10255,6 +10256,22 @@
                     }
                 })
             },
+            launchSupernodesKBucket: function() {
+                localbitcoinplusplus.master_configurations.supernodesPubKeys.map(pubKey=>{
+                    return new Promise((resolve, reject)=>{
+                        try {
+                            let flo_id = bitjs.FLO_TEST.pubkey2address(pubKey);
+                            let kname = `SKBucket_${pubKey}`;
+                            const KBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', flo_id)
+                            const kbOptions = { localNodeId: KBucketId }
+                            window[kname] = new BuildKBucket(kbOptions);
+                            resolve(true);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    })
+                })
+            },
             addContact: function (id, data, KB=KBucket) {
                 const contact = {
                     id: id,
@@ -10273,15 +10290,20 @@
                 return {decodedId:decodedId, data:data};
             },
             addNewUserNodeInKbucketAndDB: function (blockchain, address, data, KB=KBucket) {
+                let closestSupernodePubKey = localbitcoinplusplus.master_configurations
+                .supernodesPubKeys.filter(j=>bitjs.FLO_TEST.pubkey2address(j)==data.id);
+                
                 let kbuck = this.addNewUserNodeInKbucket(blockchain, address, data, KB);
                 readDB('kBucketStore', kbuck.decodedId).then(kres=>{
                     if (typeof kres=="object") {
                         kres.data = data;
+                        kres.primary_supernode_flo_public_key = closestSupernodePubKey[0]
                     } else {
                         kbuckObj={
                             id: kbuck.decodedId,
                             vectorClock: 0,
                             data: kbuck.data,
+                            primary_supernode_flo_public_key: closestSupernodePubKey[0],
                             last_updated_on: + new Date(),
                         }
                         kres = kbuckObj;
@@ -10291,6 +10313,20 @@
                         .catch(e=>{showMessage(`ERROR: Failed to add a node in DB.`)});
                         return Promise.resolve(kbuck);
                 });
+            },
+            addFullKBDataInKBucketAndDB: function(full_data, KB) {
+                let userKBId = '';
+                let isFloIdUint8 = full_data.id instanceof Uint8Array;
+                if (!isFloIdUint8) {
+                    userKBId = this.floIdToKbucketId('FLO_TEST', full_data.data.id); 
+                    this.addContact(userKBId, full_data.data, KB);
+                    full_data.id = userKBId;
+                } else {
+                    this.addContact(full_data.id, full_data.data, KB);
+                }
+                updateinDB('kBucketStore', full_data)
+                    .then(ms=>showMessage(`INFO: Added/Updated a node in DB.`))
+                    .catch(e=>{showMessage(`ERROR: Failed to add a node in DB.`)});
             },
             floIdToKbucketId: function (blockchain, address) {
                 const decodedId = this.decodeBase58Address(blockchain, address);
@@ -12776,17 +12812,19 @@
             sendTransaction(crypto_type, utxo_addr, utxo_addr_wif, receiver_address, receiving_amount,
                 receiving_amount_currency = null, change_adress, callback) {
                 let blockchain_explorer;
-                let divDecimal = 1;
                 if (crypto_type == "BTC") {
                     blockchain_explorer = localbitcoinplusplus.server.btc_mainnet;
                 } else if (crypto_type == "BTC_TEST") {
                     blockchain_explorer = localbitcoinplusplus.server.btc_testnet;
                 } else if (crypto_type == "FLO") {
                     blockchain_explorer = localbitcoinplusplus.server.flo_mainnet;
-                    divDecimal = 100000000;
                 } else if (crypto_type == "FLO_TEST") {
                     blockchain_explorer = localbitcoinplusplus.server.flo_testnet;
-                    divDecimal = 100000000;
+                }
+
+                if(typeof blockchain_explorer !== "string") {
+                    showMessage(`WARNING: Please select cryptocurrency/fiat value from select bar.`);
+                    return false;
                 }
 
                 let url = `${blockchain_explorer}/api/addr/${utxo_addr}/utxo`;
@@ -12818,7 +12856,7 @@
                             for (var key in utxo_list) {
                                 if (utxo_list[key].confirmations > 0) {
                                     var obj = utxo_list[key];
-                                    sum += obj.satoshis / divDecimal;
+                                    sum += obj.amount;
 
                                     if (btc_eq_receiving_amount <= sum) {
                                         trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
@@ -12829,9 +12867,7 @@
                                 }
                             }
 
-                            //sum = parseFloat(sum / 100000000).toFixed(8);
-
-                            let change_amount = sum - btc_eq_receiving_amount - 0.00006060;
+                            let change_amount = sum - btc_eq_receiving_amount - 0.00016800;
 
                             trx.addoutput(receiver_address, btc_eq_receiving_amount);
                             trx.addoutput(change_adress, change_amount);
@@ -13617,7 +13653,7 @@
 
                     // launch KBucekts
                     launchKBuckects = await localbitcoinplusplus.kademlia.launchKBucket(idbData.myLocalFLOAddress);
-
+                
                     if (!launchKBuckects) {
                         const kmsg = `ERROR: Failed to build KBuckets. System cannot proceed further.`;
                         showMessage(kmsg);
@@ -13755,9 +13791,10 @@
                                 break;
 
                                 case "server_sync_response":
-                                if (typeof res_obj.params == "object" 
-                                    && typeof res_obj.params[0] == "object") {
+                                    if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
                                     let su_backup_db_data = res_obj.params[0];
+                                
                                     RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
                                     function (is_valid_request) {
                                         if(!is_valid_request) return false;
@@ -13806,11 +13843,14 @@
                                     })();
                                         
                                     });
-                                }
+                                
                                 break;
 
                             case "trade_buy_request_response":
-                                RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                let trade_buy_res_data = res_obj.params[0];
+                                RM_RPC.filter_legit_backup_requests(trade_buy_res_data.trader_flo_address, 
                                     function (is_valid_request) {
                                  
                                         if(!is_valid_request) return false;
@@ -13844,7 +13884,10 @@
                                 });
                                 break;
                             case "trade_sell_request_response":
-                                RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                let trade_sell_res_data = res_obj.params[0];
+                                RM_RPC.filter_legit_backup_requests(trade_buy_res_data.trader_flo_address, 
                                     function (is_valid_request) {
                                         if(!is_valid_request) return false;
                                         if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -13875,7 +13918,10 @@
                                 break;
                             
                             case "deposit_asset_request_response":
-                                RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                let deposit_res_data = res_obj.params[0];
+                                RM_RPC.filter_legit_backup_requests(deposit_res_data.trader_flo_address, 
                                     function (is_valid_request) {
                                         if(!is_valid_request) return false;
                                         if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" 
@@ -13911,7 +13957,10 @@
                                 break;
 
                             case "withdrawal_request_response":
-                                RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                let withdrawal_res_data = res_obj.params[0];
+                                RM_RPC.filter_legit_backup_requests(withdrawal_res_data.trader_flo_address, 
                                     function (is_valid_request) {
                                         if(!is_valid_request) return false;
                                         if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -13936,7 +13985,10 @@
                                 break;
                             
                                 case "cancel_trade":
-                                    RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                    if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                    let cancel_res_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(cancel_res_data.trader_flo_address, 
                                         function (is_valid_request) {
                                             if(!is_valid_request) return false;
                                             if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -13978,7 +14030,10 @@
                                 break;
 
                                 case "update_all_withdraw_cash_depositor_claim":
-                                    RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                    if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                    let withdraw_caim_res_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(withdraw_caim_res_data.trader_flo_address, 
                                         function (is_valid_request) {
                                             if(!is_valid_request) return false;
                                             if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -14014,7 +14069,10 @@
                                 break;
 
                                 case "update_all_deposit_withdraw_success":
-                                    RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                    if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                    let update_deposit_withdraw_claim_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(update_deposit_withdraw_claim_data.trader_flo_address, 
                                         function (is_valid_request) {
                                             if(!is_valid_request) return false;
                                             if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -14051,7 +14109,10 @@
                                     });
                                 break;
                                 case "requestSupernodesToRemoveAUserFloIdFromTheirKBucket":
-                                    RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
+                                    if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                    let removeUserFromKBData = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(removeUserFromKBData.trader_flo_address, 
                                         function (is_valid_request) {
                                             if(!is_valid_request) return false;
                                             if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -14064,6 +14125,38 @@
                                                 return true;
                                             }
                                     });
+                                break;
+                                case "requestSupernodesKBucketData":
+                                    if (typeof res_obj.params !== "object" 
+                                        || typeof res_obj.params[0] !== "object") return;
+                                    let reqSuKBData = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(reqSuKBData.trader_flo_address, 
+                                        function (is_valid_request) {
+                                            if(!is_valid_request) return false;
+                                            if(typeof res_obj.globalParams.senderFloId !=="string") return;
+                                            let sender = res_obj.globalParams.senderFloId;
+                                            readAllDB('kBucketStore')
+                                            .then(myKBData=>{
+                                                myKBData.receiver_flo_address = sender;
+                                                let sendBackMySupernodeKBucket = localbitcoinplusplus.rpc.prototype
+                                                .send_rpc
+                                                .call(this, "SupernodesKBucketDataResponse", myKBData);
+                                                doSend(sendBackMySupernodeKBucket);
+                                            })    
+                                        }
+                                    );
+                                break;
+                                case "SupernodesKBucketDataResponse":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        const reqSuKBResponseData = res_obj.params[0];
+                                        RM_RPC.filter_legit_backup_requests(reqSuKBResponseData.trader_flo_address, 
+                                        function (is_valid_request) {
+                                            if(!is_valid_request) return false;
+                                            reqSuKBResponseData.map(kd=> {
+                                                let kb = window[`SKBucket_${kd.primary_supernode_flo_public_key}`];
+                                                localbitcoinplusplus.kademlia.addFullKBDataInKBucketAndDB(kd, kb)})
+                                        });
+                                    }    
                                 break;
                                 case "link_My_Local_IP_To_My_Flo_Id":
                                     if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -14289,7 +14382,7 @@
 
         async function onMessage(evt) {
             var response = evt.data;
-
+            writeToScreen('<span style="color: blue;">RESPONSE: ' + response + '</span>');
             // If the message is about leaving of a node determine its FLO Id
             // and fire respective events
             let isItANodeLeavingMessage = response.search(`\\-- left`);
@@ -15038,15 +15131,9 @@
 
                                                 newKbucketObject_id_array = Object.values(newKbucketObject.id);
                                                 newKbucketObject_idu8 = new Uint8Array(newKbucketObject_id_array);
-                                                if (localbitcoinplusplus.wallets.my_local_flo_address !== my_closest_su[0].data.id) {
-                                                    // User is connected to backup supernode
-                                                    localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST",
+                                                
+                                                localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB("FLO_TEST",
                                                         newKbucketObject_idu8, newKbucketObject.data);
-                                                } else {
-                                                    // User is connected to primary supernode
-                                                    localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB("FLO_TEST",
-                                                        newKbucketObject_idu8, newKbucketObject.data);
-                                                }
 
                                                 let removeRedundantKNode = localbitcoinplusplus.rpc.prototype
                                                 .send_rpc
@@ -15236,7 +15323,6 @@
                     return;
                 }
             }
-            writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
         }
 
         function onError(evt) {
@@ -15452,6 +15538,7 @@
             id: null,
             vectorClock: 0,
             data: null,
+            primary_supernode_flo_public_key: null,
             last_updated_on: null,
         }
 
@@ -15470,7 +15557,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 3);
+        const request = window.indexedDB.open(DBName, 4);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -15617,7 +15704,11 @@
             if (!db.objectStoreNames.contains('kBucketStore')) {
                 var objectStore = db.createObjectStore('kBucketStore', {
                     keyPath: "id"
-                })
+                }); 
+                objectStore.createIndex('primary_supernode_flo_public_key'
+                    , 'primary_supernode_flo_public_key', {
+                    unique: false
+                });
             }
             if (!db.objectStoreNames.contains('messages_table')) {
                 var objectStore = db.createObjectStore("messages_table", {
@@ -16247,6 +16338,17 @@
 
                     // restore k-bucket
                      const dbObj = await localbitcoinplusplus.kademlia.restoreKbucket(MY_LOCAL_FLO_ADDRESS, "FLO_TEST", KBucket);
+
+                    // launch supernode kbucket
+                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
+                        // Build Supernodes KBuckets
+                        launchSupernodesKBuckects = await localbitcoinplusplus.kademlia.launchSupernodesKBucket();
+                        // Request other supernodes KBucket data
+                        let requestSupernodeKBData = localbitcoinplusplus.rpc.prototype
+                        .send_rpc
+                        .call(this, "requestSupernodesKBucketData",  {});
+                        doSend(requestSupernodeKBData);
+                    }
                     
                     // Send your id to Supernode kbucket
                     if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
