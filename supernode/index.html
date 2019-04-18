@@ -14950,7 +14950,8 @@
                     wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
 
                     if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
-                        if (wsUri[0].trader_flo_address !== idbData.myLocalFLOAddress) {
+                        const getClosestSuList = await readAllDB('closestSupernodesTable');
+                        if (wsUri[0].trader_flo_address !== idbData.myLocalFLOAddress || getClosestSuList.length < 3) {
                             showMessage(`INFO: Invalid connection. Refreshing the closest supernode list in DB.`);
                             wsUri = await localbitcoinplusplus.kademlia.updateClosestSupernodeSeeds(idbData.myLocalFLOAddress);
                         }
@@ -15033,8 +15034,9 @@
                 var res_pos = response.indexOf('{');
                 if (res_pos >= 0) {
                     let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
+                    let isRequestToLinkOthersIp = response.search("link_Others_Local_IP_To_Their_Flo_Id");
                     let incoming_msg_local_ip = ``;
-                    if (isRequestToLinkIp>=0) {
+                    if (isRequestToLinkIp>=0 || isRequestToLinkOthersIp>=0) {
                         let index_of_ip = response.indexOf(' ');
                         if (incoming_msg_local_ip>=0) {
                             incoming_msg_local_ip = response.substr(0, index_of_ip);
@@ -15434,11 +15436,17 @@
                                             readAllDB('kBucketStore')
                                             .then(myKBData=>{
                                                 myKBData.receiver_flo_address = sender;
-                                                myKBData.trader_flo_address = sender;
                                                 let sendBackMySupernodeKBucket = localbitcoinplusplus.rpc.prototype
                                                 .send_rpc
                                                 .call(this, "SupernodesKBucketDataResponse", myKBData);
-                                                doSend(sendBackMySupernodeKBucket);
+
+                                                localbitcoinplusplus.kademlia.determineClosestSupernode(sender)
+                                                .then(my_closest_su=>{
+                                                    console.log(sendBackMySupernodeKBucket);
+                                                    
+                                                    sendBackMySupernodeKBucket.globalParams.primarySupernode = my_closest_su[0].data.id;
+                                                    return sendBackMySupernodeKBucket;
+                                                }).then((sendBackMySupernodeKBucket)=>doSend(sendBackMySupernodeKBucket));
                                             })    
                                         }
                                     );
@@ -15692,8 +15700,9 @@
             if (res_pos >= 0) {
                 // Link Temporary IP Address to FLO ID
                 let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
+                let isRequestToLinkOthersIp = response.search("link_Others_Local_IP_To_Their_Flo_Id");
                 let incoming_msg_local_ip = ``;
-                if (isRequestToLinkIp>=0) {
+                if (isRequestToLinkIp>=0 || isRequestToLinkOthersIp>=0) {
                     let index_of_ip = response.indexOf(' ');
                     if (index_of_ip>=0) {
                         incoming_msg_local_ip = response.substr(0, index_of_ip);
@@ -15709,7 +15718,7 @@
 
                     if (!isIncomingMessageValid) return;
 
-                    if(typeof res_obj.globalParams.senderFloId !=="string" && res_obj.globalParams.senderFloId.length<1)
+                    if(typeof res_obj.globalParams.senderFloId !=="string")
                         throw new Error(`WARNING: The request did not contain sender FLO Id. Request Aborted.`);
                     
                     // Check if request is from primary user or backup user
@@ -15725,7 +15734,7 @@
                     if ((typeof get_requester_supernode[0] !== "object" 
                     || typeof get_requester_supernode[0].data.id !=="string") && 
                     typeof res_obj.globalParams.primarySupernode !=="string") {
-                        console.log("NEED TO ADD PRIMARY SU IN BELOW METHOD: ");
+                        console.log("******NEED TO ADD PRIMARY SU IN BELOW METHOD******: ");
                         console.log(res_obj);
                     }
 
@@ -16366,11 +16375,11 @@
                                 break;
 
                             case "update_external_file_request":
-                                RM_RPC.filter_legit_requests(res_obj.params[0].user_flo_address, is_valid_request => {
+                                RM_RPC.filter_legit_requests(res_obj.params[0].trader_flo_address, is_valid_request => {
                                     if (is_valid_request !== true) return false;
                                     let update_script_request = res_obj.params[0];
 
-                                    if (typeof update_script_request.user_flo_address !== "string") throw new Error(
+                                    if (typeof update_script_request.trader_flo_address !== "string") throw new Error(
                                         "Unknown user");
 
                                     let server_pubkey = localbitcoinplusplus.wallets.my_local_flo_public_key;
@@ -16387,13 +16396,13 @@
                                                             .MY_SUPERNODE_PRIVATE_KEY);
                                                     response_from_sever = RM_RPC.send_rpc
                                                         .call(this, "update_external_file_server_response", {
-                                                            trader_flo_address: update_script_request.user_flo_address,
+                                                            trader_flo_address: update_script_request.trader_flo_address,
                                                             file_updated: file_details,
                                                             server_sign: server_sign,
                                                             server_pubkey: server_pubkey,
                                                             filename: update_script_request.file_to_update,
-                                                            trader_flo_address: update_script_request.user_flo_address,
-                                                            receiver_flo_address: update_script_request.user_flo_address
+                                                            trader_flo_address: update_script_request.trader_flo_address,
+                                                            receiver_flo_address: update_script_request.trader_flo_address
                                                         });
                                                     doSend(response_from_sever);
                                                 }
@@ -16407,13 +16416,13 @@
                                                         .MY_SUPERNODE_PRIVATE_KEY);
                                                 response_from_sever = RM_RPC.send_rpc
                                                     .call(this, "update_external_file_server_response", {
-                                                        trader_flo_address: update_script_request.user_flo_address,
+                                                        trader_flo_address: update_script_request.trader_flo_address,
                                                         file_updated: file_details,
                                                         server_sign: server_sign,
                                                         server_pubkey: server_pubkey,
                                                         filename: "UPDATE_ALL_FILES",
-                                                        receiver_flo_address: update_script_request.user_flo_address,
-                                                        trader_flo_address: update_script_request.user_flo_address,
+                                                        receiver_flo_address: update_script_request.trader_flo_address,
+                                                        trader_flo_address: update_script_request.trader_flo_address,
                                                     });
                                                 doSend(response_from_sever);
                                             }
@@ -16459,7 +16468,8 @@
                             case "addNewKbucketNode":
                                 try {
                                     let mss = '';
-                                    localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.senderFloId)
+                                    let tid = res_obj.params[0].trader_flo_address || res_obj.globalParams.senderFloId;
+                                    localbitcoinplusplus.kademlia.determineClosestSupernode(tid)
                                         .then(async my_closest_su=>{
                                             
                                             const newKbucketObjectObj = res_obj.params[0];
@@ -16681,15 +16691,16 @@
             let isItANodeLeavingMessage = response.search(`\\-- left`);
             
             if(isItANodeLeavingMessage >= 0) {
-                //reactor.dispatchEvent('fireNodeGoodByeEvent', response);
+                reactor.dispatchEvent('fireNodeGoodByeEvent', response);
             }
             
             var res_pos = response.indexOf('{');
             if (res_pos >= 0) {
                 // Link Temporary IP Address to FLO ID
                 let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
+                let isRequestToLinkOthersIp = response.search("link_Others_Local_IP_To_Their_Flo_Id");
                 let incoming_msg_local_ip = ``;
-                if (isRequestToLinkIp>=0) {
+                if (isRequestToLinkIp>=0 || isRequestToLinkOthersIp>=0) {
                     let index_of_ip = response.indexOf(' ');
                     if (index_of_ip>=0) {
                         incoming_msg_local_ip = response.substr(0, index_of_ip);
@@ -17467,11 +17478,11 @@
                                 break;
 
                             case "update_external_file_request":
-                                RM_RPC.filter_legit_requests(res_obj.params[0].user_flo_address, is_valid_request => {
+                                RM_RPC.filter_legit_requests(res_obj.params[0].trader_flo_address, is_valid_request => {
                                     if (is_valid_request !== true) return false;
                                     let update_script_request = res_obj.params[0];
 
-                                    if (typeof update_script_request.user_flo_address !== "string") throw new Error(
+                                    if (typeof update_script_request.trader_flo_address !== "string") throw new Error(
                                         "Unknown user");
 
                                     let server_pubkey = localbitcoinplusplus.wallets.my_local_flo_public_key;
@@ -17502,12 +17513,12 @@
                                                             .MY_SUPERNODE_PRIVATE_KEY);
                                                     response_from_sever = RM_RPC.send_rpc
                                                         .call(this, "update_external_file_server_response", {
-                                                            trader_flo_address: update_script_request.user_flo_address,
+                                                            trader_flo_address: update_script_request.trader_flo_address,
                                                             file_updated: file_details,
                                                             server_sign: server_sign,
                                                             server_pubkey: server_pubkey,
                                                             filename: update_script_request.file_to_update,
-                                                            receiver_flo_address: update_script_request.user_flo_address
+                                                            receiver_flo_address: update_script_request.trader_flo_address
                                                         });
                                                     doSend(response_from_sever);
                                                 }
@@ -17521,12 +17532,12 @@
                                                         .MY_SUPERNODE_PRIVATE_KEY);
                                                 response_from_sever = RM_RPC.send_rpc
                                                     .call(this, "update_external_file_server_response", {
-                                                        trader_flo_address: update_script_request.user_flo_address,
+                                                        trader_flo_address: update_script_request.trader_flo_address,
                                                         file_updated: file_details,
                                                         server_sign: server_sign,
                                                         server_pubkey: server_pubkey,
                                                         filename: "UPDATE_ALL_FILES",
-                                                        receiver_flo_address: update_script_request.user_flo_address,
+                                                        receiver_flo_address: update_script_request.trader_flo_address,
                                                     });
                                                 doSend(response_from_sever);
                                             }
@@ -17586,7 +17597,8 @@
                             case "addNewKbucketNode":
                                 try {
                                     let mss = '';
-                                    localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.senderFloId)
+                                    let tid = res_obj.params[0].trader_flo_address || res_obj.globalParams.senderFloId;
+                                    localbitcoinplusplus.kademlia.determineClosestSupernode(tid)
                                         .then(async my_closest_su=>{
                                             
                                             const newKbucketObjectObj = res_obj.params[0];
@@ -18791,7 +18803,7 @@
             let update_external_file = RM_RPC
                 .send_rpc
                 .call(this, "update_external_file_request", {
-                    user_flo_address: user_flo_address,
+                    trader_flo_address: user_flo_address,
                     file_to_update: filename,
                     receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 });
@@ -18871,14 +18883,12 @@
                             if(typeof userKBData == "undefined") {
                                 userKBData = await localbitcoinplusplus.kademlia
                                 .addNewUserNodeInKbucketAndDB("FLO_TEST", MY_LOCAL_FLO_ADDRESS, {id:MY_LOCAL_FLO_ADDRESS}, KB=KBucket);
-                                // msf = `WARNING: Failed to determine KBucket Id and hence failed to send Kbucket Id to Supernode.`
-                                // showMessage(msf)
-                                // throw new Error(msf)
                             };
                             let addNewKNode = localbitcoinplusplus.rpc.prototype
                             .send_rpc
                             .call(this, "addNewKbucketNode", {
-                                newKbucketNode: userKBData
+                                newKbucketNode: userKBData,
+                                trader_flo_address: MY_LOCAL_FLO_ADDRESS
                             });
                             console.log(addNewKNode);
                             
@@ -19546,7 +19556,7 @@
                 "link_My_Local_IP_To_My_Flo_Id", {
                     "JOB": "linkMyLocalIPToMyFloId",
                     requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
-                    requesters_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                    trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
                 });
             doSend(request);
         }
@@ -19556,7 +19566,7 @@
                 "link_Others_Local_IP_To_Their_Flo_Id", {
                     "JOB": "linkBackOthersLocalIPToTheirFloId",
                     requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
-                    requesters_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                    trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
                 });
             doSend(request);
         }
@@ -19603,7 +19613,7 @@
         reactor.registerEvent('getNeighborSupernodesItsVectorClockStatusForADeadSupernodeDB');
         reactor.addEventListener('getNeighborSupernodesItsVectorClockStatusForADeadSupernodeDB', async function(leaving_supernode_flo_id) {
             let getNextClosestSuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(leaving_supernode_flo_id, 3);
-            let nextBackupSupernode = getNextClosestSuObj[0].data.id;
+            let nextBackupSupernode = getNextClosestSuObj[1].data.id;
 
             if (typeof nextBackupSupernode !== "string") {
                 let msg = `WARNING: Failed to determine next closest backup supernode for ${leaving_supernode_flo_id}.`;
@@ -19611,21 +19621,25 @@
                 throw new Error(msg);
             } 
 
+            const RM_RPC = new localbitcoinplusplus.rpc;
+
             if (nextBackupSupernode == localbitcoinplusplus.wallets.my_local_flo_address) {
-                getNextClosestSuObj.map(nextSu=>{
-                    let nextSuConn = localbitcoinplusplus.backupWS.nextSu;
-                    if(typeof nextSuConn !== "string")  {
-                        let msg = `WARNING: Failed to open a backup WS connection with Supernode ${nextSu}.`;
-                        showMessage(msg);
-                        throw new Error(msg);
-                    }
-                    let server_response = RM_RPC
-                    .send_rpc
-                    .call(this, "getNeighborSupernodesItsVectorClockStatusForADeadSupernodeDBReq", {
-                        leaving_supernode_flo_id:leaving_supernode_flo_id
-                    });
-                    server_response.globalParams.primarySupernode = nextBackupSupernode;
-                    nextSuConn.ws_connection.send(server_response);
+                getNextClosestSuObj.map((nextSu, i)=>{
+                    if((i>0) && (nextSu.data.id !==localbitcoinplusplus.wallets.my_local_flo_address)) {
+                        let nextSuConn = localbitcoinplusplus.backupWS[nextSu.data.id];
+                        if(typeof nextSuConn !== "object")  {
+                            let msg = `WARNING: Failed to open a backup WS connection with Supernode ${nextSu}.`;
+                            showMessage(msg);
+                            throw new Error(msg);
+                        }
+                        let server_response = RM_RPC
+                        .send_rpc
+                        .call(this, "getNeighborSupernodesItsVectorClockStatusForADeadSupernodeDBReq", {
+                            leaving_supernode_flo_id:leaving_supernode_flo_id
+                        });
+                        server_response.globalParams.primarySupernode = leaving_supernode_flo_id;
+                        nextSuConn.ws_connection.send(server_response);
+                    } 
                 });
             }
         });
