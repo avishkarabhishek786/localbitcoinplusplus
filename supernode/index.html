@@ -15659,7 +15659,7 @@
         function onClose(evt) {
 
             reactor.addEventListener('primary_supernode_down', function() {
-                showMessage(`Disconnected to Supernode server: ${evt.srcElement.url}`);
+                showMessage(`INFO: Disconnected to Supernode server: ${evt.srcElement.url}`);
                 writeToScreen("DISCONNECTED");
                 
                 const switchMyWS = new backupSupernodesWebSocketObject();
@@ -16651,6 +16651,82 @@
                             case "backup_server_sync_response":
                                 console.log(res_obj);
                                 break;
+
+                            case "sync_data_by_vector_clock":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        try {
+                                            
+                                            (async function() {
+
+                                                let getPrimarySuObj = await localbitcoinplusplus.kademlia
+                                                    .determineClosestSupernode(subjectUser);
+
+                                                let primarySupernode = getPrimarySuObj[0].data.id;
+
+                                                if (localbitcoinplusplus.wallets.my_local_flo_address!==primarySupernode) return;
+
+                                                let req_dt = res_obj.params[0];
+                                                let dbTable = req_dt.dbTable;
+                                                let data = req_dt.data;
+                                                let subjectUser = data.trader_flo_address;
+                                                let mss = '';
+
+                                                if (typeof data.id !== "string" && typeof data.id !== "number") {
+                                                    mss = `WARNING: Failed to sync data by vector clock as id field could not be found.`;
+                                                    showMessage(mss);
+                                                    throw new Error(mss);
+                                                }
+                                                let myOwnDBData = await readDB(dbTable, data.id);
+                                                if (typeof myOwnDBData.vectorClock !== "number") {
+                                                    mss = `WARNING: Failed to sync data by vector clock as id field could not be found.`;
+                                                    showMessage(mss);
+                                                    throw new Error(mss);
+                                                }
+                                                if (data.vectorClock < myOwnDBData.vectorClock) {
+                                                    // You have the latest data, send it to other supernodes
+
+                                                    let getNextClosestSuObj = await localbitcoinplusplus.kademlia
+                                                    .determineClosestSupernode(req_dt.leaving_supernode_flo_id, 3);
+
+                                                    getNextClosestSuObj.map((nextSu, i)=>{
+                                                        if(nextSu.data.id !==localbitcoinplusplus.wallets.my_local_flo_address) {
+                                                            let nextSuConn = localbitcoinplusplus.backupWS[nextSu.data.id];
+                                                            if(typeof nextSuConn !== "object")  {
+                                                                let msg = `WARNING: Failed to open a backup WS connection with Supernode ${nextSu}.`;
+                                                                showMessage(msg);
+                                                                throw new Error(msg);
+                                                            }
+                                                            let server_response = RM_RPC
+                                                            .send_rpc
+                                                            .call(this, "sync_data_by_vector_clock", {
+                                                                trader_flo_address: data.trader_flo_address,
+                                                                receiver_flo_address: nextSu.data.id,
+                                                                leaving_supernode_flo_id: req_dt.leaving_supernode_flo_id,
+                                                                data: myOwnDBData,
+                                                                dbTable: dbTable
+                                                            });
+                                                            doSend(server_response, nextSu.data.id);
+                                                        }
+
+                                                    })
+
+                                                } else if(data.vectorClock > myOwnDBData.vectorClock) {
+                                                    // You have old data, update respective DB.
+                                                    updateinDB(dbTable, data).then(()=>{
+                                                        showMessage(`INFO: Data updated in ${dbTable} for id ${data.id}.`);
+                                                    });
+                                                }
+
+                                            })()
+                                        } catch (error) {
+                                            throw new Error(error);
+                                        }      
+                                        
+                                    }
+                                }
+                            break;
 
                             default:
                                 break;
@@ -19737,6 +19813,67 @@
                 });
             }
         });
+    
+        reactor.registerEvent('primarySupernodeUpdatingLatestDataForItsUserFromOtherSupernodes');
+        reactor.addEventListener('primarySupernodeUpdatingLatestDataForItsUserFromOtherSupernodes', async function(params) {
+            let msg = '';
+            if (typeof params.requesting_user_id !== "string") {
+                msg = 'ERROR: Invalid User id provided in "primarySupernodeUpdatingLatestDataForItsUserFromOtherSupernodes" request.';
+                showMessage(msg);
+                throw new Error(msg);
+            }
+
+            let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(params.requesting_user_id, 3);
+            let primarySupernode = getPrimarySuObj[0].data.id;
+
+            if (typeof primarySupernode !== "string") {
+                let msg = `WARNING: Failed to determine primary supernode for ${params.requesting_user_id}.`;
+                showMessage(msg);
+                throw new Error(msg);
+            } 
+
+            let getNextClosestSuObjOfPrimarySupernode = await localbitcoinplusplus.kademlia.determineClosestSupernode(primarySupernode, 3);
+
+            if (localbitcoinplusplus.wallets.my_local_flo_address !== primarySupernode) return;
+
+            getPrimarySuObj.map(nextSu=>{
+                if (nextSu.data.id !== primarySupernode) {
+                    let nextSuConn = localbitcoinplusplus.newBackupDatabase.db[nextSu.data.id];
+                    if(typeof nextSuConn !== "object")  {
+                        let msg = `WARNING: Failed to open a backup DB with Supernode ${nextSu}.`;
+                        showMessage(msg);
+                        throw new Error(msg);
+                    }
+
+                    const RM_RPC = new localbitcoinplusplus.rpc;
+                    
+                    const table_array = ["deposit", "withdraw_cash", "withdraw_btc",
+                        "crypto_balances", "cash_balances", "sellOrders", "buyOrders",
+                    ];
+
+                    table_array.map(async tbl=>{
+                        let record = await nextSuConn.backup_readDBbyIndex(tbl, 'trader_flo_address', params.requesting_user_id);
+
+                        record.map(rec=>{
+                            let server_response = RM_RPC
+                            .send_rpc
+                            .call(this, "sync_data_by_vector_clock", {
+                                trader_flo_address: params.requesting_user_id,
+                                receiver_flo_address: nextSu.data.id,
+                                leaving_supernode_flo_id: primarySupernode,
+                                data: rec,
+                                dbTable: tbl
+                            });
+                            doSend(server_response, nextSu.data.id);
+                        });
+
+                    });
+                }
+
+            });
+            
+        });
+
     </script>
 
 </body>
