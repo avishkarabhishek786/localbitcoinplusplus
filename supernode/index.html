@@ -12555,7 +12555,7 @@
                                 await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                     params.currency);
                                 let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
-                                    params.trader_flo_address, params.product, params.currency);
+                                    params.trader_flo_address, params.product, params.currency, request.globalParams.receiverFloId);
                                 if (typeof trade_margin.remaining_crypto_credit == "number" &&
                                     typeof trade_margin.remaining_fiat_credit == "number") {
                                     if (trade_margin.remaining_fiat_credit > 0 && trade_margin.remaining_fiat_credit >=
@@ -12572,10 +12572,10 @@
                                                             supernode_signed_res);
                                                     doSend(buy_request_response);
                                                     // Init trading
-                                                    RM_TRADE.createTradePipes(params.currency);
+                                                    RM_TRADE.createTradePipes(params.currency, request.globalParams.receiverFloId);
                                                     return true;
                                                 }
-                                            });
+                                            }, request.globalParams.receiverFloId);
                                     } else {
                                         err_msg = `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
                                         showMessage(err_msg);
@@ -12595,7 +12595,7 @@
                                 await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                     params.currency);
                                 let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
-                                    params.trader_flo_address, params.product, params.currency);
+                                    params.trader_flo_address, params.product, params.currency, request.globalParams.receiverFloId);
                                 if (typeof trade_margin.remaining_crypto_credit == "number" &&
                                     typeof trade_margin.remaining_fiat_credit == "number") {
                                     let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(params.buy_price);
@@ -12613,10 +12613,10 @@
                                                             supernode_signed_res);
                                                     doSend(sell_request_response);
                                                     // Init trading
-                                                    RM_TRADE.createTradePipes(params.currency);
+                                                    RM_TRADE.createTradePipes(params.currency, request.globalParams.receiverFloId);
                                                     return true;
                                                 }
-                                            }
+                                            }, request.globalParams.receiverFloId
                                         );
                                     } else {
                                         err_msg = `WARNING: Trade Margin Check Failed: 
@@ -13048,7 +13048,8 @@
                                     await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                         params.currency);
                                     let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
-                                        params.trader_flo_address, params.product, params.currency
+                                        params.trader_flo_address, params.product, params.currency,
+                                        request.globalParams.receiverFloId 
                                     );
 
                                     if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
@@ -13798,7 +13799,7 @@
                     return false;
                 }
             },
-            trade_buy(params, callback) {
+            trade_buy(params, callback, backup_db="") {
                 let err_msg;
                 for (var key in params) {
                     if (params.hasOwnProperty(key)) {
@@ -13816,6 +13817,22 @@
                     err_msg = "WARNING: Invalid buy request.";
                     showMessage(err_msg);
                     throw new Error(err_msg);
+                }
+
+                if (typeof backup_db=="string" && backup_db.length>0) {
+                    if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
+                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
+                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
+                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
+                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
+                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
+                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                    } else {
+                        err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
+                    }
                 }
 
                 const RM_WALLET = new localbitcoinplusplus.wallets;
@@ -13885,7 +13902,7 @@
                     }
                 });
             },
-            trade_sell(params, callback) {
+            trade_sell(params, callback, backup_db="") {
                 let err_msg;
                 for (var key in params) {
                     if (params.hasOwnProperty(key)) {
@@ -13903,6 +13920,22 @@
                     err_msg = "Invalid sell request.";
                     showMessage(err_msg);
                     throw new Error(err_msg);
+                }
+
+                if (typeof backup_db=="string" && backup_db.length>0) {
+                    if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
+                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
+                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
+                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
+                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
+                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
+                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                    } else {
+                        err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
+                    }
                 }
 
                 const RM_WALLET = new localbitcoinplusplus.wallets;
@@ -14049,7 +14082,7 @@
                         return parseFloat(price / current_crypto_price.rate).toFixed(8);
                     }
                 }
-                let err_msg = `Failed to calculate crypto equivalent of cash.`;
+                let err_msg = `WARNING: Failed to calculate crypto equivalent of cash.`;
                 showMessage(err_msg);
                 throw new Error(err_msg);
             },
@@ -14057,7 +14090,7 @@
                 return localbitcoinplusplus.trade[`current_${crypto_code}_price_in_${currency_code}`];
             },
             async resolve_current_crypto_price_in_fiat(crypto_code, currency_code) {
-                let today = +new Date();
+                let today = + new Date();
                 const RM_TRADE = new localbitcoinplusplus.trade;
                 let last_update_of_fiat_price_obj = RM_TRADE.get_current_crypto_price_in_fiat(crypto_code,
                     currency_code);
@@ -14195,7 +14228,22 @@
                 }).catch(e => console.error(`No balance found in ${utxo_addr}: ${e}`));
             },
             /*Finds the best buy sell id match for a trade*/
-            createTradePipes(trading_currency = "USD") {
+            createTradePipes(trading_currency = "USD", backup_db="") {
+                if (typeof backup_db=="string" && backup_db.length>0) {
+                    if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
+                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
+                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
+                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
+                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
+                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
+                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                    } else {
+                        err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
+                    }
+                }
                 try {
                     readAllDB("sellOrders").then(function (sellOrdersList) {
                         if (sellOrdersList.length > 0) {
@@ -14247,7 +14295,7 @@
                                                                         supernode_res);
                                                                 doSend(server_res);
                                                             }
-                                                        });
+                                                        }, backup_db);
                                                 }
                                             }
                                         });
@@ -14259,7 +14307,22 @@
                     console.error(e);
                 }
             },
-            launchTrade(buyPipeObj, sellPipeObj, callback) {
+            launchTrade(buyPipeObj, sellPipeObj, callback, backup_db="") {
+                if (typeof backup_db=="string" && backup_db.length>0) {
+                    if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
+                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
+                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
+                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
+                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
+                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
+                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                    } else {
+                        err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
+                    }
+                }
                 if (buyPipeObj.order_type == "buy" && sellPipeObj.order_type == "sell" &&
                     buyPipeObj.buy_price == sellPipeObj.buy_price &&
                     buyPipeObj.currency == sellPipeObj.currency &&
@@ -14543,7 +14606,23 @@
                     "cancel_trade", cancel_trade_request_object);
                 doSend(cancel_trade_request);
             },
-            getAssetTradeAndWithdrawLimit(flo_id, crypto, fiat) {
+            getAssetTradeAndWithdrawLimit(flo_id, crypto, fiat, backup_db="") {
+
+                if (typeof backup_db=="string" && backup_db.length>0) {
+                    if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
+                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
+                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
+                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
+                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
+                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
+                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                    } else {
+                        err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                        showMessage(err_msg);
+                        throw new Error(err_msg);
+                    }
+                }
 
                 const RM_TRADE = new localbitcoinplusplus.trade;
 
@@ -16041,20 +16120,19 @@
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val)
                                     .then(function (res) {
-
+                                        let send_pvtkey_req;
                                         if (typeof res=="object") {
-                                            let send_pvtkey_req = RM_RPC
+                                            send_pvtkey_req = RM_RPC
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_supernode_pvtkey", {
                                                 private_key_chunk: res
                                             });
                                         } else {
-                                            let send_pvtkey_req = RM_RPC
+                                            send_pvtkey_req = RM_RPC
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "");
                                         }
                                         doSend(send_pvtkey_req);
-
                                         return;
                                     });
                                 }
@@ -16822,7 +16900,7 @@
                                 }
                                 break;
                             case "trade_buy":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                                 break;
                             case "trade_buy_request_response":
@@ -16853,7 +16931,7 @@
                                 }
                                 break;
                             case "trade_sell":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                                 break;
                             case "trade_sell_request_response":
@@ -16883,7 +16961,7 @@
                                 }
                                 break;
                             case "sync_with_supernode":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                                 break;
                             case "server_sync_response":
@@ -16942,7 +17020,7 @@
                                 }
                                 break;
                             case "deposit_asset_request":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                             case "deposit_asset_request_response":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" && typeof res_obj
@@ -16970,7 +17048,7 @@
                                 }
                                 break;
                             case "withdraw_request_method":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                                 break;
@@ -17224,7 +17302,7 @@
                                         delete res_obj.params[0].private_key_chunk;
                                         res_obj.params[0].btc_private_key_array = JSON.stringify(btc_pvt_arr[
                                             retrieve_pvtkey_req_id]);
-                                        RM_RPC.receive_rpc_response.call(this, JSON.stringify(res_obj));
+                                        RM_RPC.backup_receive_rpc_response.call(this, JSON.stringify(res_obj));
                                         btc_pvt_arr[retrieve_pvtkey_req_id] = []; // Unset the object
                                     }
                                 }
@@ -17499,7 +17577,7 @@
                                 break;
 
                             case "superNodeSignedAddUserPublicData":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                                 break;
@@ -17602,7 +17680,7 @@
                                 break;
 
                             case "update_external_file_server_response":
-                                response_from_sever = RM_RPC.receive_rpc_response.call(this,
+                                response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
                                     JSON.stringify(res_obj));
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                                 break;
@@ -17757,13 +17835,13 @@
                                             showMessage(backup_db_error_msg);
                                             throw new Error(backup_db_error_msg);
                                         };
-                                    });
-                                    
-                                    backup_server_db_instance.backup_updateinDB('ipTable', {
-                                        'flo_public_key': req_params.requesters_pub_key,
-                                        'temporary_ip': incoming_msg_local_ip
-                                    }).then((ipRes)=>{
-                                        reactor.dispatchEvent('fireNodeWelcomeBackEvent', ipRes);
+
+                                        backup_server_db_instance.backup_updateinDB('ipTable', {
+                                            'flo_public_key': req_params.requesters_pub_key,
+                                            'temporary_ip': incoming_msg_local_ip
+                                        }).then((ipRes)=>{
+                                            reactor.dispatchEvent('fireNodeWelcomeBackEvent', ipRes);
+                                        });
                                     });
                                 }
                             break;
