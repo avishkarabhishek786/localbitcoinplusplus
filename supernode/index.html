@@ -14951,6 +14951,8 @@
                             localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
                             localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
                             localbitcoinplusplusObj.lastConnectedTime = + new Date();
+
+                            await updateinDB("localbitcoinUser", localbitcoinplusplusObj);
                             
                             // launch KBuckets
                             launchKBuckects = await localbitcoinplusplus.kademlia.launchKBucket(newKeys.address);
@@ -15006,8 +15008,6 @@
                             });
 
                             localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS = wsUri[0].trader_flo_address;
-
-                            updateinDB("localbitcoinUser", localbitcoinplusplusObj, "00-01");
 
                             resolve(true);
                             return;
@@ -15579,6 +15579,41 @@
                                         });
                                     }
                                 break;
+
+                                case "add_user_public_data":
+                                    let supernode_flo_public_key = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                    RM_RPC.filter_legit_backup_requests(res_obj.params[0].trader_flo_address, 
+                                    function (is_valid_request) {
+                                        if (is_valid_request !== true) return false;
+
+                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                            let req_data = res_obj.params[0];
+                                            try {
+                                                let flo_address = bitjs.FLO_TEST.pubkey2address(req_data.trader_flo_pubKey);
+
+                                                if (flo_address == req_data.trader_flo_address && req_data.trader_flo_address
+                                                    .length > 0) {
+
+                                                    let public_req_object = {
+                                                        trader_flo_address: req_data.trader_flo_address,
+                                                        trader_flo_pubKey: req_data.trader_flo_pubKey,
+                                                        supernode_flo_public_key: supernode_flo_public_key,
+                                                        trader_status: 0,
+                                                        timestamp: +new Date()
+                                                    }
+
+                                                    addDB('userPublicData', public_req_object);
+
+                                                }
+                                            } catch (error) {
+                                                throw new Error('Invalid public key and flo address combination.');
+                                            }
+                                        }
+                                    });
+                                break;
+
+                                default: 
+                                break;
                             }
                             
                         }
@@ -15775,7 +15810,6 @@
                 });
             });
             reactor.dispatchEvent('primary_supernode_down');
-
         }
 
         async function onMessage(evt) {
@@ -16413,12 +16447,12 @@
 
                             case "add_user_public_data":
                                     let supernode_flo_public_key = localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                    RM_RPC.filter_legit_requests(res_obj.params[0].public_data.trader_flo_address, 
+                                    RM_RPC.filter_legit_requests(res_obj.params[0].trader_flo_address, 
                                     function (is_valid_request) {
                                         if (is_valid_request !== true) return false;
 
                                         if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                            let req_data = res_obj.params[0].public_data;
+                                            let req_data = res_obj.params[0];
                                             try {
                                                 let flo_address = bitjs.FLO_TEST.pubkey2address(req_data.trader_flo_pubKey);
 
@@ -17533,12 +17567,12 @@
 
                             case "add_user_public_data":
                                     let supernode_flo_public_key = localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                    RM_RPC.filter_legit_requests(res_obj.params[0].public_data.trader_flo_address, 
+                                    RM_RPC.filter_legit_requests(res_obj.params[0].trader_flo_address, 
                                     function (is_valid_request) {
                                         if (is_valid_request !== true) return false;
 
                                         if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                            let req_data = res_obj.params[0].public_data;
+                                            let req_data = res_obj.params[0];
                                             try {
                                                 let flo_address = bitjs.FLO_TEST.pubkey2address(req_data.trader_flo_pubKey);
 
@@ -18302,7 +18336,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 5);
+        const request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -19132,18 +19166,22 @@
                     readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function (
                         pubic_data_response) {
                         if (typeof pubic_data_response !== "object") {
-                            let user_public_data_object = {
-                                trader_flo_address: MY_LOCAL_FLO_ADDRESS,
-                                trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
-                                trader_status: 0,
-                                timestamp: +new Date()
-                            }
-                            user_public_data_object.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
+                            // let user_public_data_object = {
+                            //     trader_flo_address: MY_LOCAL_FLO_ADDRESS,
+                            //     trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
+                            //     trader_status: 0,
+                            //     timestamp: +new Date()
+                            // }
+                            //user_public_data_object.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
                             let add_user_public_data_req = RM_RPC
                                 .send_rpc
                                 .call(this, "add_user_public_data", {
-                                    public_data: user_public_data_object
-                                });
+                                    trader_flo_address: MY_LOCAL_FLO_ADDRESS,
+                                    trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
+                                    trader_status: 0,
+                                    timestamp: +new Date(),
+                                    receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS
+                            });
                             doSend(add_user_public_data_req);
                         }
                     });
