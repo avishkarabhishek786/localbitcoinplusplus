@@ -11234,7 +11234,8 @@
                             await readAllDB("deposit").then(function (res) {
                                 if (typeof res == "object" && res.length > 0) {
                                     let canUserTrade = res.map(function (user) {
-                                        return respective_trader_id == user.trader_flo_address;
+                                        return (respective_trader_id == user.trader_flo_address 
+                                             && user.status==1);
                                     });
                                     if (canUserTrade.includes(true)) {
                                         request.response =
@@ -14662,7 +14663,7 @@
                     let sell_order_crypto_equivalent = 0;
                     user_sell_orders.map(sell_orders => {
                         sell_order_crypto_eq = RM_TRADE.calculateCryptoEquivalentOfCash(
-                            sell_orders.sell_price, sell_orders.currency, sell_orders.product);
+                            sell_orders.buy_price, sell_orders.currency, sell_orders.product);
                         sell_order_crypto_equivalent += Number(sell_order_crypto_eq);
                     });
 
@@ -15237,56 +15238,16 @@
                             case "trade_buy_request_response":
                                 if (typeof res_obj.params !== "object" 
                                         || typeof res_obj.params[0] !== "object") return;
-                                let trade_buy_res_data = res_obj.params[0];
-                                RM_RPC.filter_legit_backup_requests(trade_buy_res_data.trader_flo_address, 
-                                    function (is_valid_request) {
-                                 
-                                        if(!is_valid_request) return false;
-                                 
-                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                        let buyOrders_data = res_obj.params[0];
+                                    let buyOrders_data = res_obj.params[0];
 
-                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                buyOrders_data.supernodePubKey)) {
-                                            let isDataSignedBySuperNode = RM_WALLET
-                                                .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
-                                                    buyOrders_data.supernodePubKey);
-                                            if (isDataSignedBySuperNode === true) {
-
-                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[res_obj.globalParams.senderFloId];
-
-                                                if(typeof backup_server_db_instance !== "object") {
-                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                                    showMessage(backup_db_error_msg);
-                                                    throw new Error(backup_db_error_msg);
-                                                };
-
-                                                // Add buy order
-                                                backup_server_db_instance.backup_addDB("buyOrders", buyOrders_data).then(() => {
-                                                    showMessage(`Your buy order is placed successfully.`);
-                                                });
-                                            }
-                                        }
-                                    }
-                                });
-                                break;
-                            case "trade_sell_request_response":
-                                if (typeof res_obj.params !== "object" 
-                                        || typeof res_obj.params[0] !== "object") return;
-                                let trade_sell_res_data = res_obj.params[0];
-                                RM_RPC.filter_legit_backup_requests(trade_buy_res_data.trader_flo_address, 
-                                    function (is_valid_request) {
-                                        if(!is_valid_request) return false;
-                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                        let sellOrders_data = res_obj.params[0];
-                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                        localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                        .includes(sellOrders_data.supernodePubKey)) {
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                            buyOrders_data.supernodePubKey)) {
                                         let isDataSignedBySuperNode = RM_WALLET
-                                            .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
-                                                sellOrders_data.supernodePubKey);
+                                            .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
+                                                buyOrders_data.supernodePubKey);
                                         if (isDataSignedBySuperNode === true) {
+
                                             const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[res_obj.globalParams.senderFloId];
 
                                             if(typeof backup_server_db_instance !== "object") {
@@ -15296,13 +15257,37 @@
                                             };
 
                                             // Add buy order
-                                            backup_server_db_instance.backup_addDB("sellOrders", sellOrders_data).then(() => {
-                                                showMessage(`Your sell order is placed successfully.`);
-                                            });;
-                                        }
+                                            backup_server_db_instance.backup_addDB("buyOrders", buyOrders_data).then(() => {
+                                                showMessage(`Your buy order is placed successfully.`);
+                                            });
                                         }
                                     }
-                                });
+                                break;
+                            case "trade_sell_request_response":
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    let sellOrders_data = res_obj.params[0];
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                    localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(sellOrders_data.supernodePubKey)) {
+                                    let isDataSignedBySuperNode = RM_WALLET
+                                        .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
+                                            sellOrders_data.supernodePubKey);
+                                    if (isDataSignedBySuperNode === true) {
+                                        const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[res_obj.globalParams.senderFloId];
+
+                                        if(typeof backup_server_db_instance !== "object") {
+                                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                            showMessage(backup_db_error_msg);
+                                            throw new Error(backup_db_error_msg);
+                                        };
+
+                                        // Add buy order
+                                        backup_server_db_instance.backup_addDB("sellOrders", sellOrders_data).then(() => {
+                                            showMessage(`Your sell order is placed successfully.`);
+                                        });;
+                                    }
+                                    }
+                                }
                                 break;
                             
                             case "deposit_asset_request_response":
@@ -15920,24 +15905,19 @@
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let buyOrders_data = res_obj.params[0];
 
-                                    RM_RPC.filter_legit_requests(params.trader_flo_address, 
-                                    function (is_valid_request) {
-                                        if (is_valid_request !== true) return false;
-
-                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                buyOrders_data.supernodePubKey)) {
-                                            let isDataSignedBySuperNode = RM_WALLET
-                                                .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
-                                                    buyOrders_data.supernodePubKey);
-                                            if (isDataSignedBySuperNode === true) {
-                                                // Add buy order
-                                                addDB("buyOrders", buyOrders_data).then(() => {
-                                                    showMessage(`Your buy order is placed successfully.`);
-                                                });
-                                            }
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                            buyOrders_data.supernodePubKey)) {
+                                        let isDataSignedBySuperNode = RM_WALLET
+                                            .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
+                                                buyOrders_data.supernodePubKey);
+                                        if (isDataSignedBySuperNode === true) {
+                                            // Add buy order
+                                            addDB("buyOrders", buyOrders_data).then(() => {
+                                                showMessage(`Your buy order is placed successfully.`);
+                                            });
                                         }
-                                    });
+                                    }
                                 }
                                 break;
                             case "trade_sell":
@@ -15947,24 +15927,20 @@
                             case "trade_sell_request_response":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let sellOrders_data = res_obj.params[0];
-                                    RM_RPC.filter_legit_requests(params.trader_flo_address, 
-                                    function (is_valid_request) {
-                                        if (is_valid_request !== true) return false;
-                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                sellOrders_data
-                                                .supernodePubKey)) {
-                                            let isDataSignedBySuperNode = RM_WALLET
-                                                .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
-                                                    sellOrders_data.supernodePubKey);
-                                            if (isDataSignedBySuperNode === true) {
-                                                // Add buy order
-                                                addDB("sellOrders", sellOrders_data).then(() => {
-                                                    showMessage(`Your sell order is placed successfully.`);
-                                                });;
-                                            }
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                            sellOrders_data
+                                            .supernodePubKey)) {
+                                        let isDataSignedBySuperNode = RM_WALLET
+                                            .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
+                                                sellOrders_data.supernodePubKey);
+                                        if (isDataSignedBySuperNode === true) {
+                                            // Add buy order
+                                            addDB("sellOrders", sellOrders_data).then(() => {
+                                                showMessage(`Your sell order is placed successfully.`);
+                                            });;
                                         }
-                                    });
+                                    }
                                 }
                                 break;
                             case "sync_with_supernode":
@@ -16484,7 +16460,7 @@
                                 break;
 
                             case "refresh_deposit_status_request":
-                                RM_RPC.filter_legit_requests((is_valid_request) => {
+                                RM_RPC.filter_legit_requests(res_obj.params[0].trader_flo_address, is_valid_request => {
                                     if (is_valid_request !== true) return false;
                                     readDBbyIndex("deposit", 'status', 1).then(function (res) {
                                         res.map(function (deposit_trade) {
@@ -16562,7 +16538,7 @@
 
                             case "updateUserCryptoBalanceRequest":
                                 let updateUserCryptoBalanceResponseObject = res_obj.params[0];
-                                let SuPubKey = readDB(userPublicData, updateUserCryptoBalanceResponseObject.trader_flo_address)
+                                let SuPubKey = readDB('userPublicData', updateUserCryptoBalanceResponseObject.trader_flo_address)
                                     .then(user_data => {
                                         if (typeof user_data !== "object" || user_data.supernode_flo_public_key.length <
                                             1)
@@ -16942,26 +16918,21 @@
                                     let buyOrders_data = res_obj.params[0];
                                                                         
                                     // Only the relevent user node should get response
-                                    if(res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
+                                    if(buyOrders_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
                                     
-                                    RM_RPC.filter_legit_requests(params.trader_flo_address, 
-                                    function (is_valid_request) {
-                                        if (is_valid_request !== true) return false;
-
-                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                buyOrders_data.supernodePubKey)) {
-                                            let isDataSignedBySuperNode = RM_WALLET
-                                                .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
-                                                    buyOrders_data.supernodePubKey);
-                                            if (isDataSignedBySuperNode === true) {
-                                                // Add buy order
-                                                addDB("buyOrders", buyOrders_data).then(() => {
-                                                    showMessage(`Your buy order is placed successfully.`);
-                                                });
-                                            }
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                            buyOrders_data.supernodePubKey)) {
+                                        let isDataSignedBySuperNode = RM_WALLET
+                                            .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
+                                                buyOrders_data.supernodePubKey);
+                                        if (isDataSignedBySuperNode === true) {
+                                            // Add buy order
+                                            addDB("buyOrders", buyOrders_data).then(() => {
+                                                showMessage(`Your buy order is placed successfully.`);
+                                            });
                                         }
-                                    });
+                                    }
                                 }
                                 break;
                             case "trade_sell":
@@ -16974,24 +16945,20 @@
                                     // Only the relevent user node should get response
                                     if(res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
 
-                                    RM_RPC.filter_legit_requests(params.trader_flo_address, 
-                                    function (is_valid_request) {
-                                        if (is_valid_request !== true) return false;
-                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                sellOrders_data
-                                                .supernodePubKey)) {
-                                            let isDataSignedBySuperNode = RM_WALLET
-                                                .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
-                                                    sellOrders_data.supernodePubKey);
-                                            if (isDataSignedBySuperNode === true) {
-                                                // Add buy order
-                                                addDB("sellOrders", sellOrders_data).then(() => {
-                                                    showMessage(`Your sell order is placed successfully.`);
-                                                });;
-                                            }
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                            sellOrders_data
+                                            .supernodePubKey)) {
+                                        let isDataSignedBySuperNode = RM_WALLET
+                                            .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
+                                                sellOrders_data.supernodePubKey);
+                                        if (isDataSignedBySuperNode === true) {
+                                            // Add buy order
+                                            addDB("sellOrders", sellOrders_data).then(() => {
+                                                showMessage(`Your sell order is placed successfully.`);
+                                            });;
                                         }
-                                    });
+                                    }
                                 }
                                 break;
                             case "sync_with_supernode":
@@ -17617,7 +17584,7 @@
                                 break;
 
                             case "refresh_deposit_status_request":
-                                RM_RPC.filter_legit_requests((is_valid_request) => {
+                                RM_RPC.filter_legit_backup_requests((is_valid_request) => {
                                     if (is_valid_request !== true) return false;
 
                                     if(typeof res_obj.params[0].trader_flo_address !="string") return;
@@ -17637,7 +17604,7 @@
                                         res.map(function (deposit_trade) {
                                             if (localbitcoinplusplus.master_configurations.tradableAsset1
                                                 .includes(deposit_trade.product)) {
-                                                validateDepositedBTCBalance(deposit_trade);
+                                                validateDepositedBTCBalance(deposit_trade, res_obj.params[0].trader_flo_address);
                                             }
                                         });
                                     });
@@ -17735,7 +17702,7 @@
                                     };
                                 });
                                 
-                                let SuPubKey = backup_server_db_instance.backup_readDB(userPublicData, updateUserCryptoBalanceResponseObject.trader_flo_address)
+                                let SuPubKey = backup_server_db_instance.backup_readDB('userPublicData', updateUserCryptoBalanceResponseObject.trader_flo_address)
                                     .then(user_data => {
                                         if (typeof user_data !== "object" || user_data.supernode_flo_public_key.length <
                                             1)
@@ -19547,7 +19514,11 @@
             asset_button_box.appendChild(refresh_crypto_status_btn);
             refresh_crypto_status_btn.addEventListener('click', function () {
                 let refresh_deposit_status = RM_RPC.send_rpc.call(this,
-                    "refresh_deposit_status_request", {receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS});
+                    "refresh_deposit_status_request", 
+                    {
+                        receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
+                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                    });
                 doSend(refresh_deposit_status);
             });
 
@@ -19702,13 +19673,30 @@
 
     <script>
         //Function to check current balance of a BTC address
-        function validateDepositedBTCBalance(trader_deposits) {
+        function validateDepositedBTCBalance(trader_deposits, backup_db="") {
             if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
                 .includes(localbitcoinplusplus.wallets.my_local_flo_public_key) &&
                 typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY !== "string"
             ) return false;
             if (!localbitcoinplusplus.master_configurations.tradableAsset1
                 .includes(trader_deposits.product)) return false;
+
+            if (typeof backup_db=="string" && backup_db.length>0) {
+                if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                    readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
+                    readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
+                    readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
+                    updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
+                    removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
+                    removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
+                    removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                } else {
+                    err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                }
+            }
+
             let explorer;
             switch (trader_deposits.product) {
                 case "BTC":
