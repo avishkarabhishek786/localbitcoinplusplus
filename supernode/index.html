@@ -12181,7 +12181,6 @@
                                                         withdraw_res.receiverBTCEquivalentInCash,
                                                         withdraw_res.currency,
                                                         withdraw_res.product);
-                                                    EqCryptoWd = parseFloat(EqCryptoWd);
 
                                                     let transaction_key =
                                                         btc_reserves.supernode_transaction_key;
@@ -12190,7 +12189,7 @@
                                                             RM_WALLET.rebuild_private_key(
                                                                 btc_pk_shares_array,
                                                                 transaction_key);
-                                                        //console.log(btc_private_key);
+                                                        console.log(btc_private_key);
 
                                                         RM_TRADE.sendTransaction(
                                                             withdraw_res.product,
@@ -12234,9 +12233,9 @@
                                                                             )
                                                                             .then(
                                                                                 res_bal => {
-                                                                                    btc_eq_receiving_amount
-                                                                                        =
-                                                                                        Number(parseFloat(btc_eq_receiving_amount).toFixed(8));
+                                                                                    // btc_eq_receiving_amount
+                                                                                    //     =
+                                                                                    //     Number(parseFloat(EqCryptoWd).toFixed(8));
                                                                                     res_bal
                                                                                         .crypto_balance -=
                                                                                         EqCryptoWd;
@@ -13489,11 +13488,11 @@
                                                                             )
                                                                             .then(
                                                                                 res_bal => {
-                                                                                    btc_eq_receiving_amount
-                                                                                        =
-                                                                                        Number(parseFloat(
-                                                                                            btc_eq_receiving_amount
-                                                                                        )
+                                                                                    // btc_eq_receiving_amount
+                                                                                    //     =
+                                                                                    //     Number(parseFloat(
+                                                                                    //         btc_eq_receiving_amount
+                                                                                    //     )
                                                                                         .toFixed(
                                                                                             8
                                                                                         ));
@@ -14174,27 +14173,31 @@
 
                             let trx = bitjs[crypto_type].transaction();
                             let sum = 0;
+                            const miners_fee = 0.00030000;
 
                             for (var key in utxo_list) {
                                 if (utxo_list[key].confirmations !== 0) {
                                     var obj = utxo_list[key];
                                     sum += obj.amount;
 
-                                    if (btc_eq_receiving_amount <= sum) {
+                                    if (btc_eq_receiving_amount <= (sum-miners_fee)) {
                                         trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
-                                        console.log('a');
                                         break;
                                     } else {
                                         trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
-                                        console.log('b');
                                     }
                                 }
                             }
 
-                            let change_amount = sum - btc_eq_receiving_amount - 0.00016800;
+                            let change_amount = 0;
+                            if (sum - btc_eq_receiving_amount - miners_fee>0) {
+                                change_amount = sum - btc_eq_receiving_amount - miners_fee;
+                            }
 
                             trx.addoutput(receiver_address, btc_eq_receiving_amount);
+                           if (change_amount>0) {
                             trx.addoutput(change_adress, change_amount);
+                           }
                             var sendFloData =
                                 `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} satoshis to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
                             if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
@@ -15118,7 +15121,7 @@
 
             async handle_backup_server_messages(evt) {
                 var response = evt.data;
-                console.log('backup response: '+response);
+                writeToScreen('backup response: '+response);
 
                 let isItANodeLeavingMessage = response.search(`\\-- left`);
             
@@ -15722,10 +15725,9 @@
                                                 .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
                                                     retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                     private_key_chunk: res,
-                                                    withdraw_id: res_obj.params[0].withdraw_id
+                                                    withdraw_id: res_obj.params[0].withdraw_id,
+                                                    receiver_flo_address: res_obj.globalParams.senderFloId,
                                                 });
-                                                //if(typeof send_pvtkey_req.globalParams !== "object") send_pvtkey_req.globalParams = [];
-                                                //send_pvtkey_req.globalParams.primarySupernode = res_obj.globalParams.senderFloId;
                                                 doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
                                                 return;
                                         });
@@ -16348,9 +16350,10 @@
                                             .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
                                                 retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                 private_key_chunk: res,
-                                                withdraw_id: res_obj.params[0].withdraw_id
+                                                withdraw_id: res_obj.params[0].withdraw_id,
+                                                receiver_flo_address: res_obj.globalParams.senderFloId
                                             });
-                                            doSend(send_pvtkey_req);
+                                            doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
                                     });
                                 }
                                 break;
@@ -17434,15 +17437,11 @@
                                                 .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
                                                     retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                     private_key_chunk: res,
-                                                    withdraw_id: res_obj.params[0].withdraw_id
+                                                    withdraw_id: res_obj.params[0].withdraw_id,
+                                                    receiver_flo_address: res_obj.globalParams.senderFloId,
                                                 });
-                                                localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.senderFloId)
-                                                .then(my_closest_su=>{
-                                                    //if(typeof send_pvtkey_req.globalParams !== "object") send_pvtkey_req.globalParams = [];
-                                                    //send_pvtkey_req.globalParams.primarySupernode = my_closest_su[0].data.id;
-                                                    doSend(send_pvtkey_req);
-                                                    return;
-                                                });
+                                                doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
+                                                return;
                                         });
                                     });
                                 }
