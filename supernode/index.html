@@ -11241,7 +11241,7 @@
                             // CHECK HERE IF USER IS INDULGED IN ANY MORE TRADE. IF TRUE RETURN ERROR 
                             await readAllDB("deposit").then(function (res) {
                                 if (typeof res == "object" && res.length > 0) {
-                                    let canUserTrade = res.map(function (user) {
+                                    let canUserTrade = res.filter(function (user) {
                                         return (respective_trader_id == user.trader_flo_address 
                                              && user.status==1);
                                     });
@@ -12477,8 +12477,8 @@
 
                         try {
                            
-                            if(typeof res_obj.params[0].trader_flo_address !="string") return;
-                            const my_closest_su_list = localbitcoinplusplus.kademlia.determineClosestSupernode(params.trader_flo_address);
+                            if(typeof params.trader_flo_address !="string") return;
+                            const my_closest_su_list = await localbitcoinplusplus.kademlia.determineClosestSupernode(params.trader_flo_address);
                             const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
                             const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
@@ -12490,8 +12490,9 @@
                             // CHECK HERE IF USER IS INDULGED IN ANY MORE TRADE. IF TRUE RETURN ERROR 
                             await backup_server_db_instance.backup_readAllDB("deposit").then(function (res) {
                                 if (typeof res == "object" && res.length > 0) {
-                                    let canUserTrade = res.map(function (user) {
-                                        return respective_trader_id == user.trader_flo_address;
+                                    let canUserTrade = res.filter(function (user) {
+                                        return (respective_trader_id == user.trader_flo_address 
+                                             && user.status==1);
                                     });
                                     if (canUserTrade.includes(true)) {
                                         request.response =
@@ -12554,8 +12555,11 @@
                                 if (is_valid_request !== true) return false;
                                 await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                     params.currency);
+                                const get_requester_primary_supernode = await localbitcoinplusplus.kademlia
+                                        .determineClosestSupernode(params.trader_flo_address);
+                                const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
                                 let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
-                                    params.trader_flo_address, params.product, params.currency, request.globalParams.receiverFloId);
+                                    params.trader_flo_address, params.product, params.currency, primarySupernodeForThisUser);
                                 if (typeof trade_margin.remaining_crypto_credit == "number" &&
                                     typeof trade_margin.remaining_fiat_credit == "number") {
                                     if (trade_margin.remaining_fiat_credit > 0 && trade_margin.remaining_fiat_credit >=
@@ -12572,10 +12576,10 @@
                                                             supernode_signed_res);
                                                     doSend(buy_request_response);
                                                     // Init trading
-                                                    RM_TRADE.createTradePipes(params.currency, request.globalParams.receiverFloId);
+                                                    RM_TRADE.createTradePipes(params.currency, primarySupernodeForThisUser);
                                                     return true;
                                                 }
-                                            }, request.globalParams.receiverFloId);
+                                            }, primarySupernodeForThisUser);
                                     } else {
                                         err_msg = `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
                                         showMessage(err_msg);
@@ -12594,8 +12598,11 @@
                                 if (is_valid_request !== true) return false;
                                 await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                     params.currency);
+                                const get_requester_primary_supernode = await localbitcoinplusplus.kademlia
+                                        .determineClosestSupernode(params.trader_flo_address);
+                                const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
                                 let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
-                                    params.trader_flo_address, params.product, params.currency, request.globalParams.receiverFloId);
+                                    params.trader_flo_address, params.product, params.currency, primarySupernodeForThisUser);
                                 if (typeof trade_margin.remaining_crypto_credit == "number" &&
                                     typeof trade_margin.remaining_fiat_credit == "number") {
                                     let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(params.buy_price);
@@ -12613,10 +12620,10 @@
                                                             supernode_signed_res);
                                                     doSend(sell_request_response);
                                                     // Init trading
-                                                    RM_TRADE.createTradePipes(params.currency, request.globalParams.receiverFloId);
+                                                    RM_TRADE.createTradePipes(params.currency, primarySupernodeForThisUser);
                                                     return true;
                                                 }
-                                            }, request.globalParams.receiverFloId
+                                            }, primarySupernodeForThisUser
                                         );
                                     } else {
                                         err_msg = `WARNING: Trade Margin Check Failed: 
@@ -13048,9 +13055,12 @@
                                 ) {
                                     await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                         params.currency);
+                                    const get_requester_primary_supernode = await localbitcoinplusplus.kademlia
+                                        .determineClosestSupernode(params.trader_flo_address);
+                                    const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
                                     let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
                                         params.trader_flo_address, params.product, params.currency,
-                                        request.globalParams.receiverFloId 
+                                        primarySupernodeForThisUser 
                                     );
 
                                     if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
@@ -13493,9 +13503,9 @@
                                                                                     //     Number(parseFloat(
                                                                                     //         btc_eq_receiving_amount
                                                                                     //     )
-                                                                                        .toFixed(
-                                                                                            8
-                                                                                        ));
+                                                                                        // .toFixed(
+                                                                                        //     8
+                                                                                        // ));
                                                                                     res_bal
                                                                                         .crypto_balance -=
                                                                                         EqCryptoWd;
@@ -13822,13 +13832,15 @@
 
                 if (typeof backup_db=="string" && backup_db.length>0) {
                     if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
-                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
-                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
-                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
-                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
-                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
-                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
-                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                        const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        addDB = foreign_db.backup_addDB.bind(foreign_db);
+                        readDB = foreign_db.backup_readDB.bind(foreign_db);
+                        readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                        readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                        removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                        removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                     } else {
                         err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                         showMessage(err_msg);
@@ -13925,13 +13937,15 @@
 
                 if (typeof backup_db=="string" && backup_db.length>0) {
                     if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
-                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
-                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
-                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
-                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
-                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
-                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
-                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                        const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        addDB = foreign_db.backup_addDB.bind(foreign_db);
+                        readDB = foreign_db.backup_readDB.bind(foreign_db);
+                        readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                        readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                        removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                        removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                     } else {
                         err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                         showMessage(err_msg);
@@ -14238,13 +14252,15 @@
             createTradePipes(trading_currency = "USD", backup_db="") {
                 if (typeof backup_db=="string" && backup_db.length>0) {
                     if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
-                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
-                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
-                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
-                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
-                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
-                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
-                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                        const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        addDB = foreign_db.backup_addDB.bind(foreign_db);
+                        readDB = foreign_db.backup_readDB.bind(foreign_db);
+                        readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                        readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                        removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                        removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                     } else {
                         err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                         showMessage(err_msg);
@@ -14317,13 +14333,15 @@
             launchTrade(buyPipeObj, sellPipeObj, callback, backup_db="") {
                 if (typeof backup_db=="string" && backup_db.length>0) {
                     if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
-                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
-                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
-                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
-                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
-                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
-                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
-                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                        const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        addDB = foreign_db.backup_addDB.bind(foreign_db);
+                        readDB = foreign_db.backup_readDB.bind(foreign_db);
+                        readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                        readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                        removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                        removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                     } else {
                         err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                         showMessage(err_msg);
@@ -14618,13 +14636,15 @@
 
                 if (typeof backup_db=="string" && backup_db.length>0) {
                     if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
-                        readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
-                        readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
-                        readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
-                        updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
-                        removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
-                        removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
-                        removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                        const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        addDB = foreign_db.backup_addDB.bind(foreign_db);
+                        readDB = foreign_db.backup_readDB.bind(foreign_db);
+                        readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                        readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                        removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                        removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                     } else {
                         err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                         showMessage(err_msg);
@@ -15683,14 +15703,15 @@
 
                                             backup_server_db_instance.backup_readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val)
                                             .then(function (res) {
+                                                let send_pvtkey_req = null;
                                                 if (typeof res=="object") {
-                                                    let send_pvtkey_req = RM_RPC
+                                                    send_pvtkey_req = RM_RPC
                                                     .send_rpc
                                                     .call(this, "retrieve_shamirs_secret_supernode_pvtkey", {
                                                         private_key_chunk: res
                                                     });
                                                 } else {
-                                                    let send_pvtkey_req = RM_RPC
+                                                    send_pvtkey_req = RM_RPC
                                                     .send_rpc
                                                     .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "");
                                                 }
@@ -15894,6 +15915,7 @@
                     setTimeout(function(){ 
                         if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
                         || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1) {
+                            const RM_WALLET = new localbitcoinplusplus.wallets;
                             RM_WALLET.manually_assign_my_private_key();
                             loadExternalFiles();
                             dataBaseUIOperations();
@@ -15988,7 +16010,7 @@
                         || typeof res_obj.globalParams.receiverFloId !== "string" 
                         || res_obj.globalParams.receiverFloId !== 
                         localbitcoinplusplus.wallets.my_local_flo_address) {
-                            showMessage(`WARNING: Incomplete onMessage request received.`);
+                            console.warn(`WARNING: Incomplete onMessage request received.`);
                         return;
                     }
 
@@ -17761,10 +17783,13 @@
                                             throw new Error(backup_db_error_msg);
                                         };
                                         backup_server_db_instance.backup_readDBbyIndex("deposit", 'status', 1).then(function (res) {
-                                            res.map(function (deposit_trade) {
+                                            res.map(async function (deposit_trade) {
                                                 if (localbitcoinplusplus.master_configurations.tradableAsset1
                                                     .includes(deposit_trade.product)) {
-                                                    validateDepositedBTCBalance(deposit_trade, res_obj.params[0].trader_flo_address);
+                                                    const get_requester_primary_supernode = await localbitcoinplusplus.kademlia
+                                                      .determineClosestSupernode(res_obj.params[0].trader_flo_address);
+                                                    const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
+                                                    validateDepositedBTCBalance(deposit_trade, primarySupernodeForThisUser);
                                                 }
                                             });
                                         });
@@ -19854,13 +19879,15 @@
 
             if (typeof backup_db=="string" && backup_db.length>0) {
                 if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
-                    readDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDB;
-                    readDBbyIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readDBbyIndex;
-                    readAllDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_readAllDB;
-                    updateinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_updateinDB;
-                    removeinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeinDB;
-                    removeByIndex = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeByIndex;
-                    removeAllinDB = localbitcoinplusplus.newBackupDatabase.db[backup_db].backup_removeAllinDB;
+                    const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        addDB = foreign_db.backup_addDB.bind(foreign_db);
+                        readDB = foreign_db.backup_readDB.bind(foreign_db);
+                        readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                        readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                        removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                        removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                 } else {
                     err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                     showMessage(err_msg);
