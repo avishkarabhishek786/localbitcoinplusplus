@@ -10443,7 +10443,7 @@
                     }
                 });
             },
-            determineClosestSupernode: function(flo_addr, n=1, KB=supernodeKBucket) {
+            determineClosestSupernode: function(flo_addr="", n=1, KB=supernodeKBucket, su="") {
                 return new Promise((resolve, reject)=>{
                     let msg = ``;
                     if (typeof supernodeKBucket !== "object") {
@@ -10452,8 +10452,25 @@
                         reject(msg);
                         return false;
                     }
+
+                    if (su.length>0) {
+                        try {
+                            let closestSupernodeMasterList = supernodeKBucket.closest(supernodeKBucket.localNodeId);
+                            const index = closestSupernodeMasterList.findIndex(f=>f.data.id==su);
+                            closestSupernodeMasterList.splice(0, index);
+                            resolve(closestSupernodeMasterList);
+                            return true;
+                        } catch (error) {
+                            reject(error);
+                        }
+                        return false;
+                    }
                     
                     try {
+                        if(flo_addr.length < 0) {
+                            showMessage(`WARNING: No Flo Id provided to determine closest Supenode.`);
+                            return;
+                        }
                         let isFloIdUint8 = flo_addr instanceof Uint8Array;
                         if (!isFloIdUint8) {
                             flo_addr = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', flo_addr);
@@ -11117,14 +11134,6 @@
                 if (typeof params[0].receiver_flo_address == "string") {
                     request.globalParams.receiverFloId = params[0].receiver_flo_address;
                 }
-
-                /********************************************************************************/
-
-                // MUST REVIEW. 
-                // THIS LOGIC IS WRONG WHEN BACKUP SUPERNODE IS ACTING SUPERNODE
-                // BECAUSE IT WILL SHOW BACKUP SU IN request.globalParams.primarySupernode BELOW 
-
-                /********************************************************************************/
 
                 if (typeof params[0].trader_flo_address !=="string") {
                     readDB('localbitcoinUser', '00-01').then(result=>{
@@ -17786,10 +17795,7 @@
                                             res.map(async function (deposit_trade) {
                                                 if (localbitcoinplusplus.master_configurations.tradableAsset1
                                                     .includes(deposit_trade.product)) {
-                                                    const get_requester_primary_supernode = await localbitcoinplusplus.kademlia
-                                                      .determineClosestSupernode(res_obj.params[0].trader_flo_address);
-                                                    const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
-                                                    validateDepositedBTCBalance(deposit_trade, primarySupernodeForThisUser);
+                                                    validateDepositedBTCBalance(deposit_trade, primarySupernodeOfThisUser);
                                                 }
                                             });
                                         });
@@ -18177,7 +18183,7 @@
                                                     // You have the latest data, send it to other supernodes
 
                                                     let getNextClosestSuObj = await localbitcoinplusplus.kademlia
-                                                    .determineClosestSupernode(req_dt.leaving_supernode_flo_id, 3);
+                                                    .determineClosestSupernode("", 3, supernodeKBucket, req_dt.leaving_supernode_flo_id);
                                                     let nextBackupSupernode = getNextClosestSuObj[1].data.id;
 
                                                     if (typeof nextBackupSupernode !== "string") {
@@ -20097,7 +20103,7 @@
 
         reactor.addEventListener('requestSupernodeToActAsBackupServerForRequestingUserNode', 
         async function(params) {
-            let getNextClosestSuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(params.leaving_supernode_flo_id, 3);
+            let getNextClosestSuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode("", 3, supernodeKBucket, params.leaving_supernode_flo_id);
             let nextBackupSupernode = getNextClosestSuObj[1].data.id;
 
             if (typeof nextBackupSupernode !== "string") {
@@ -20160,7 +20166,7 @@
                 throw new Error(msg);
             } 
 
-            let getNextClosestSuObjOfPrimarySupernode = await localbitcoinplusplus.kademlia.determineClosestSupernode(primarySupernode, 3);
+            let getNextClosestSuObjOfPrimarySupernode = await localbitcoinplusplus.kademlia.determineClosestSupernode("", 3, supernodeKBucket, primarySupernode);
 
             if (localbitcoinplusplus.wallets.my_local_flo_address !== primarySupernode) return;
 
