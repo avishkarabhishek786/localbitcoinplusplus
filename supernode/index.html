@@ -10400,6 +10400,8 @@
                         let kbuck = this.addNewUserNodeInKbucket("FLO_TEST", seedObj[1].kbucketId, 
                             { id: seedObj[1].kbucketId }, supernodeKBucket);
                     });
+
+                    resolve(true);
                 })
             },
             updateClosestSupernodeSeeds: function(flo_addr) {
@@ -10428,7 +10430,6 @@
                     if (nearestSupernodeAddresslist.length<1) {
                         nearestSupernodeAddresslist = await this.updateClosestSupernodeSeeds(flo_addr);
                     }
-                    //this.restoreSupernodeKBucket(flo_addr, "FLO_TEST", supernodeKBucket);
                     resolve(nearestSupernodeAddresslist);
                 });
             },
@@ -10457,8 +10458,9 @@
                         try {
                             let closestSupernodeMasterList = supernodeKBucket.closest(supernodeKBucket.localNodeId);
                             const index = closestSupernodeMasterList.findIndex(f=>f.data.id==su);
-                            closestSupernodeMasterList.splice(0, index);
-                            resolve(closestSupernodeMasterList);
+                            let tail = closestSupernodeMasterList.splice(0, index);
+                            const newClosestSupernodeMasterList = closestSupernodeMasterList.concat(tail);
+                            resolve(newClosestSupernodeMasterList);
                             return true;
                         } catch (error) {
                             reject(error);
@@ -10487,7 +10489,7 @@
             }, 
             
             addClosestSupernodeInDB: function(flo_addr, KB=KBucket) {
-                return new Promise((resolve, reject)=>{
+                return new Promise(async (resolve, reject)=>{
                     const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
                     if (typeof supernodeSeeds !== "object") reject("Failed to get supernode seeds.");
                     let supernodeSeedsObj = JSON.parse(supernodeSeeds);
@@ -10499,9 +10501,8 @@
                             { id: seedObj[1].kbucketId });
                     });
 
-                    let currentNodeBucketId = localbitcoinplusplus.kademlia
-                        .floIdToKbucketId("FLO_TEST", flo_addr);
-                    let nearestSupernode = KB.closest(currentNodeBucketId, 4);
+                    let primarySu = await this.determineClosestSupernode(flo_addr);
+                    let nearestSupernode = await this.determineClosestSupernode(flo_addr="", n=1, supernodeKBucket, primarySu[0].data.id);
                     let nearestSupernodeIds = nearestSupernode.map(f=>f.data.id);
                     let supernodeSeedsArray = Object.values(supernodeSeedsObj)
                     .filter(seed=>nearestSupernodeIds.includes(seed.kbucketId))
@@ -15000,6 +15001,8 @@
                                 throw new Error(kmsg);
                             }
 
+                            await localbitcoinplusplus.kademlia.restoreSupernodeKBucket();
+
                             wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(
                                 localbitcoinplusplusObj.myLocalFLOAddress);
 
@@ -15009,8 +15012,6 @@
                                     "FLO_TEST", d.trader_flo_address, { id: d.trader_flo_address })
                                 showMessage(`INFO: Added Supernode Id ${d.trader_flo_address} to KBucket.`);
                             });
-
-                            localbitcoinplusplus.kademlia.restoreSupernodeKBucket();
 
                             await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
 
@@ -15065,6 +15066,8 @@
                         throw new Error(kmsg);
                     }
 
+                    await localbitcoinplusplus.kademlia.restoreSupernodeKBucket();
+
                     wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
 
                     if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
@@ -15081,8 +15084,6 @@
                             "FLO_TEST", d.trader_flo_address, { id: d.trader_flo_address })
                         showMessage(`INFO: Added Supernode Id ${d.trader_flo_address} to KBucket.`);
                     });
-
-                    localbitcoinplusplus.kademlia.restoreSupernodeKBucket();
 
                     // Connect with primary supernodes
                     await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
@@ -15967,15 +15968,36 @@
 
         function onClose(evt) {
 
-            reactor.addEventListener('primary_supernode_down', function() {
+            reactor.addEventListener('primary_supernode_down', async function() {
                 showMessage(`INFO: Disconnected to Supernode server: ${evt.srcElement.url}`);
                 writeToScreen("DISCONNECTED");
                 
                 const switchMyWS = new backupSupernodesWebSocketObject();
                 switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
-                showMessage(`INFO: Waiting for primary Supernode connection to come back within 20 seconds.`);
-                localbitcoinplusplus.actions.delay(20000).then(async ()=>{
-                    const disconnectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
+                const disconnectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
+                showMessage(`INFO: Waiting for primary Supernode connection to come back within 30sec.`);
+                // Meanwhile, request backup supernodes to sync data for down supernode in their resp. db.
+                if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                    reactor.dispatchEvent('requestNextBackupSupernodeToSyncDataBeforeActingAsBackupSupernodeNode', {
+                        requesting_user_id: localbitcoinplusplus.wallets.my_local_flo_address,
+                        leaving_supernode_flo_id: disconnectedWSServerFloId
+                    });
+
+                    let server_response = RM_RPC
+                    .send_rpc
+                    .call(this, "requestNextBackupSupernodeToSyncDataBeforeActingAsBackupSupernodeNode", {
+                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
+                        //receiver_flo_address: ,
+                    });
+                    doSend(server_response);     
+                    // On receiving req, 
+                    // Calc primary of the user
+                    // check if you are the most eligible backup su
+                    // Check if primary is dead 
+                    // Start syncing data
+                }
+                localbitcoinplusplus.actions.delay(30000).then(async ()=>{
                     const getSubjectSupernodeDetails = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', disconnectedWSServerFloId);
                     if (typeof getSubjectSupernodeDetails=="object" && getSubjectSupernodeDetails[0].is_live!==true) {
                         showMessage(`INFO: Connection to primary Supernode failed. Attempting to connect to secondary Supernode.`);
@@ -20044,7 +20066,7 @@
         reactor.registerEvent('backup_supernode_down');
         reactor.registerEvent('fireNodeWelcomeBackEvent');
         reactor.registerEvent('fireNodeGoodByeEvent');
-        reactor.registerEvent('requestSupernodeToActAsBackupServerForRequestingUserNode');
+        reactor.registerEvent('requestNextBackupSupernodeToSyncDataBeforeActingAsBackupSupernodeNode');
         reactor.registerEvent('primarySupernodeUpdatingLatestDataForItsUserFromOtherSupernodes');
         
         reactor.addEventListener('fireNodeWelcomeBackEvent', function(evt) {
@@ -20101,9 +20123,11 @@
             });
         });
 
-        reactor.addEventListener('requestSupernodeToActAsBackupServerForRequestingUserNode', 
+        reactor.addEventListener('requestNextBackupSupernodeToSyncDataBeforeActingAsBackupSupernodeNode', 
         async function(params) {
-            let getNextClosestSuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode("", 3, supernodeKBucket, params.leaving_supernode_flo_id);
+            let getNextClosestSuObj = await localbitcoinplusplus.kademlia
+            .determineClosestSupernode("", 3, supernodeKBucket, params.leaving_supernode_flo_id);
+            
             let nextBackupSupernode = getNextClosestSuObj[1].data.id;
 
             if (typeof nextBackupSupernode !== "string") {
@@ -20124,7 +20148,9 @@
                             throw new Error(msg);
                         }
 
-                        const table_array = ['cash_balances'];
+                        const table_array = ["deposit", "withdraw_cash", "withdraw_btc",
+                            "crypto_balances", "cash_balances", "sellOrders", "buyOrders",
+                        ];
 
                         table_array.map(async tbl=>{
                             let record = await nextSuConn.backup_readDBbyIndex(tbl, 'trader_flo_address', params.requesting_user_id);
