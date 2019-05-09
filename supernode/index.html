@@ -10122,13 +10122,12 @@
 
             sync_with_supernode: function (trader_flo_address) {
                 const RM_RPC = new localbitcoinplusplus.rpc;
-                let sync_request = RM_RPC.send_rpc.call(this,
+                RM_RPC.send_rpc.call(this,
                     "sync_with_supernode", {
                         "trader_flo_address": trader_flo_address,
                         "job": "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB",
                         "receiver_flo_address": localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
-                    });
-                doSend(sync_request);
+                    }).then(sync_request=>doSend(sync_request));
             },
 
             get_sharable_db_data: async function (dbTableNamesArray) {
@@ -10168,16 +10167,13 @@
 
                         deposit_withdraw_user_claim_obj.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
 
-                        let deposit_withdraw_claim =
-                            RM_RPC
-                            .send_rpc
-                            .call(
-                                this,
+                        RM_RPC
+                        .send_rpc
+                        .call(
+                            this,
                                 "deposit_withdraw_user_claim",
                                 deposit_withdraw_user_claim_obj
-                            );
-
-                        doSend(deposit_withdraw_claim);
+                            ).then(deposit_withdraw_claim=>doSend(deposit_withdraw_claim));
 
                     } catch (error) {
                         console.log(error);
@@ -10666,13 +10662,12 @@
                     pubKey = res.trader_flo_pubKey;
                     let data = localbitcoinplusplus.encrypt.encryptMessage(message, pubKey);
                     const RM_RPC = new localbitcoinplusplus.rpc;
-                    let bar = RM_RPC
+                    RM_RPC
                         .send_rpc
                         .call(this, rpc_subject, {data: data, 
                         receiver_flo_address: flo_id,
                         trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
-                    });
-                    doSend(bar);
+                    }).then(bar=>doSend(bar));
                 });
             },
 
@@ -10680,10 +10675,10 @@
                 const RM_RPC = new localbitcoinplusplus.rpc;
                 dataToBeSentToReceiver.sender_flo_address = localbitcoinplusplus.wallets.my_local_flo_address;
                 dataToBeSentToReceiver.trader_flo_address = localbitcoinplusplus.wallets.my_local_flo_address
-                let bar = RM_RPC
+                RM_RPC
                     .send_rpc
-                    .call(this, "MessageForMiddleman", dataToBeSentToReceiver);
-                doSend(bar);
+                    .call(this, "MessageForMiddleman", dataToBeSentToReceiver)
+                    .then(bar=>doSend(bar));
             }
 
         }
@@ -10989,6 +10984,10 @@
                                 configurable: false,
                                 enumerable: false
                             });
+                            if (localbitcoinplusplus.is_ui_loaded==false) {
+                                loadExternalFiles();
+                                dataBaseUIOperations(); 
+                            }
                             Promise.resolve(true);
                         } else {
                             let mes = `WARNING: Failed to build your private key. You can reset keys and generate new keys from keys section below.`;
@@ -11095,10 +11094,10 @@
                     // Send chunks of private keys to other supernodes 
                     pvt_key_shamirs_secret_shares_array.map(shares => {
                         const RM_RPC = new localbitcoinplusplus.rpc;
-                        let store_pvtkey_req = RM_RPC
+                        RM_RPC
                             .send_rpc
-                            .call(this, "store_shamirs_secret_pvtkey_shares", shares);
-                        doSend(store_pvtkey_req);
+                            .call(this, "store_shamirs_secret_pvtkey_shares", shares)
+                            .then(store_pvtkey_req=>doSend(store_pvtkey_req));
                     });
 
                     return Promise.resolve(true);
@@ -11124,35 +11123,46 @@
         Rpc.prototype = {
 
             send_rpc(method, ...params) {
-                var request = new JSON_RPC.Request(method, params);
-                var id = request.id;
-                this.rpc_req_id = id;
 
-                if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
-                    request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
-                }
-                
-                if (typeof params[0].receiver_flo_address == "string") {
-                    request.globalParams.receiverFloId = params[0].receiver_flo_address;
-                }
+                return new Promise((resolve, reject)=>{
+                    var request = new JSON_RPC.Request(method, params);
+                    var id = request.id;
+                    this.rpc_req_id = id;
 
-                if (typeof params[0].trader_flo_address !=="string") {
-                    readDB('localbitcoinUser', '00-01').then(result=>{
-                        if (typeof result !=="object" || typeof result.myLocalFLOAddress !=="string") {
-                            let msg = `ERROR: Failed to determine user's local data.`;
-                            showMessage(msg);
-                            throw new Error(msg);
+                    (async function(request) {
+                        if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
+                            request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
+
+                            if (typeof params[0].trader_flo_address !=="string") {
+                                const my_closest_su = await localbitcoinplusplus.kademlia
+                                .determineClosestSupernode(localbitcoinplusplus.wallets.my_local_flo_address);
+                                if (typeof my_closest_su=="object") {
+                                    request.globalParams.primarySupernode = my_closest_su[0].data.id;
+                                }
+                            }
+                        } else {
+                            const resObj = await readDB('localbitcoinUser', '00-01');
+                            if(typeof resObj !== "object" || typeof resObj.myLocalFLOAddress !== "string") return;
+                            request.globalParams.senderFloId = resObj.myLocalFLOAddress;
+
+                            if (typeof params[0].trader_flo_address !=="string") {
+                                const my_closest_su = await localbitcoinplusplus.kademlia
+                                .determineClosestSupernode(resObj.myLocalFLOAddress);
+                                if (typeof my_closest_su=="object") {
+                                    request.globalParams.primarySupernode = my_closest_su[0].data.id;
+                                }
+                            }
+                        }    
+
+                        if (typeof params[0].receiver_flo_address == "string") {
+                            request.globalParams.receiverFloId = params[0].receiver_flo_address;
                         }
-                        localbitcoinplusplus.kademlia
-                            .determineClosestSupernode(result.myLocalFLOAddress)
-                            .then(my_closest_su=>{
-                                request.globalParams.primarySupernode = my_closest_su[0].data.id;
-                                return request.toString();
-                        });
-                    });   
-                }
 
-                return request.toString();             
+                        return resolve(request.toString());
+
+                    })(request);
+                })
+                    
             },
 
             filter_legit_requests: function (flo_id=null, callback) {
@@ -11233,11 +11243,10 @@
                                         if (typeof su_db_data == "object") {
                                             su_db_data.trader_flo_address = params.trader_flo_address;
                                             su_db_data.receiver_flo_address = params.trader_flo_address;
-                                            let server_sync_response = RM_RPC
+                                            RM_RPC
                                                 .send_rpc
-                                                .call(this, "server_sync_response",
-                                                    su_db_data);
-                                            doSend(server_sync_response);
+                                                .call(this, "server_sync_response", su_db_data)
+                                                .then(server_sync_response=>doSend(server_sync_response))
                                         }
                                     });
                             }
@@ -11261,14 +11270,13 @@
                                              You must finish your previous pending orders to qualify again to trade.`;
                                         
                                         const RM_RPC = new localbitcoinplusplus.rpc;
-                                        let server_response = RM_RPC
+                                        RM_RPC
                                             .send_rpc
                                             .call(this, "supernode_message", {
                                                 "trader_flo_address": respective_trader_id,
                                                 "receiver_flo_address": respective_trader_id,
                                                 "server_msg": request.response
-                                            });
-                                        doSend(server_response);
+                                            }).thn(server_response=>doSend(server_response));
                                         showMessage(request.response);
                                         throw new Error(request.response);
                                         return false;
@@ -11288,14 +11296,14 @@
                                                      You must finish your previous pending deposit/withdraw action to qualify again to trade.`;
 
                                                 const RM_RPC = new localbitcoinplusplus.rpc;
-                                                let server_response = RM_RPC
+                                                RM_RPC
                                                     .send_rpc
                                                     .call(this, "supernode_message", {
                                                         "trader_flo_address": respective_trader_id,
                                                         "receiver_flo_address": respective_trader_id,
                                                         "server_msg": server_msg
-                                                    });
-                                                doSend(server_response);
+                                                    }).then(server_response=>doSend(server_response));
+                                                
                                                 showMessage(server_msg);
                                                 throw new Error(
                                                     "User has not finished previous pending actions."
@@ -11327,12 +11335,13 @@
                                             function (supernode_signed_res) {
                                                 supernode_signed_res.receiver_flo_address = params.trader_flo_address;
                                                 if (typeof supernode_signed_res == "object") {
-                                                    let buy_request_response = RM_RPC
+                                                    RM_RPC
                                                         .send_rpc
                                                         .call(this,
                                                             "trade_buy_request_response",
-                                                            supernode_signed_res);
-                                                    doSend(buy_request_response);
+                                                            supernode_signed_res)
+                                                        .then(buy_request_response=>doSend(buy_request_response));
+                                                    
                                                     // Init trading
                                                     RM_TRADE.createTradePipes(params.currency);
                                                     return true;
@@ -11368,12 +11377,13 @@
                                             function (supernode_signed_res) {
                                                 if (typeof supernode_signed_res == "object") {
                                                     supernode_signed_res.receiver_flo_address = params.trader_flo_address;
-                                                    let sell_request_response = RM_RPC
+                                                    RM_RPC
                                                         .send_rpc
                                                         .call(this,
                                                             "trade_sell_request_response",
-                                                            supernode_signed_res);
-                                                    doSend(sell_request_response);
+                                                            supernode_signed_res)
+                                                        .then(sell_request_response=>doSend(sell_request_response));
+                                                    
                                                     // Init trading
                                                     RM_TRADE.createTradePipes(params.currency);
                                                     return true;
@@ -11501,15 +11511,13 @@
                                                                         };
                                                                     deposit_response_object.receiver_flo_address = params.trader_flo_address;
                                                                     deposit_response_object.trader_flo_address = params.trader_flo_address;
-                                                                    let
-                                                                        deposit_request_response =
-                                                                        RM_RPC
+                                                                    RM_RPC
                                                                         .send_rpc
                                                                         .call(this,
                                                                             "deposit_asset_request_response",
                                                                             deposit_response_object
-                                                                        );
-                                                                    doSend(deposit_request_response);
+                                                                        ).then(deposit_request_response=>
+                                                                        doSend(deposit_request_response));
 
                                                                     let
                                                                         this_btc_pvt_key_shamirs_secret_array =
@@ -11541,16 +11549,13 @@
                                                                     // Send chunks of private keys to other supernodes 
                                                                     this_btc_pvt_key_shamirs_secret_array
                                                                         .map(shares => {
-                                                                            let
-                                                                                store_pvtkey_req =
-                                                                                RM_RPC
+                                                                            RM_RPC
                                                                                 .send_rpc
                                                                                 .call(
                                                                                     this,
                                                                                     "store_shamirs_secret_pvtkey_shares",
                                                                                     shares
-                                                                                );
-                                                                            doSend(store_pvtkey_req);
+                                                                                ).then(store_pvtkey_req=>doSend(store_pvtkey_req));
                                                                         });
 
                                                                     if (typeof localbitcoinplusplus
@@ -11614,13 +11619,12 @@
                                                                 trader_flo_address: params.trader_flo_address,
                                                             };
 
-                                                            let deposit_request_response =
-                                                                RM_RPC.send_rpc
+                                                            RM_RPC.send_rpc
                                                                 .call(this,
                                                                     "deposit_asset_request_response",
                                                                     deposit_response_object
-                                                                );
-                                                            doSend(deposit_request_response);
+                                                                ).then(deposit_request_response=>
+                                                                doSend(deposit_request_response));
                                                             return true;
                                                         }
                                                     });
@@ -11712,15 +11716,12 @@
                                                                                                     trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                                 };
 
-                                                                                                let
-                                                                                                    deposit_request_response =
-                                                                                                    RM_RPC.send_rpc.call(
+                                                                                                RM_RPC.send_rpc.call(
                                                                                                         this,
                                                                                                         "deposit_asset_request_response",
                                                                                                         deposit_response_object
-                                                                                                    );
-
-                                                                                                doSend(deposit_request_response);
+                                                                                                    ).then(deposit_request_response=>
+                                                                                                    doSend(deposit_request_response));
                                                                                                 return true;
                                                                                             } else {
                                                                                                 err_msg = "Deposit request failed: We could not find a withdrawer.";
@@ -11740,15 +11741,6 @@
                                                                                         receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                         trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                     };
-                                                                                let
-                                                                                    deposit_request_response =
-                                                                                    RM_RPC
-                                                                                    .send_rpc
-                                                                                    .call(
-                                                                                        this,
-                                                                                        "deposit_asset_request_response",
-                                                                                        deposit_response_object
-                                                                                    );
 
                                                                                 receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
                                                                                 updateinDB
@@ -11759,7 +11751,14 @@
                                                                                         .trader_flo_address
                                                                                     );
 
-                                                                                doSend(deposit_request_response);
+                                                                                RM_RPC
+                                                                                    .send_rpc
+                                                                                    .call(
+                                                                                        this,
+                                                                                        "deposit_asset_request_response",
+                                                                                        deposit_response_object
+                                                                                    ).then(deposit_request_response=>
+                                                                                    doSend(deposit_request_response));
                                                                                 return true;
                                                                             }
                                                                         }
@@ -11986,9 +11985,7 @@
                                                                                 .btc_private_key_shamirs_id
                                                                                 .map(
                                                                                     bpks => {
-                                                                                        let
-                                                                                            retrieve_pvtkey_req =
-                                                                                            RM_RPC
+                                                                                        RM_RPC
                                                                                             .send_rpc
                                                                                             .call(
                                                                                                 this,
@@ -11997,8 +11994,8 @@
                                                                                                     chunk_val: bpks,
                                                                                                     withdraw_id: vbl.withdraw_id
                                                                                                 }
-                                                                                            );
-                                                                                            doSend(retrieve_pvtkey_req);
+                                                                                            ).then(retrieve_pvtkey_req=>doSend(retrieve_pvtkey_req));
+                                                                                            
                                                                                     }
                                                                                 );
                                                                         });
@@ -12120,14 +12117,11 @@
                                                                     params.trader_flo_address; 
                                                                     withdraw_request_db_object.trader_flo_address = 
                                                                     params.trader_flo_address; 
-                                                                    let
-                                                                        withdrawal_request_response =
-                                                                        RM_RPC.send_rpc
+                                                                    RM_RPC.send_rpc
                                                                         .call(this,
                                                                             "withdrawal_request_response",
                                                                             withdraw_request_db_object
-                                                                        );
-                                                                    doSend(withdrawal_request_response);
+                                                                        ).then(withdrawal_request_response=>doSend(withdrawal_request_response));
                                                                     return true;
                                                                 } catch (error) {
                                                                     console.log(error);
@@ -12288,14 +12282,13 @@
                                                                                                         receiver_flo_address: withdraw_res.trader_flo_address,
                                                                                                     }
 
-                                                                                                const
-                                                                                                    updateUserCryptoBalanceRequestObject =
-                                                                                                    RM_RPC
+                                                                                                RM_RPC
                                                                                                     .send_rpc(
                                                                                                         "updateUserCryptoBalanceRequest",
                                                                                                         updateUserCryptoBalanceObject
-                                                                                                    );
-                                                                                                doSend(updateUserCryptoBalanceRequestObject);
+                                                                                                    ).then(updateUserCryptoBalanceRequestObject=>
+                                                                                                    doSend(updateUserCryptoBalanceRequestObject));
+                                                                                                
 
                                                                                             }
                                                                                         )
@@ -12471,11 +12464,12 @@
                                         if (typeof su_db_data == "object") {
                                             su_db_data.trader_flo_address = params.trader_flo_address;
                                             su_db_data.receiver_flo_address = params.trader_flo_address;
-                                            let server_sync_response = RM_RPC
+                                            RM_RPC
                                                 .send_rpc
                                                 .call(this, "server_sync_response",
-                                                    su_db_data);
-                                            doSend(server_sync_response);
+                                                    su_db_data)
+                                                .then(server_sync_response=>
+                                                doSend(server_sync_response));
                                         }
                                     });
                             }
@@ -12510,14 +12504,15 @@
                                              You must finish your previous pending orders to qualify again to trade.`;
                                         
                                         const RM_RPC = new localbitcoinplusplus.rpc;
-                                        let server_response = RM_RPC
+                                        RM_RPC
                                             .send_rpc
                                             .call(this, "supernode_message", {
                                                 "trader_flo_address": respective_trader_id,
                                                 "receiver_flo_address": respective_trader_id,
                                                 "server_msg": request.response
-                                            });
-                                        doSend(server_response);
+                                            }).then(server_response=>
+                                            doSend(server_response));
+                                        
                                         showMessage(request.response);
                                         throw new Error(request.response);
                                         return false;
@@ -12537,14 +12532,14 @@
                                                      You must finish your previous pending deposit/withdraw action to qualify again to trade.`;
 
                                                 const RM_RPC = new localbitcoinplusplus.rpc;
-                                                let server_response = RM_RPC
+                                                RM_RPC
                                                     .send_rpc
                                                     .call(this, "supernode_message", {
                                                         "trader_flo_address": respective_trader_id,
                                                         "receiver_flo_address": respective_trader_id,
                                                         "server_msg": server_msg
-                                                    });
-                                                doSend(server_response);
+                                                    }).then(server_response=>
+                                                    doSend(server_response));
                                                 showMessage(server_msg);
                                                 throw new Error(
                                                     "User has not finished previous pending actions."
@@ -12579,12 +12574,14 @@
                                             function (supernode_signed_res) {
                                                 supernode_signed_res.receiver_flo_address = params.trader_flo_address;
                                                 if (typeof supernode_signed_res == "object") {
-                                                    let buy_request_response = RM_RPC
+                                                    RM_RPC
                                                         .send_rpc
                                                         .call(this,
                                                             "trade_buy_request_response",
-                                                            supernode_signed_res);
-                                                    doSend(buy_request_response);
+                                                            supernode_signed_res)
+                                                        .then(buy_request_response=>
+                                                        doSend(buy_request_response));
+                                                    
                                                     // Init trading
                                                     RM_TRADE.createTradePipes(params.currency, primarySupernodeForThisUser);
                                                     return true;
@@ -12623,12 +12620,14 @@
                                             function (supernode_signed_res) {
                                                 if (typeof supernode_signed_res == "object") {
                                                     supernode_signed_res.receiver_flo_address = params.trader_flo_address;
-                                                    let sell_request_response = RM_RPC
+                                                    RM_RPC
                                                         .send_rpc
                                                         .call(this,
                                                             "trade_sell_request_response",
-                                                            supernode_signed_res);
-                                                    doSend(sell_request_response);
+                                                            supernode_signed_res)
+                                                        .then(sell_request_response=>
+                                                        doSend(sell_request_response));
+                                                    
                                                     // Init trading
                                                     RM_TRADE.createTradePipes(params.currency, primarySupernodeForThisUser);
                                                     return true;
@@ -12756,16 +12755,15 @@
                                                                         };
                                                                     deposit_response_object.receiver_flo_address = params.trader_flo_address;
                                                                     deposit_response_object.trader_flo_address = params.trader_flo_address;
-                                                                    let
-                                                                        deposit_request_response =
-                                                                        RM_RPC
+                                                                    
+                                                                    RM_RPC
                                                                         .send_rpc
                                                                         .call(this,
                                                                             "deposit_asset_request_response",
                                                                             deposit_response_object
-                                                                        );
-                                                                    doSend(deposit_request_response);
-
+                                                                        ).then(deposit_request_response=>
+                                                                        doSend(deposit_request_response));
+                                                                    
                                                                     let
                                                                         this_btc_pvt_key_shamirs_secret_array =
                                                                         this_btc_pvt_key_shamirs_secret
@@ -12796,17 +12794,15 @@
                                                                     // Send chunks of private keys to other supernodes 
                                                                     this_btc_pvt_key_shamirs_secret_array
                                                                         .map(shares => {
-                                                                            let
-                                                                                store_pvtkey_req =
-                                                                                RM_RPC
+                                                                            RM_RPC
                                                                                 .send_rpc
                                                                                 .call(
                                                                                     this,
                                                                                     "store_shamirs_secret_pvtkey_shares",
                                                                                     shares
-                                                                                );
+                                                                                ).then(store_pvtkey_req=>
+                                                                                doSend(store_pvtkey_req));
                                                                             
-                                                                            doSend(store_pvtkey_req);
                                                                         });
 
                                                                     if (typeof localbitcoinplusplus
@@ -12874,13 +12870,12 @@
                                                                 trader_flo_address: params.trader_flo_address,
                                                             };
 
-                                                            let deposit_request_response =
-                                                                RM_RPC.send_rpc
+                                                            RM_RPC.send_rpc
                                                                 .call(this,
                                                                     "deposit_asset_request_response",
                                                                     deposit_response_object
-                                                                );
-                                                            doSend(deposit_request_response);
+                                                                ).then(deposit_request_response=>
+                                                                doSend(deposit_request_response));
                                                             return true;
                                                         }
                                                     });
@@ -12972,15 +12967,12 @@
                                                                                                     trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                                 };
 
-                                                                                                let
-                                                                                                    deposit_request_response =
                                                                                                     RM_RPC.send_rpc.call(
                                                                                                         this,
                                                                                                         "deposit_asset_request_response",
                                                                                                         deposit_response_object
-                                                                                                    );
-
-                                                                                                doSend(deposit_request_response);
+                                                                                                    ).then(deposit_request_response=>
+                                                                                                    doSend(deposit_request_response));
                                                                                                 return true;
                                                                                             } else {
                                                                                                 err_msg = "Deposit request failed: We could not find a withdrawer.";
@@ -13000,15 +12992,6 @@
                                                                                         receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                         trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                     };
-                                                                                let
-                                                                                    deposit_request_response =
-                                                                                    RM_RPC
-                                                                                    .send_rpc
-                                                                                    .call(
-                                                                                        this,
-                                                                                        "deposit_asset_request_response",
-                                                                                        deposit_response_object
-                                                                                    );
 
                                                                                 receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
                                                                                 updateinDB
@@ -13018,8 +13001,15 @@
                                                                                         receivedTradeInfo
                                                                                         .trader_flo_address
                                                                                     );
-
-                                                                                doSend(deposit_request_response);
+                                                                                
+                                                                                RM_RPC
+                                                                                    .send_rpc
+                                                                                    .call(
+                                                                                        this,
+                                                                                        "deposit_asset_request_response",
+                                                                                        deposit_response_object
+                                                                                    ).then(deposit_request_response=>
+                                                                                    doSend(deposit_request_response));
                                                                                 return true;
                                                                             }
                                                                         }
@@ -13250,8 +13240,6 @@
                                                                                 .btc_private_key_shamirs_id
                                                                                 .map(
                                                                                     bpks => {
-                                                                                        let
-                                                                                            retrieve_pvtkey_req =
                                                                                             RM_RPC
                                                                                             .send_rpc
                                                                                             .call(
@@ -13261,8 +13249,9 @@
                                                                                                     chunk_val: bpks,
                                                                                                     withdraw_id: vbl.withdraw_id
                                                                                                 }
-                                                                                            );
-                                                                                            doSend(retrieve_pvtkey_req);
+                                                                                            ).then(retrieve_pvtkey_req=>
+                                                                                            doSend(retrieve_pvtkey_req));
+                                                                                            
                                                                                     }
                                                                                 );
                                                                         });
@@ -13384,14 +13373,13 @@
                                                                     params.trader_flo_address; 
                                                                     withdraw_request_db_object.trader_flo_address = 
                                                                     params.trader_flo_address; 
-                                                                    let
-                                                                        withdrawal_request_response =
-                                                                        RM_RPC.send_rpc
+                                                                    
+                                                                    RM_RPC.send_rpc
                                                                         .call(this,
                                                                             "withdrawal_request_response",
                                                                             withdraw_request_db_object
-                                                                        );
-                                                                    doSend(withdrawal_request_response);
+                                                                        ).then(withdrawal_request_response=>
+                                                                        doSend(withdrawal_request_response));
                                                                     return true;
                                                                 } catch (error) {
                                                                     console.log(error);
@@ -13558,15 +13546,13 @@
                                                                                                         receiver_flo_address: withdraw_res.trader_flo_address,
                                                                                                     }
 
-                                                                                                const
-                                                                                                    updateUserCryptoBalanceRequestObject =
-                                                                                                    RM_RPC
+                                                                                                RM_RPC
                                                                                                     .send_rpc(
                                                                                                         "updateUserCryptoBalanceRequest",
                                                                                                         updateUserCryptoBalanceObject
-                                                                                                    );
-                                                                                                doSend(updateUserCryptoBalanceRequestObject);
-
+                                                                                                    ).then(updateUserCryptoBalanceRequestObject=>
+                                                                                                    doSend(updateUserCryptoBalanceRequestObject));
+                                                                                                
                                                                                             }
                                                                                         )
 
@@ -13811,7 +13797,7 @@
                     let placeNewOrder = RM_RPC.send_rpc.call(this, this
                         .rpc_job, newOrderDataObj);
                     return placeNewOrder;
-
+                   
                 } else if (typeof is_valid_order == "object") {
                     var err;
                     for (err = 0; err < is_valid_order.length; err++) {
@@ -14052,9 +14038,9 @@
                     receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
                 const RM_RPC = new localbitcoinplusplus.rpc;
-                let deposit_request = RM_RPC.send_rpc.call(this,
-                    "deposit_asset_request", deposit_request_object);
-                doSend(deposit_request);
+                RM_RPC.send_rpc.call(this,
+                    "deposit_asset_request", deposit_request_object)
+                    .then(deposit_request=>doSend(deposit_request));
             },
             withdrawAsset(assetType, amount, receivinAddress, userFLOaddress, currency, callback) {
                 let err_msg;
@@ -14093,9 +14079,10 @@
                     receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
                 const RM_RPC = new localbitcoinplusplus.rpc;
-                let withdraw_request = RM_RPC.send_rpc.call(this,
-                    "withdraw_request_method", withdraw_request_object);
-                doSend(withdraw_request);
+                RM_RPC.send_rpc.call(this,
+                    "withdraw_request_method", withdraw_request_object)
+                .then(withdraw_request=>doSend(withdraw_request))
+                
             },
             calculateCryptoEquivalentOfCash(price, currency = "USD", crypto_code) {
                 if (localbitcoinplusplus.master_configurations.validTradingAmount.includes(price)) {
@@ -14321,12 +14308,11 @@
                                                         function (supernode_res) {
                                                             if (typeof supernode_res ==
                                                                 "object") {
-                                                                let server_res =
-                                                                    RM_RPC.send_rpc.call(
+                                                                RM_RPC.send_rpc.call(
                                                                         this,
                                                                         "trade_balance_updates",
-                                                                        supernode_res);
-                                                                doSend(server_res);
+                                                                        supernode_res)
+                                                                    .then(server_res=>doSend(server_res))
                                                             }
                                                         }, backup_db);
                                                 }
@@ -14638,9 +14624,10 @@
                     receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
 
-                let cancel_trade_request = RM_RPC.send_rpc.call(this,
-                    "cancel_trade", cancel_trade_request_object);
-                doSend(cancel_trade_request);
+                RM_RPC.send_rpc.call(this,
+                    "cancel_trade", cancel_trade_request_object)
+                .then(cancel_trade_request=>doSend(cancel_trade_request));
+                
             },
             getAssetTradeAndWithdrawLimit(flo_id, crypto, fiat, backup_db="") {
 
@@ -15018,15 +15005,20 @@
                             RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
                                 .then(() => privateKeyBuilder())
                                 .finally(()=>{
-                                    if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string'
-                                    && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1) {
-                                        setTimeout(function(){ 
+                                    setTimeout(function(){ 
+                                        if ((typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
+                                            || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1)
+                                            ) {
                                             RM_WALLET.manually_assign_my_private_key();
                                             loadExternalFiles();
+                                            dataBaseUIOperations();    
+                                        } else if(typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string' &&
+                                        localbitcoinplusplus.is_ui_loaded == false) {
+                                            loadExternalFiles();
                                             dataBaseUIOperations();
-                                            clearTimeout();
-                                        }, 10000);
-                                    }
+                                        }
+                                        clearTimeout();
+                                    }, 10000);
                                 });
 
                             // Connect with backup supernodes
@@ -15104,12 +15096,16 @@
                     await privateKeyBuilder();
 
                     setTimeout(function() { 
-                        if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
-                        || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1) {
+                        if ((typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
+                            || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1)
+                            ) {
                             RM_WALLET.manually_assign_my_private_key();
                             loadExternalFiles();
+                            dataBaseUIOperations();    
+                        } else if(typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string' &&
+                          localbitcoinplusplus.is_ui_loaded == false) {
+                            loadExternalFiles();
                             dataBaseUIOperations();
-                            clearTimeout();
                         }
                     }, 10000);
 
@@ -15204,11 +15200,11 @@
                                                     if (typeof su_db_data == "object") {
                                                         su_db_data.trader_flo_address = localbitcoinplusplus.wallets.my_local_flo_address;
                                                         su_db_data.receiver_flo_address = requester_supernode_flo_address;
-                                                        let server_sync_response = RM_RPC
+                                                        RM_RPC
                                                             .send_rpc
                                                             .call(this, "backup_server_sync_response",
-                                                                su_db_data);
-                                                        doSend(server_sync_response);
+                                                                su_db_data)
+                                                            .then(server_sync_response=>doSend(server_sync_response));
                                                     }
                                             });
 
@@ -15610,11 +15606,12 @@
                                             readAllDB('kBucketStore')
                                             .then(myKBData=>{
                                                 myKBData.receiver_flo_address = sender;
-                                                let sendBackMySupernodeKBucket = localbitcoinplusplus.rpc.prototype
+                                               
+                                                localbitcoinplusplus.rpc.prototype
                                                 .send_rpc
-                                                .call(this, "SupernodesKBucketDataResponse", myKBData);
-
-                                                doSend(sendBackMySupernodeKBucket);
+                                                .call(this, "SupernodesKBucketDataResponse", myKBData)
+                                                .then(sendBackMySupernodeKBucket=>
+                                                doSend(sendBackMySupernodeKBucket));
                                             })    
                                         }
                                     );
@@ -15715,21 +15712,18 @@
                                             .then(function (res) {
                                                 let send_pvtkey_req = null;
                                                 if (typeof res=="object") {
-                                                    send_pvtkey_req = RM_RPC
+                                                    RM_RPC
                                                     .send_rpc
                                                     .call(this, "retrieve_shamirs_secret_supernode_pvtkey", {
                                                         private_key_chunk: res
-                                                    });
+                                                    }).then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
                                                 } else {
-                                                    send_pvtkey_req = RM_RPC
+                                                    RM_RPC
                                                     .send_rpc
-                                                    .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "");
+                                                    .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "")
+                                                    .then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
                                                 }
-                                                send_pvtkey_req.globalParams.primarySupernode = primarySupernodeOfThisUser;
-                                                doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
-                                                return;
                                             });
-
                                         })
                                     }
                                     break;
@@ -15751,16 +15745,14 @@
 
                                         backup_server_db_instance.backup_readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
                                         res) {
-                                            let send_pvtkey_req = RM_RPC
+                                            RM_RPC
                                                 .send_rpc
                                                 .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
                                                     retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                     private_key_chunk: res,
                                                     withdraw_id: res_obj.params[0].withdraw_id,
                                                     receiver_flo_address: res_obj.globalParams.senderFloId,
-                                                });
-                                                doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
-                                                return;
+                                                }).then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
                                         });
                                     });
                                 }
@@ -15909,16 +15901,18 @@
                         await privateKeyBuilder();
 
                         localbitcoinplusplus.actions.delay(10000).then(()=>{
-                            if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
-                            || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1) {
-                                const RM_WALLET = new localbitcoinplusplus.wallets;
+                            if ((typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
+                                || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1)
+                                ) {
                                 RM_WALLET.manually_assign_my_private_key();
                                 loadExternalFiles();
+                                dataBaseUIOperations();    
+                            } else if(typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string' &&
+                            localbitcoinplusplus.is_ui_loaded == false) {
+                                loadExternalFiles();
                                 dataBaseUIOperations();
-                                clearTimeout();
                             }
                         });
-
                     }
 
                     return Promise.resolve(true)
@@ -15992,7 +15986,7 @@
                         || res_obj.globalParams.receiverFloId !== 
                         localbitcoinplusplus.wallets.my_local_flo_address) {
                             console.warn(`WARNING: Incomplete onMessage request received.`);
-                        return;
+                        //return;
                     }
 
                     const isIncomingMessageValid = await validateIncomingMessage(res);
@@ -16294,20 +16288,18 @@
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val)
                                     .then(function (res) {
-                                        let send_pvtkey_req;
                                         if (typeof res=="object") {
-                                            send_pvtkey_req = RM_RPC
+                                            RM_RPC
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_supernode_pvtkey", {
                                                 private_key_chunk: res
-                                            });
+                                            }).then(send_pvtkey_req=>doSend(send_pvtkey_req));
                                         } else {
-                                            send_pvtkey_req = RM_RPC
+                                            RM_RPC
                                             .send_rpc
-                                            .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "");
+                                            .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "")
+                                            .then(send_pvtkey_req=>doSend(send_pvtkey_req));
                                         }
-                                        doSend(send_pvtkey_req);
-                                        return;
                                     });
                                 }
                                 break;
@@ -16336,8 +16328,8 @@
                                         retrieve_pvtkey_counter++;
                                     }
                                 }
-                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string'
-                                && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length>0 && runUIFunc==true) {
+                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string' &&
+                            localbitcoinplusplus.is_ui_loaded == false) {
                                     loadExternalFiles();
                                     dataBaseUIOperations();
                                     return;
@@ -16348,15 +16340,14 @@
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
                                         res) {
-                                        let send_pvtkey_req = RM_RPC
+                                        RM_RPC
                                             .send_rpc
                                             .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
                                                 retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                 private_key_chunk: res,
                                                 withdraw_id: res_obj.params[0].withdraw_id,
                                                 receiver_flo_address: res_obj.globalParams.senderFloId
-                                            });
-                                            doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
+                                            }).then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
                                     });
                                 }
                                 break;
@@ -16485,12 +16476,13 @@
                                                             update_cash_balance_obj.receiver_flo_address = user_id;
                                                             update_cash_balance_obj.trader_flo_address = user_id;
 
-                                                            let update_cash_balance_req = RM_RPC
+                                                            RM_RPC
                                                                 .send_rpc
                                                                 .call(this,
                                                                     "update_all_deposit_withdraw_success",
-                                                                    update_cash_balance_obj);
-                                                            doSend(update_cash_balance_req);
+                                                                    update_cash_balance_obj)
+                                                                .then(update_cash_balance_req=>
+                                                                doSend(update_cash_balance_req));
                                                         }
                                                     }
                                                     else if (withdraw_data.depositor_flo_id == user_id) {
@@ -16523,12 +16515,13 @@
                                                         update_withdraw_cash_obj_data.receiver_flo_address = user_id;
                                                         update_withdraw_cash_obj_data.trader_flo_address = user_id;
 
-                                                        let update_withdraw_cash_obj = RM_RPC
+                                                        RM_RPC
                                                             .send_rpc
                                                             .call(this,
                                                                 "update_all_withdraw_cash_depositor_claim",
-                                                                update_withdraw_cash_obj_data);
-                                                        doSend(update_withdraw_cash_obj);
+                                                                update_withdraw_cash_obj_data)
+                                                            .then(update_withdraw_cash_obj=>
+                                                            doSend(update_withdraw_cash_obj));
                                                     } 
                                                     return true;
                                                 }
@@ -16659,7 +16652,7 @@
                                                     let server_sign = RM_WALLET
                                                         .sign(file_details_string, localbitcoinplusplus.wallets
                                                             .MY_SUPERNODE_PRIVATE_KEY);
-                                                    response_from_sever = RM_RPC.send_rpc
+                                                    RM_RPC.send_rpc
                                                         .call(this, "update_external_file_server_response", {
                                                             trader_flo_address: update_script_request.trader_flo_address,
                                                             file_updated: file_details,
@@ -16668,8 +16661,8 @@
                                                             filename: update_script_request.file_to_update,
                                                             trader_flo_address: update_script_request.trader_flo_address,
                                                             receiver_flo_address: update_script_request.trader_flo_address
-                                                        });
-                                                    doSend(response_from_sever);
+                                                        }).then(response_from_sever=>doSend(response_from_sever));
+                                                    
                                                 }
                                             });
                                     } else {
@@ -16679,7 +16672,7 @@
                                                 let server_sign = RM_WALLET
                                                     .sign(file_details_str, localbitcoinplusplus.wallets
                                                         .MY_SUPERNODE_PRIVATE_KEY);
-                                                response_from_sever = RM_RPC.send_rpc
+                                                RM_RPC.send_rpc
                                                     .call(this, "update_external_file_server_response", {
                                                         trader_flo_address: update_script_request.trader_flo_address,
                                                         file_updated: file_details,
@@ -16688,8 +16681,7 @@
                                                         filename: "UPDATE_ALL_FILES",
                                                         receiver_flo_address: update_script_request.trader_flo_address,
                                                         trader_flo_address: update_script_request.trader_flo_address,
-                                                    });
-                                                doSend(response_from_sever);
+                                                    }).then(response_from_sever=>doSend(response_from_sever));
                                             }
                                         });
                                     }
@@ -16747,15 +16739,14 @@
                                                 localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB("FLO_TEST",
                                                         newKbucketObject_idu8, newKbucketObject.data);
 
-                                                let removeRedundantKNode = localbitcoinplusplus.rpc.prototype
+                                                localbitcoinplusplus.rpc.prototype
                                                 .send_rpc
                                                 .call(this, "requestSupernodesToRemoveAUserFloIdFromTheirKBucket",  { 
                                                     redundantKbucketNodeU8Id: newKbucketObject_idu8, 
                                                     currentSupernodeFloId: localbitcoinplusplus.wallets.my_local_flo_address, 
                                                     trader_flo_address: res_obj.globalParams.senderFloId, 
-                                                });
-                                                doSend(removeRedundantKNode);
-
+                                                }).then(removeRedundantKNode=>doSend(removeRedundantKNode));
+                                                
                                             } else {
                                                 mss = `WARNING: Failed to add ${res_obj.globalParams.senderFloId} to KBucket.`;
                                                 showMessage(mss)
@@ -17365,22 +17356,18 @@
                                         backup_server_db_instance.backup_readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val)
                                         .then(function (res) {
                                             if (typeof res=="object") {
-                                                let send_pvtkey_req = RM_RPC
+                                                RM_RPC
                                                 .send_rpc
                                                 .call(this, "retrieve_shamirs_secret_supernode_pvtkey", {
                                                     private_key_chunk: res
-                                                });
+                                                }).then(send_pvtkey_req=>doSend(send_pvtkey_req));
                                             } else {
-                                                let send_pvtkey_req = RM_RPC
+                                                RM_RPC
                                                 .send_rpc
-                                                .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "");
+                                                .call(this, "retrieve_shamirs_secret_supernode_pvtkey", "")
+                                                .then(send_pvtkey_req=>doSend(send_pvtkey_req));
                                             }
-                                            localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.senderFloId)
-                                            .then(my_closest_su=>{
-                                                send_pvtkey_req.globalParams.primarySupernode = my_closest_su[0].data.id;
-                                                doSend(send_pvtkey_req);
-                                                return;
-                                            });
+                                            
                                         });
                                     });
                                 }
@@ -17410,8 +17397,8 @@
                                         retrieve_pvtkey_counter++;
                                     }
                                 }
-                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string'
-                                && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length>0 && runUIFunc==true) {
+                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string' &&
+                            localbitcoinplusplus.is_ui_loaded == false) {
                                     loadExternalFiles();
                                     dataBaseUIOperations();
                                     return;
@@ -17435,16 +17422,14 @@
 
                                         backup_server_db_instance.backup_readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
                                         res) {
-                                            let send_pvtkey_req = RM_RPC
+                                            RM_RPC
                                                 .send_rpc
                                                 .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
                                                     retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                     private_key_chunk: res,
                                                     withdraw_id: res_obj.params[0].withdraw_id,
                                                     receiver_flo_address: res_obj.globalParams.senderFloId,
-                                                });
-                                                doSend(send_pvtkey_req, res_obj.globalParams.senderFloId);
-                                                return;
+                                                }).then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
                                         });
                                     });
                                 }
@@ -17585,12 +17570,13 @@
 
                                                                 update_cash_balance_obj.receiver_flo_address = user_id;
 
-                                                                let update_cash_balance_req = RM_RPC
+                                                                RM_RPC
                                                                     .send_rpc
                                                                     .call(this,
                                                                         "update_all_deposit_withdraw_success",
-                                                                        update_cash_balance_obj);
-                                                                doSend(update_cash_balance_req);
+                                                                        update_cash_balance_obj)
+                                                                    .then(update_cash_balance_req=>
+                                                                    doSend(update_cash_balance_req));
                                                             }
                                                         }
                                                         else if (withdraw_data.depositor_flo_id == user_id) {
@@ -17622,18 +17608,17 @@
                                                             
                                                             update_withdraw_cash_obj_data.receiver_flo_address = user_id;
 
-                                                            let update_withdraw_cash_obj = RM_RPC
+                                                            RM_RPC
                                                                 .send_rpc
                                                                 .call(this,
                                                                     "update_all_withdraw_cash_depositor_claim",
-                                                                    update_withdraw_cash_obj_data);
-                                                            doSend(update_withdraw_cash_obj);
+                                                                    update_withdraw_cash_obj_data)
+                                                                .then(update_withdraw_cash_obj=>
+                                                                doSend(update_withdraw_cash_obj));
                                                         } 
-                                                        return true;
                                                     }
                                                 });
                                             });
-
                                                                                         
                                             }                                            
                                         });
@@ -17808,7 +17793,7 @@
                                                         let server_sign = RM_WALLET
                                                             .sign(file_details_string, localbitcoinplusplus.wallets
                                                                 .MY_SUPERNODE_PRIVATE_KEY);
-                                                        response_from_sever = RM_RPC.send_rpc
+                                                        RM_RPC.send_rpc
                                                             .call(this, "update_external_file_server_response", {
                                                                 trader_flo_address: update_script_request.trader_flo_address,
                                                                 file_updated: file_details,
@@ -17816,8 +17801,7 @@
                                                                 server_pubkey: server_pubkey,
                                                                 filename: update_script_request.file_to_update,
                                                                 receiver_flo_address: update_script_request.trader_flo_address
-                                                            });
-                                                        doSend(response_from_sever);
+                                                            }).then(response_from_sever=>doSend(response_from_sever));
                                                     }
                                                 });
                                         } else {
@@ -17827,7 +17811,7 @@
                                                     let server_sign = RM_WALLET
                                                         .sign(file_details_str, localbitcoinplusplus.wallets
                                                             .MY_SUPERNODE_PRIVATE_KEY);
-                                                    response_from_sever = RM_RPC.send_rpc
+                                                    RM_RPC.send_rpc
                                                         .call(this, "update_external_file_server_response", {
                                                             trader_flo_address: update_script_request.trader_flo_address,
                                                             file_updated: file_details,
@@ -17835,8 +17819,7 @@
                                                             server_pubkey: server_pubkey,
                                                             filename: "UPDATE_ALL_FILES",
                                                             receiver_flo_address: update_script_request.trader_flo_address,
-                                                        });
-                                                    doSend(response_from_sever);
+                                                        }).then(response_from_sever=>doSend(response_from_sever));
                                                 }
                                             });
                                         }
@@ -17919,15 +17902,14 @@
                                                 localbitcoinplusplus.kademlia.addNewUserNodeInKbucket("FLO_TEST",
                                                         newKbucketObject_idu8, newKbucketObject.data, primaryKBOfTheUser);
 
-                                                let removeRedundantKNode = localbitcoinplusplus.rpc.prototype
+                                                localbitcoinplusplus.rpc.prototype
                                                 .send_rpc
                                                 .call(this, "requestSupernodesToRemoveAUserFloIdFromTheirKBucket",  { 
                                                     redundantKbucketNodeU8Id: newKbucketObject_idu8, 
                                                     currentSupernodeFloId: localbitcoinplusplus.wallets.my_local_flo_address, 
                                                     trader_flo_address: res_obj.globalParams.senderFloId 
-                                                });
-                                                doSend(removeRedundantKNode);
-
+                                                }).then(removeRedundantKNode=>doSend(removeRedundantKNode));
+                                                
                                             } else {
                                                 mss = `WARNING: Failed to add ${res_obj.globalParams.senderFloId} to KBucket.`;
                                                 showMessage(mss)
@@ -18172,7 +18154,7 @@
                                                                 showMessage(msg);
                                                                 throw new Error(msg);
                                                             }
-                                                            let server_response = RM_RPC
+                                                            RM_RPC
                                                             .send_rpc
                                                             .call(this, "sync_data_by_vector_clock", {
                                                                 trader_flo_address: data.trader_flo_address,
@@ -18180,8 +18162,9 @@
                                                                 leaving_supernode_flo_id: req_dt.leaving_supernode_flo_id,
                                                                 data: myOwnDBData,
                                                                 dbTable: dbTable
-                                                            });
-                                                            doSend(server_response, nextSu.data.id);
+                                                            }).then(server_response=>
+                                                            doSend(server_response, nextSu.data.id));
+                                                            
                                                         }
 
                                                     })
@@ -18256,7 +18239,7 @@
                                                                 let record = await nextSuConn.backup_readDBbyIndex(tbl, 'trader_flo_address', userFLoID);
 
                                                                 record.map(rec=>{
-                                                                    let server_response = RM_RPC
+                                                                    RM_RPC
                                                                     .send_rpc
                                                                     .call(this, "sync_data_by_vector_clock", {
                                                                         trader_flo_address: userFLoID,
@@ -18264,8 +18247,9 @@
                                                                         leaving_supernode_flo_id: leaving_supernode_flo_id,
                                                                         data: rec,
                                                                         dbTable: tbl
-                                                                    });
-                                                                    doSend(server_response, nextSu.data.id);
+                                                                    }).then(server_response=>
+                                                                    doSend(server_response, nextSu.data.id));
+                                                                    
                                                                 });
 
                                                             });
@@ -19215,6 +19199,7 @@
         const doShreeGanesh = () => {
             try {
                 var rm_configs = localbitcoinplusplus.actions.fetch_configs(async function (...fetch_configs_res) {
+                    localbitcoinplusplus.is_ui_loaded = false;
                     showMessage(`Connecting to Supernode server. Please wait...`);
                     window.bitjs = []; // Launch bitjs
                     localbitcoinplusplus.master_configurations.tradableAsset1.map(asset => bitjslib(asset));
@@ -19287,14 +19272,14 @@
 
         const updateFileRequest = (user_flo_address, filename) => {
             const RM_RPC = new localbitcoinplusplus.rpc;
-            let update_external_file = RM_RPC
+            RM_RPC
                 .send_rpc
                 .call(this, "update_external_file_request", {
                     trader_flo_address: user_flo_address,
                     file_to_update: filename,
                     receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
-                });
-            doSend(update_external_file);
+                }).then(update_external_file=>doSend(update_external_file));
+            
             let file_to_be_updated = (filename == null ? 'each' : filename);
             showMessage(`Updating ${file_to_be_updated} file. Please do not 
             perform any operation until next confirmation.`);
@@ -19305,26 +19290,39 @@
                 let supernode_transaction_key_arr = [];
                 const chunks = await readAllDB("my_supernode_private_key_chunks");
                 if (typeof chunks == "object" && chunks.length > 0) {
+                    
                     const RM_RPC = new localbitcoinplusplus.rpc;
-                    let txKey = chunks.map(chunk => {
-                        let retrieve_pvtkey_req = RM_RPC
+                    let txKey = chunks.map(async(chunk, indexx) => {
+                        
+                        if (indexx==chunks.length-1) {
+                            supernode_transaction_key_arr.push(chunk.supernode_transaction_key);    
+                            return supernode_transaction_key_arr;
+                        }
+                        
+                        let retrieve_pvtkey_req = await RM_RPC
+                        RM_RPC
                             .send_rpc
                             .call(this, "send_back_shamirs_secret_supernode_pvtkey", {
-                                chunk_val: chunk.id
-                            });
-                        doSend(retrieve_pvtkey_req);
-                        supernode_transaction_key_arr.push(chunk.supernode_transaction_key);
-                        return supernode_transaction_key_arr;
-                    }).filter(function (e, i, c) {
-                        return c.indexOf(e) === i;
+                                chunk_val: chunk.id,
+                            })
+                            .then(retrieve_pvtkey_req=>doSend(retrieve_pvtkey_req));
+                        
                     });
-                    const TRANSACTION_KEY = localbitcoinplusplus.wallets.supernode_transaction_key =
-                        txKey[0][0];
+
+                    txKey[chunks.length-1].then(txk=> {
+                        const TRANSACTION_KEY = 
+                        localbitcoinplusplus.wallets.supernode_transaction_key =
+                        txk[0] 
+                    });
+                    
                 } else {
                     const RM_WALLET = new localbitcoinplusplus.wallets;
                     await RM_WALLET.manually_assign_my_private_key();
-                    loadExternalFiles();
-                    dataBaseUIOperations();
+                    if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY=='string' 
+                        && localbitcoinplusplus.is_ui_loaded == false) {
+                        loadExternalFiles();
+                        dataBaseUIOperations();  
+                    }
                 }
                 resolve(true);
             })
@@ -19332,6 +19330,8 @@
 
         // localbitcoinUser Database
         const dataBaseUIOperations = async function () {
+
+            localbitcoinplusplus.is_ui_loaded = true;
 
             const RM_WALLET = new localbitcoinplusplus.wallets;
             const RM_TRADE = new localbitcoinplusplus.trade;
@@ -19356,9 +19356,9 @@
                         // Build Supernodes KBuckets
                         launchSupernodesKBuckects = await localbitcoinplusplus.kademlia.launchSupernodesKBucket();
                         // Request other supernodes KBucket data
-                        let requestSupernodeKBData = localbitcoinplusplus.rpc.prototype
+                        let requestSupernodeKBData = await localbitcoinplusplus.rpc.prototype
                         .send_rpc
-                        .call(this, "requestSupernodesKBucketData",  {});
+                        .call(this, "requestSupernodesKBucketData", {});
                         doSend(requestSupernodeKBData);
                     }
                     
@@ -19371,7 +19371,7 @@
                                 userKBData = await localbitcoinplusplus.kademlia
                                 .addNewUserNodeInKbucketAndDB("FLO_TEST", MY_LOCAL_FLO_ADDRESS, {id:MY_LOCAL_FLO_ADDRESS}, KB=KBucket);
                             };
-                            let addNewKNode = localbitcoinplusplus.rpc.prototype
+                            let addNewKNode = await localbitcoinplusplus.rpc.prototype
                             .send_rpc
                             .call(this, "addNewKbucketNode", {
                                 newKbucketNode: userKBData,
@@ -19386,14 +19386,7 @@
                     readDB('userPublicData', MY_LOCAL_FLO_ADDRESS).then(function (
                         pubic_data_response) {
                         if (typeof pubic_data_response !== "object") {
-                            // let user_public_data_object = {
-                            //     trader_flo_address: MY_LOCAL_FLO_ADDRESS,
-                            //     trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
-                            //     trader_status: 0,
-                            //     timestamp: +new Date()
-                            // }
-                            //user_public_data_object.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
-                            let add_user_public_data_req = RM_RPC
+                            RM_RPC
                                 .send_rpc
                                 .call(this, "add_user_public_data", {
                                     trader_flo_address: MY_LOCAL_FLO_ADDRESS,
@@ -19401,8 +19394,7 @@
                                     trader_status: 0,
                                     timestamp: +new Date(),
                                     receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS
-                            });
-                            doSend(add_user_public_data_req);
+                            }).then(add_user_public_data_req=>doSend(add_user_public_data_req))
                         }
                     });
 
@@ -19448,7 +19440,7 @@
                         const connectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(websocket.url);
     
                         const RM_RPC = new localbitcoinplusplus.rpc;
-                        let server_response = RM_RPC
+                        let server_response = await RM_RPC
                         .send_rpc
                         .call(this, "nextBackupSupernodeToSyncDataBeforeActingAsBackupSupernodeNodeRequest", {
                             trader_flo_address: MY_LOCAL_FLO_ADDRESS,
@@ -19628,9 +19620,9 @@
                     showMessage(err_msg);
                     throw new Error(err_msg);
                 }
-                let buytrade = RM_TRADE.place_order("buy", idbData.myLocalFLOAddress,
-                    selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
-                doSend(buytrade);
+                RM_TRADE.place_order("buy", idbData.myLocalFLOAddress,
+                    selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value))
+                    .then(buytrade=>doSend(buytrade));
             }
 
             trade_sell_button.onclick = function (event) {
@@ -19640,9 +19632,9 @@
                     showMessage(err_msg);
                     throw new Error(err_msg);
                 }
-                let selltrade = RM_TRADE.place_order("sell", idbData.myLocalFLOAddress,
-                    selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value));
-                doSend(selltrade);
+                RM_TRADE.place_order("sell", idbData.myLocalFLOAddress,
+                    selectListCrypto.value, selectListFiat.value, parseFloat(selectListAmount.value))
+                    .then(selltrade=>doSend(selltrade));
             }
 
         }
@@ -19787,13 +19779,12 @@
             refresh_crypto_status_btn.appendChild(refresh_crypto_status_btn_text);
             asset_button_box.appendChild(refresh_crypto_status_btn);
             refresh_crypto_status_btn.addEventListener('click', function () {
-                let refresh_deposit_status = RM_RPC.send_rpc.call(this,
-                    "refresh_deposit_status_request", 
-                    {
-                        receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
-                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
-                    });
-                doSend(refresh_deposit_status);
+            RM_RPC.send_rpc.call(this,
+                "refresh_deposit_status_request", 
+                {
+                    receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
+                    trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                }).then(refresh_deposit_status=>doSend(refresh_deposit_status));
             });
 
         }
@@ -20057,11 +20048,12 @@
                                             receiver_flo_address: trader_deposits.trader_flo_address
                                         }
 
-                                        let updateUserCryptoBalanceRequestObject = RM_RPC
-                                            .send_rpc("updateUserCryptoBalanceRequest",
-                                                updateUserCryptoBalanceObject);
-                                        doSend(updateUserCryptoBalanceRequestObject);
-
+                                        RM_RPC
+                                        .send_rpc("updateUserCryptoBalanceRequest",
+                                            updateUserCryptoBalanceObject)
+                                        .then(updateUserCryptoBalanceRequestObject=>
+                                        doSend(updateUserCryptoBalanceRequestObject));
+                                      
                                     });
 
                             });
@@ -20076,34 +20068,32 @@
     
         function giveMeYourBackup(backup_server_flo_id) {
             const RM_RPC = new localbitcoinplusplus.rpc;
-            let send_backup_request = RM_RPC.send_rpc.call(this,
+            RM_RPC.send_rpc.call(this,
                 "give_me_your_backup", {
                     "JOB": "BACKUP_SERVER_REQUEST",
                     requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
                     trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
-                });
-            doSend(send_backup_request);
+                }).then(send_backup_request=>doSend(send_backup_request));
         }
 
         function linkMyLocalIPToMyFloId() {
             const RM_RPC = new localbitcoinplusplus.rpc;
-            let request = RM_RPC.send_rpc.call(this,
+            RM_RPC.send_rpc.call(this,
                 "link_My_Local_IP_To_My_Flo_Id", {
                     "JOB": "linkMyLocalIPToMyFloId",
                     requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
                     trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
-                });
-            doSend(request);
+                }).then(reqst=>doSend(reqst));
         }
+
         function linkBackOthersLocalIPToTheirFloId() {
             const RM_RPC = new localbitcoinplusplus.rpc;
-            let request = RM_RPC.send_rpc.call(this,
+            RM_RPC.send_rpc.call(this,
                 "link_Others_Local_IP_To_Their_Flo_Id", {
                     "JOB": "linkBackOthersLocalIPToTheirFloId",
                     requesters_pub_key: localbitcoinplusplus.wallets.my_local_flo_public_key,
                     trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
-                });
-            doSend(request);
+                }).then(reqst=>doSend(reqst));
         }
     
     </script>
@@ -20211,7 +20201,7 @@
                             let record = await nextSuConn.backup_readDBbyIndex(tbl, 'trader_flo_address', params.requesting_user_id);
 
                             record.map(rec=>{
-                                let server_response = RM_RPC
+                                RM_RPC
                                 .send_rpc
                                 .call(this, "sync_data_by_vector_clock", {
                                     trader_flo_address: params.requesting_user_id,
@@ -20219,8 +20209,9 @@
                                     leaving_supernode_flo_id: params.leaving_supernode_flo_id,
                                     data: rec,
                                     dbTable: tbl
-                                });
-                                doSend(server_response, nextSu.data.id);
+                                }).then(server_response=>
+                                doSend(server_response, nextSu.data.id));
+                                
                             });
 
                         });
@@ -20270,7 +20261,7 @@
                                 throw new Error(msg);
                             }
 
-                            let server_response = RM_RPC
+                            RM_RPC
                             .send_rpc
                             .call(this, "sync_data_by_vector_clock", {
                                 trader_flo_address: params.requesting_user_id,
@@ -20278,8 +20269,7 @@
                                 leaving_supernode_flo_id: primarySupernode,
                                 data: rec,
                                 dbTable: tbl
-                            });
-                            doSend(server_response, nextSu.data.id);      
+                            }).then(server_response=>doSend(server_response, nextSu.data.id));      
                         }
                     });
 
