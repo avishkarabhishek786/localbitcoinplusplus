@@ -11130,6 +11130,7 @@
                     this.rpc_req_id = id;
 
                     (async function(request) {
+
                         if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
                             request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
 
@@ -11157,7 +11158,7 @@
                         if (typeof params[0].receiver_flo_address == "string") {
                             request.globalParams.receiverFloId = params[0].receiver_flo_address;
                         }
-
+        
                         return resolve(request.toString());
 
                     })(request);
@@ -11174,11 +11175,11 @@
                     if (typeof user_keys == "object" && typeof user_keys.pubKeyHex == "string") {
                         if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(user_keys.pubKeyHex)) {
                             if (typeof flo_id !== null || typeof flo_id !== 'undefined') {
-                                let karr = KBucket.toArray();
-                                let karr_floIds = karr.map(f=>f.data.id);
-                                if (!karr_floIds.includes(flo_id)) {
-                                    return callback(false);    
-                                }
+                                // let karr = KBucket.toArray();
+                                // let karr_floIds = karr.map(f=>f.data.id);
+                                // if (!karr_floIds.includes(flo_id)) {
+                                //     return callback(false);    
+                                // }
                                 
                                 localbitcoinplusplus.kademlia.determineClosestSupernode(flo_id)
                                 .then(my_closest_su=>{
@@ -15438,8 +15439,6 @@
                                 case "trade_balance_updates":
                                     if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                         const trade_balance_res = res_obj.params[0];
-                                        // Only the relevent user node should get response
-                                        if(res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
                                         // Verify data
                                         let trade_info_str = JSON.stringify(trade_balance_res.trade_infos);
                                         let buyer_cash_data_str = JSON.stringify(trade_balance_res.buyer_cash_data);
@@ -15778,6 +15777,51 @@
                                 }
                                 break;
 
+                                case "updateUserCryptoBalanceRequest":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object")  { 
+                                    
+                                    let updateUserCryptoBalanceResponseObject = res_obj.params[0];
+                                    
+                                    if(typeof res_obj.params[0].trader_flo_address !="string") return;
+                                    localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
+                                    .then(my_closest_su_list=>{
+                                        const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
+                                        const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
+
+                                        if(typeof backup_server_db_instance !== "object") {
+                                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                            showMessage(backup_db_error_msg);
+                                            throw new Error(backup_db_error_msg);
+                                        };
+
+                                        let SuPubKey = backup_server_db_instance.backup_readDB('userPublicData', updateUserCryptoBalanceResponseObject.trader_flo_address)
+                                        .then(user_data => {
+                                            if (typeof user_data !== "object" || user_data.supernode_flo_public_key.length <
+                                                1)
+                                                throw new Error(`No such user exists.`);
+                                            let updateUserCryptoBalanceResponseString = JSON.stringify(
+                                                updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
+                                            let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
+                                                updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
+                                                user_data.supernode_flo_public_key
+                                            );
+                                            if (isBalanceLegit) {
+                                                backup_server_db_instance.backup_updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
+                                                    user_data.trader_flo_address);
+                                                if (localbitcoinplusplus.wallets.my_local_flo_address ==
+                                                    updateUserCryptoBalanceResponseObject.trader_flo_address) {
+                                                    displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
+                                                    showMessage(`INFO: Your balance is updated.`);
+                                                }
+                                                return true;
+                                            } else {
+                                                showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
+                                            }
+                                        });
+                                        });
+                                    }
+                                    break;
+
                                 default: 
                                 break;
                             }
@@ -16020,13 +16064,13 @@
                         return;
                     } else if(typeof res_obj.globalParams.primarySupernode=="string" 
                     && res_obj.globalParams.primarySupernode !== localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS) {
-                        processBackupUserOnMesssageRequest(response);
-                        return;
+                        if (typeof res_obj.globalParams.receiverFloId !== 'string' ||
+                            res_obj.globalParams.receiverFloId !== localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS) {
+                            processBackupUserOnMesssageRequest(response);
+                            return;
+                        }
                     }
-
-                    // Temporary. Remove this line
-                    showMessage(`INFO: PRIMARY SUPERNODE FLO ID: ${res_obj.globalParams.primarySupernode}.`);
-                
+       
                     if (typeof res_obj.method !== "undefined") {
                         let response_from_sever;
 
@@ -16723,6 +16767,8 @@
                                 break;
 
                             case "addNewKbucketNode":
+                                if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
                                 try {
                                     let mss = '';
                                     let tid = res_obj.params[0].trader_flo_address || res_obj.globalParams.senderFloId;
@@ -17029,10 +17075,7 @@
                         console.log(res_obj);
                         return;
                     }
-
-                    // Temporary. Remove this line
-                    showMessage(`INFO: PRIMARY SUPERNODE FLO ID: ${res_obj.globalParams.primarySupernode}.`);
-            
+           
                     if (typeof res_obj.method !== "undefined") {
                         let response_from_sever;
 
@@ -17878,11 +17921,15 @@
                                 break;
 
                             case "addNewKbucketNode":
+                                if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
                                 try {
                                     let mss = '';
                                     let tid = res_obj.params[0].trader_flo_address || res_obj.globalParams.senderFloId;
                                     localbitcoinplusplus.kademlia.determineClosestSupernode(tid)
                                         .then(async my_closest_su=>{
+
+                                            if (my_closest_su[0].data.id !== localbitcoinplusplus.wallets.my_local_flo_address) return;
                                             
                                             const newKbucketObjectObj = res_obj.params[0];
                                             const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
@@ -18311,9 +18358,7 @@
             if (!request_array.includes(msgObj.method)) {
                 const RM_WALLET = new localbitcoinplusplus.wallets;
 
-                if (typeof message !== "string") {
-                    message = JSON.stringify(message);
-                }
+                message = JSON.stringify(msgObj);
                 const message256hash = Crypto.SHA256(message);
 
                 if(typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY !== "string") 
@@ -19356,10 +19401,10 @@
                         // Build Supernodes KBuckets
                         launchSupernodesKBuckects = await localbitcoinplusplus.kademlia.launchSupernodesKBucket();
                         // Request other supernodes KBucket data
-                        let requestSupernodeKBData = await localbitcoinplusplus.rpc.prototype
-                        .send_rpc
-                        .call(this, "requestSupernodesKBucketData", {});
-                        doSend(requestSupernodeKBData);
+                        // let requestSupernodeKBData = await localbitcoinplusplus.rpc.prototype
+                        // .send_rpc
+                        // .call(this, "requestSupernodesKBucketData", {});
+                        // doSend(requestSupernodeKBData);
                     }
                     
                     // Send your id to Supernode kbucket
@@ -19965,6 +20010,7 @@
             }
 
             let explorer;
+            let decimal = 100000000;
             switch (trader_deposits.product) {
                 case "BTC":
                     explorer = localbitcoinplusplus.server.btc_mainnet;
@@ -19974,18 +20020,23 @@
                     break;
                 case "FLO":
                     explorer = localbitcoinplusplus.server.flo_mainnet;
+                    decimal = 1;
                     break;
                 case "FLO_TEST":
                     explorer = localbitcoinplusplus.server.flo_testnet;
+                    decimal = 1;
                     break;
                 default:
                     break;
             }
             try {
                 let url = `${explorer}/api/addr/${trader_deposits.btc_address}/balance`;
+                console.log(url);
                 helper_functions.ajaxGet(url).then(balance => {
                     if (!isNaN(balance) && parseFloat(balance) > 0) {
-                        balance = parseFloat(balance);
+                        balance = Number(parseFloat(balance/decimal));
+                        console.log(balance);
+                        
 
                         /************************ Case of dispute *****************/
                         if (0) {
