@@ -10072,12 +10072,24 @@
                         `masterFLOPubKey=029EF7838D4D103E62262394B5417E8ABFD75539D19E61CA5FD0C2051B69B29910
                         #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
                         #!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
+                        #!#MaxBackups=3
                         #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
                         03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
+                        03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
+                        026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,029CDB29270DC5087EF4903E8C2364552C62E935FBAA1A96AB53CC5791C7EF2067,
+                        022EC1D090960D9EFFFC60FDC34AB97A8395A5F6D1326DD1B1380BD9F6E31981CA,037C623A8D31DB751F666A1D2C65EC8996C5978348CEEE8566F480708D4A6335AB,
+                        032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022
                         #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
                         #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1","port":"9001","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
                         "ranchimall2":{"ip":"127.0.0.1","port":"9002","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
-                        "ranchimall3":{"ip":"127.0.0.1","port":"9003","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"}}`;
+                        "ranchimall3":{"ip":"127.0.0.1","port":"9003","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
+                        "ranchimall4":{"ip":"127.0.0.1","port":"9004","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
+                        "ranchimall5":{"ip":"127.0.0.1","port":"9005","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
+                        "ranchimall6":{"ip":"127.0.0.1","port":"9006","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"},
+                        "ranchimall7":{"ip":"127.0.0.1","port":"9007","kbucketId":"oSqFZePXibNJqeiboTYmmaqqVkd6esDUfZ"},
+                        "ranchimall8":{"ip":"127.0.0.1","port":"9008","kbucketId":"odUQekfMPsZV3ocneFW8SNSZADFtx9xUtm"},
+                        "ranchimall9":{"ip":"127.0.0.1","port":"9009","kbucketId":"oLYeoBfXWxKkUmRxhn1pcmJWtTu5kZoUJq"},
+                        "ranchimall10":{"ip":"127.0.0.1","port":"9010","kbucketId":"oJJe8wkADkCT28BMLkyf79fqBZeoF21cXL"}}`;
                     // RMAssets =
                     //     `tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
                     //     #!#supernodes=127.0.0.1,212.88.88.2#!#MASTER_NODE=023B9F60692A17FAC805D012C5C8ADA3DD19A980A3C5F0D8A5B3500CC54D6E8B75
@@ -10138,6 +10150,17 @@
                         "job": "SYNC_PRIMARY_SUPERNODE_DB_WITH_BACKUP_SUPERNODE_DB",
                         "receiver_flo_address": backup_su,
                     }).then(sync_request=>doSend(sync_request, backup_su));
+            },
+            
+            sync_backup_supernode_from_backup_supernode: function (requester="", receiver="", flo_addr_of_backup="") {
+                const RM_RPC = new localbitcoinplusplus.rpc;
+                RM_RPC.send_rpc.call(this,
+                    "sync_backup_supernode_from_backup_supernode", { 
+                        "trader_flo_address": flo_addr_of_backup,
+                        "job": "SYNC_BACKUP_SUPERNODE_DB_WITH_BACKUP_SUPERNODE_DB",
+                        "receiver_flo_address": receiver,
+                        "requester_flo_id": requester
+                    }).then(sync_request=>doSend(sync_request, receiver));
             },
 
             get_sharable_db_data: async function (dbTableNamesArray, backup_db="") {
@@ -12577,6 +12600,33 @@
                                             RM_RPC
                                                 .send_rpc
                                                 .call(this, "sync_primary_supernode_from_backup_supernode_response",
+                                                    su_db_data)
+                                                .then(server_sync_response=>
+                                                doSend(server_sync_response, params.trader_flo_address));
+                                        }
+                                    });
+                            }
+                        });
+                    }
+                    
+                    if (method=="sync_backup_supernode_from_backup_supernode") { 
+                        // params.trader_flo_address -> primary supernode flo id
+                        RM_RPC.filter_legit_backup_requests(params.trader_flo_address, function (is_valid_request) {
+                            if (is_valid_request === true && params.job ==
+                                "SYNC_BACKUP_SUPERNODE_DB_WITH_BACKUP_SUPERNODE_DB" && params.trader_flo_address.length >
+                                0) {
+                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances"];
+
+                                let rec_flo_id = (params.receiver_flo_address==params.trader_flo_address) ? "" : params.trader_flo_address;
+
+                                localbitcoinplusplus.actions.get_sharable_db_data(tableArray, rec_flo_id).then(
+                                    function (su_db_data) {
+                                        if (typeof su_db_data == "object") {
+                                            su_db_data.trader_flo_address = params.trader_flo_address;
+                                            su_db_data.receiver_flo_address = params.requester_flo_id;
+                                            RM_RPC
+                                                .send_rpc
+                                                .call(this, "sync_backup_supernode_from_backup_supernode_response",
                                                     su_db_data)
                                                 .then(server_sync_response=>
                                                 doSend(server_sync_response, params.trader_flo_address));
@@ -15114,12 +15164,12 @@
 
                             // Connect with backup supernodes
                             wsUri.filter((uri, index)=>{
-                                if(index>0 && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                if(index>0 && index<=localbitcoinplusplus.master_configurations.MaxBackups  
+                                && localbitcoinplusplus.master_configurations.supernodesPubKeys
                                 .includes(localbitcoinplusplusObj.myLocalFLOPublicKey)) {
                                     return uri;
                                 }
                             }).map((uri, index)=>{
-                                console.log(uri);
                                 backUpSupernodesWS[uri.trader_flo_address] = new backupSupernodesWebSocketObject(`ws://${uri.ip}:${uri.port}`);
                                 backUpSupernodesWS[uri.trader_flo_address].connectWS();
 
@@ -15173,20 +15223,37 @@
 
                     // Check last connected supernode, if not primary then
                     // update the user data from other su first
-                    if (typeof idbData.lastConnectedSupernode == "string"
-                    && idbData.lastConnectedSupernode !== wsUri[0].trader_flo_address) {
-                        showMessage(`INFO: We are fetching your latest data. This could take some time. Do not close the window until then.`);
-                        
-                        // Get data for deposits and withdraw starting from first (and currently alive) backup supernode
-                        // readAllDB('myClosestSupernodes').then(cs=>{
-                        //    // for (let index = cs.length; index > 0; index--) {
+                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
+                        if (typeof idbData.lastConnectedSupernode == "string"
+                        && idbData.lastConnectedSupernode !== wsUri[0].trader_flo_address) {
+                            showMessage(`INFO: We are fetching your latest data. This could take some time. Do not close the window until then.`);
                             
-                        // });
-                        let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(idbData.myLocalFLOAddress, 3);
-                        for (let index = 1; index <= cs.length-1; index++) {
-                            localbitcoinplusplus.actions
-                            .sync_primary_supernode_from_backup_supernode(getPrimarySuObj[0].data.id, getPrimarySuObj[index].data.id);    
-                        }
+                            // Get data for deposits and withdraw starting from first (and currently alive) backup supernode
+                            let closestSuNodes = await readAllDB('myClosestSupernodes');
+                            let firstAliveBackupFloIdForPrimarySupernode;
+                            
+                            for (let index = 1; index <= closestSuNodes.length-1; index++) {
+                                if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForPrimarySupernode !== "string") {
+                                    firstAliveBackupFloIdForPrimarySupernode = closestSuNodes[index].trader_flo_address;
+                                    localbitcoinplusplus.actions
+                                    .sync_primary_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, firstAliveBackupFloIdForPrimarySupernode);
+                                }    
+                            }   
+                            
+                            // Update backup db as well for all supernodes you're serving as backup 
+                            for (let index = 1; index <= closestSuNodes.length-1; index++) {
+                                let firstAliveBackupFloIdForBackupSupernode;
+                                if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
+                                    firstAliveBackupFloIdForBackupSupernode = closestSuNodes[index].trader_flo_address;
+                                    localbitcoinplusplus.actions
+                                    .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
+                                    firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
+                                } else {
+                                    // it will ask backup from backup su next closest
+                                    console.info(`da daa`);
+                                }   
+                            }   
+                        }   
                     }
 
                     // rebuild private key
@@ -15210,7 +15277,8 @@
 
                     // Connect with backup supernodes
                     wsUri.filter((uri, index)=>{
-                        if(index>0 && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                        if(index>0 && index<=localbitcoinplusplus.master_configurations.MaxBackups
+                        && localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(idbData.myLocalFLOPublicKey)) {
                             return uri;
                         }
@@ -15243,6 +15311,7 @@
         backupSupernodesWebSocketObject.prototype = {
 
             async handle_backup_server_messages(evt) {
+                
                 var response = evt.data;
                 writeToScreen('backup response: '+response);
 
@@ -15367,23 +15436,50 @@
                                 
                                 break;
 
-                            case "trade_buy_request_response":
-                                if (typeof res_obj.params !== "object" 
-                                        || typeof res_obj.params[0] !== "object") return;
-                                    let buyOrders_data = res_obj.params[0];
+                                case "trade_buy_request_response":
+                                    if (typeof res_obj.params !== "object" 
+                                            || typeof res_obj.params[0] !== "object") return;
+                                        let buyOrders_data = res_obj.params[0];
 
-                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            buyOrders_data.supernodePubKey)) {
+                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                                buyOrders_data.supernodePubKey)) {
+                                            let isDataSignedBySuperNode = RM_WALLET
+                                                .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
+                                                    buyOrders_data.supernodePubKey);
+                                            if (isDataSignedBySuperNode === true) {
+
+                                                let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj[0].trader_flo_address);
+                                                const primarySupernode = getPrimarySuObj[0].data.id;
+                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
+
+                                                if(typeof backup_server_db_instance !== "object") {
+                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                    showMessage(backup_db_error_msg);
+                                                    throw new Error(backup_db_error_msg);
+                                                };
+
+                                                // Add buy order
+                                                backup_server_db_instance.backup_addDB("buyOrders", buyOrders_data).then(() => {
+                                                    showMessage(`Your buy order is placed successfully.`);
+                                                });
+                                            }
+                                        }
+                                    break;
+                                case "trade_sell_request_response":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        let sellOrders_data = res_obj.params[0];
+                                        if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
+                                        localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(sellOrders_data.supernodePubKey)) {
                                         let isDataSignedBySuperNode = RM_WALLET
-                                            .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
-                                                buyOrders_data.supernodePubKey);
+                                            .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
+                                                sellOrders_data.supernodePubKey);
                                         if (isDataSignedBySuperNode === true) {
-
                                             let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj[0].trader_flo_address);
                                             const primarySupernode = getPrimarySuObj[0].data.id;
                                             const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
-
+                                            
                                             if(typeof backup_server_db_instance !== "object") {
                                                 let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
                                                 showMessage(backup_db_error_msg);
@@ -15391,111 +15487,84 @@
                                             };
 
                                             // Add buy order
-                                            backup_server_db_instance.backup_addDB("buyOrders", buyOrders_data).then(() => {
-                                                showMessage(`Your buy order is placed successfully.`);
+                                            backup_server_db_instance.backup_addDB("sellOrders", sellOrders_data).then(() => {
+                                                showMessage(`Your sell order is placed successfully.`);
                                             });
                                         }
+                                        }
                                     }
-                                break;
-                            case "trade_sell_request_response":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    let sellOrders_data = res_obj.params[0];
-                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                    localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                    .includes(sellOrders_data.supernodePubKey)) {
-                                    let isDataSignedBySuperNode = RM_WALLET
-                                        .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
-                                            sellOrders_data.supernodePubKey);
-                                    if (isDataSignedBySuperNode === true) {
-                                        let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj[0].trader_flo_address);
-                                        const primarySupernode = getPrimarySuObj[0].data.id;
-                                        const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
-                                        
-                                        if(typeof backup_server_db_instance !== "object") {
-                                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                            showMessage(backup_db_error_msg);
-                                            throw new Error(backup_db_error_msg);
-                                        };
+                                    break;
+                                
+                                case "deposit_asset_request_response":
+                                    if (typeof res_obj.params !== "object" 
+                                            || typeof res_obj.params[0] !== "object") return;
+                                    let deposit_res_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(deposit_res_data.trader_flo_address, 
+                                        async function (is_valid_request) {
+                                            if(!is_valid_request) return false;
+                                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" 
+                                            && typeof res_obj.params[0].data == "object") {
+                                            let resp = res_obj.params[0];
+                                            if (RM_WALLET
+                                                .verify(resp.data.depositDataHash, resp.data.order_validator_sign, resp.data.order_validator_public_key)
+                                            ) {
+                                                let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(resp.data.trader_flo_address);
+                                                const primarySupernode = getPrimarySuObj[0].data.id;
+                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
+                                                if(typeof backup_server_db_instance !== "object") {
+                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                    showMessage(backup_db_error_msg);
+                                                    throw new Error(backup_db_error_msg);
+                                                };
 
-                                        // Add buy order
-                                        backup_server_db_instance.backup_addDB("sellOrders", sellOrders_data).then(() => {
-                                            showMessage(`Your sell order is placed successfully.`);
-                                        });
-                                    }
-                                    }
-                                }
-                                break;
-                            
-                            case "deposit_asset_request_response":
-                                if (typeof res_obj.params !== "object" 
-                                        || typeof res_obj.params[0] !== "object") return;
-                                let deposit_res_data = res_obj.params[0];
-                                RM_RPC.filter_legit_backup_requests(deposit_res_data.trader_flo_address, 
-                                    async function (is_valid_request) {
-                                        if(!is_valid_request) return false;
-                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" 
-                                        && typeof res_obj.params[0].data == "object") {
-                                        let resp = res_obj.params[0];
-                                        if (RM_WALLET
-                                            .verify(resp.data.depositDataHash, resp.data.order_validator_sign, resp.data.order_validator_public_key)
-                                        ) {
-                                            let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(resp.data.trader_flo_address);
-                                            const primarySupernode = getPrimarySuObj[0].data.id;
-                                            const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
-                                            if(typeof backup_server_db_instance !== "object") {
-                                                let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                                showMessage(backup_db_error_msg);
-                                                throw new Error(backup_db_error_msg);
-                                            };
-
-                                            backup_server_db_instance.backup_addDB('deposit', resp.data);
-                                            if (typeof resp.withdrawer_data == "object") {
-                                                backup_server_db_instance.backup_updateinDB("withdraw_cash", resp.withdrawer_data, resp.withdrawer_data.trader_flo_address);
-                                            }
-                                            backup_server_db_instance.backup_readDB("localbitcoinUser", "00-01").then(function (user) {
-                                                if (typeof user == "object" && user.myLocalFLOAddress == resp.data.trader_flo_address) {
-                                                    let counterTraderAccountAddress =
-                                                        `<p><strong>Please pay the amount to following address:</strong></p>
-                                                        <p>${resp.msg}</p>`;
-                                                        showMessage(counterTraderAccountAddress);
-                                                        modalWindow(counterTraderAccountAddress);
+                                                backup_server_db_instance.backup_addDB('deposit', resp.data);
+                                                if (typeof resp.withdrawer_data == "object") {
+                                                    backup_server_db_instance.backup_updateinDB("withdraw_cash", resp.withdrawer_data, resp.withdrawer_data.trader_flo_address);
                                                 }
-                                            });
+                                                backup_server_db_instance.backup_readDB("localbitcoinUser", "00-01").then(function (user) {
+                                                    if (typeof user == "object" && user.myLocalFLOAddress == resp.data.trader_flo_address) {
+                                                        let counterTraderAccountAddress =
+                                                            `<p><strong>Please pay the amount to following address:</strong></p>
+                                                            <p>${resp.msg}</p>`;
+                                                            showMessage(counterTraderAccountAddress);
+                                                            modalWindow(counterTraderAccountAddress);
+                                                    }
+                                                });
+                                            }
                                         }
-                                    }
-                                });
-                                break;
+                                    });
+                                    break;
 
-                            case "withdrawal_request_response":
-                                if (typeof res_obj.params !== "object" 
-                                        || typeof res_obj.params[0] !== "object") return;
-                                let withdrawal_res_data = res_obj.params[0];
-                                RM_RPC.filter_legit_backup_requests(withdrawal_res_data.trader_flo_address, 
-                                    async function (is_valid_request) {
-                                        if(!is_valid_request) return false;
-                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                        if (RM_WALLET
-                                            .verify(res_obj.params[0].withdrawDataHash, res_obj.params[0].order_validator_sign,
-                                                res_obj.params[0].order_validator_public_key)) {
+                                case "withdrawal_request_response":
+                                    if (typeof res_obj.params !== "object" 
+                                            || typeof res_obj.params[0] !== "object") return;
+                                    let withdrawal_res_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(withdrawal_res_data.trader_flo_address, 
+                                        async function (is_valid_request) {
+                                            if(!is_valid_request) return false;
+                                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                            if (RM_WALLET
+                                                .verify(res_obj.params[0].withdrawDataHash, res_obj.params[0].order_validator_sign,
+                                                    res_obj.params[0].order_validator_public_key)) {
 
-                                            let getPrimarySuObj = await localbitcoinplusplus.kademlia
-                                            .determineClosestSupernode(withdrawal_res_data.trader_flo_address);
-                                            const primarySupernode = getPrimarySuObj[0].data.id;
-                                            const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
+                                                let getPrimarySuObj = await localbitcoinplusplus.kademlia
+                                                .determineClosestSupernode(withdrawal_res_data.trader_flo_address);
+                                                const primarySupernode = getPrimarySuObj[0].data.id;
+                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
 
-                                            if(typeof backup_server_db_instance !== "object") {
-                                                let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                                showMessage(backup_db_error_msg);
-                                                throw new Error(backup_db_error_msg);
-                                            };
+                                                if(typeof backup_server_db_instance !== "object") {
+                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                    showMessage(backup_db_error_msg);
+                                                    throw new Error(backup_db_error_msg);
+                                                };
 
-                                            backup_server_db_instance.backup_addDB('withdraw_cash', res_obj.params[0]).then(() => {
-                                                showMessage(`Your cash withdrawal request is placed successfully.`);
-                                            });
+                                                backup_server_db_instance.backup_addDB('withdraw_cash', res_obj.params[0]).then(() => {
+                                                    showMessage(`Your cash withdrawal request is placed successfully.`);
+                                                });
+                                            }
                                         }
-                                    }
-                                });
-                                break;
+                                    });
+                                    break;
                             
                                 case "cancel_trade":
                                     if (typeof res_obj.params !== "object" 
@@ -15949,7 +16018,7 @@
                     reactor.dispatchEvent('backup_supernode_down');
                 }.bind(this);
                 this.ws_connection.onmessage = function (evt) {
-                    this.handle_backup_server_messages(evt);
+                    //this.handle_backup_server_messages(evt);
                 }.bind(this);
                 this.ws_connection.onerror = function (evt) {
                     console.error(evt);
@@ -16154,6 +16223,8 @@
                             processBackupUserOnMesssageRequest(response);
                             return;
                         }
+                        localbitcoinplusplus.backupWS.prototype.handle_backup_server_messages(response);
+                        return;
                     }
        
                     if (typeof res_obj.method !== "undefined") {
@@ -17181,6 +17252,72 @@
                                     })();
                                 }
                                 break;
+                            
+                            case "sync_backup_supernode_from_backup_supernode_response":
+                            
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                    let su_db_data = res_obj.params[0];
+                                    // if (typeof localbitcoinplusplus.wallets.my_local_flo_address !== "string" ||
+                                    //     su_db_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
+                                    // ) return false;
+
+                                    (async function () {
+                                        let i = 0;
+                                        for (let tableStoreName in su_db_data) {
+                                            i++;
+                                            if (i==Object.keys(su_db_data).length-2) {
+                                                // Get data for crypto and fiat balances based on vector clock from all backup supernodes
+                                                // reactor.dispatchEvent('primarySupernodeUpdatingLatestDataForItsUserFromOtherSupernodes', 
+                                                //     { requesting_user_id: localbitcoinplusplus.wallets.my_local_flo_address});
+                                                // await localbitcoinplusplus.actions.delay(180000).then(()=>{
+                                                //     showMessage(`INFO: Balance syncing is complete.`);
+
+                                                    localbitcoinplusplus.amIreadyToServePrimaryUsers = true;
+    
+                                                //}); 
+                                            }
+                                            // skip loop if the property is from prototype
+                                            if (tableStoreName == 'trader_flo_address' 
+                                            || tableStoreName == 'receiver_flo_address'
+                                            || !su_db_data.hasOwnProperty(tableStoreName)) continue;
+
+                                            try {
+                                                let obj = su_db_data[tableStoreName];
+                                                if (["crypto_balances", "cash_balances", "userPublicData"].includes(
+                                                        tableStoreName)) {
+                                                    if (obj.length > 0) {
+                                                        for (var prop in obj) {
+                                                            if (!obj.hasOwnProperty(prop)) continue;
+                                                            await localbitcoinplusplus.newBackupDatabase.db[trader_flo_address]
+                                                                .backup_updateinDB(tableStoreName, obj[prop], obj[prop]
+                                                                .trader_flo_address).then(()=>{
+                                                                    showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
+                                                                });
+                                                        }
+                                                    }
+                                                } else {
+                                                    let resdbdata = await localbitcoinplusplus.newBackupDatabase.db[trader_flo_address]
+                                                                .backup_removeAllinDB(tableStoreName);
+                                                    if (resdbdata !== false) {
+                                                        if (obj.length > 0) {
+                                                            for (var prop in obj) {
+                                                                if (!obj.hasOwnProperty(prop)) continue;
+                                                                await localbitcoinplusplus.newBackupDatabase.db[trader_flo_address]
+                                                                .backup_addDB(resdbdata, obj[prop]).then(()=>{
+                                                                    showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
+                                                                });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                            } catch (error) {
+                                                console.log(error);
+                                            }
+                                        }
+                                    })();
+                                }
+                                break;
 
                                 case "reconnect_with_another_supernode":
                                     if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -17262,7 +17399,8 @@
                         return;
                     }
 
-                    if (res_obj.method !== "sync_primary_supernode_from_backup_supernode") {
+                    if (res_obj.method !== "sync_primary_supernode_from_backup_supernode" 
+                        || res_obj.method !== "sync_backup_supernode_from_backup_supernode") {
                         if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                             let ifAllPrevSuAreDead = await localbitcoinplusplus.actions
@@ -17272,7 +17410,8 @@
 
                             if (ifAllPrevSuAreDead !== true) {
                                 console.log(res_obj);
-                                showMessage(`INFO: "checkIfAllPreviousSupernodesAreDeadForAUserNode" check failed.`)
+                                showMessage(`INFO: "checkIfAllPreviousSupernodesAreDeadForAUserNode" check failed.`);
+                                localbitcoinplusplus.backupWS.prototype.handle_backup_server_messages(response);
                                 return;
                             }
                         }
@@ -18482,6 +18621,14 @@
                                         JSON.stringify(res_obj));
                                 }
                             break;
+                            
+                            case "sync_backup_supernode_from_backup_supernode":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                                    response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
+                                        JSON.stringify(res_obj));
+                                }
+                            break;
 
                             default:
                                 break;
@@ -18502,22 +18649,6 @@
 
         function doSend(message, user_flo_id="") {
 
-            let wsConn = websocket;
-            if (user_flo_id!=="") {
-                try {
-                    wsConn = localbitcoinplusplus.backupWS[user_flo_id].ws_connection;
-                } catch (error) {
-                    showMessage(`ERROR: Failed to determine WS connection with ${user_flo_id}.`);
-                    throw new Error(error);
-                }
-            }
-
-            if(wsConn.readyState !== 1) {
-                let msg = "WARNING: Websocket not ready to broadcast messages.";
-                showMessage(msg);
-                console.warn(msg);
-                return;
-            }
             const request_array = ['send_back_shamirs_secret_supernode_pvtkey',
                                     'retrieve_shamirs_secret_supernode_pvtkey',
                                     'store_shamirs_secret_pvtkey_shares'];
@@ -18533,7 +18664,7 @@
                 const message256hash = Crypto.SHA256(message);
 
                 if(typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY !== "string") 
-                    throw new Error(`Private key could not be found.`);
+                    throw new Error(`WARNING: Private key could not be found.`);
 
                 const nodeSignedMessage = RM_WALLET.sign(message256hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
 
@@ -18543,9 +18674,46 @@
 
                 finalMessage = JSON.stringify(msgObj);
             }
+          
+            // The message is for a specific supernode only
+            if (user_flo_id!=="" && user_flo_id.length>0) {
+                try {
+                    wsConn = localbitcoinplusplus.backupWS[user_flo_id].ws_connection;
+                    if(wsConn.readyState !== 1) {
+                        let msg = "WARNING: Websocket not ready to broadcast messages.";
+                        showMessage(msg);
+                        console.warn(msg);
+                        return;
+                    }
+                    wsConn.send(finalMessage);
+                } catch (error) {
+                    showMessage(`ERROR: Failed to determine WS connection with ${user_flo_id}.`);
+                    throw new Error(error);
+                }
+                
+            } else {
+                // The message is for usernodes and all backup supernodes
+                try {
+                    websocket.send(finalMessage);
+
+                    localbitcoinplusplus.backupWS.map(ws_conn=>{
+                        if(ws_conn.readyState !== 1) {
+                            let msg = "WARNING: Websocket not ready to broadcast messages.";
+                            showMessage(msg);
+                            console.warn(msg);
+                            return;
+                        }
+                        ws_conn.send(finalMessage);
+                    });
+
+                } catch(error) {
+                    showMessage(`ERROR: Failed to determine WS connection with ${user_flo_id}.`);
+                    throw new Error(error);
+                }    
+            }
 
             writeToScreen("SENT: " + finalMessage);
-            wsConn.send(finalMessage);
+            
         }
 
         function validateIncomingMessage(message) {
