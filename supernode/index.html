@@ -15796,6 +15796,7 @@
                                 }
                                 break;
                             case "trade_balance_updates":
+                                if(!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(res_obj.nodePubKey)) return;
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     const trade_balance_res = res_obj.params[0];
                                     // Verify data
@@ -15809,40 +15810,35 @@
                                         `${trade_info_str}${buyer_cash_data_str}${seller_cash_data_str}${buyer_btc_data_str}${seller_btc_data_str}`;
                                     let hashed_data = Crypto.SHA256(res_str);
 
-                                    RM_RPC.filter_legit_requests(trade_balance_res.trade_infos.buyer_flo_id, 
-                                    function (is_valid_request) {
-                                        if (is_valid_request !== true) return false;
+                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                        trade_balance_res.supernodePubKey)) {
+                                        if (RM_WALLET.verify(hashed_data,
+                                                trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
+                                            // Delete orders in clients DB
+                                            try {
+                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
+                                            } catch (error) {
+                                                callback(false);
+                                                throw new Error(error);
+                                            }
 
-                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            trade_balance_res.supernodePubKey)) {
-                                            if (RM_WALLET.verify(hashed_data,
-                                                    trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
-                                                // Delete orders in clients DB
-                                                try {
-                                                    removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
-                                                    removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
-                                                } catch (error) {
-                                                    callback(false);
-                                                    throw new Error(error);
-                                                }
-
-                                                // Update balances in clients DB
-                                                try {
-                                                    updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
-                                                        trade_balance_res.trade_infos.buyer_flo_id);
-                                                    updateinDB("cash_balances", trade_balance_res.seller_cash_data,
-                                                        trade_balance_res.trade_infos.seller_flo_id);
-                                                    updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
-                                                        trade_balance_res.trade_infos.buyer_flo_id);
-                                                    updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
-                                                        trade_balance_res.trade_infos.seller_flo_id);
-                                                } catch (error) {
-                                                    callback(false);
-                                                    throw new Error(error);
-                                                }
+                                            // Update balances in clients DB
+                                            try {
+                                                updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
+                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                updateinDB("cash_balances", trade_balance_res.seller_cash_data,
+                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                                updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
+                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
+                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                            } catch (error) {
+                                                callback(false);
+                                                throw new Error(error);
                                             }
                                         }
-                                    });
+                                    }
                                 }
                                 break;
                             case "store_shamirs_secret_pvtkey_shares":
@@ -16267,31 +16263,27 @@
                                 break;
 
                             case "updateUserCryptoBalanceRequest":
-                                let updateUserCryptoBalanceResponseObject = res_obj.params[0];
-                                let SuPubKey = readDB('userPublicData', updateUserCryptoBalanceResponseObject.trader_flo_address)
-                                    .then(user_data => {
-                                        if (typeof user_data !== "object" || user_data.supernode_flo_public_key.length <
-                                            1)
-                                            throw new Error(`No such user exists.`);
-                                        let updateUserCryptoBalanceResponseString = JSON.stringify(
-                                            updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
-                                        let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
-                                            updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
-                                            user_data.supernode_flo_public_key
-                                        );
-                                        if (isBalanceLegit) {
-                                            updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
-                                                user_data.trader_flo_address);
-                                            if (localbitcoinplusplus.wallets.my_local_flo_address ==
-                                                updateUserCryptoBalanceResponseObject.trader_flo_address) {
-                                                displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
-                                                showMessage(`INFO: Your balance is updated.`);
-                                            }
-                                            return true;
-                                        } else {
-                                            showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                 .includes(res_obj.nodePubKey)) {
+                                    let updateUserCryptoBalanceResponseObject = res_obj.params[0];
+                                    let updateUserCryptoBalanceResponseString = JSON.stringify(
+                                                updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
+                                    let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
+                                        updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
+                                        res_obj.nodePubKey
+                                    );
+                                    if (isBalanceLegit) {
+                                        updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
+                                        if (localbitcoinplusplus.wallets.my_local_flo_address ==
+                                            updateUserCryptoBalanceResponseObject.trader_flo_address) {
+                                            displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
+                                            showMessage(`INFO: Your balance is updated.`);
                                         }
-                                    });
+                                        return true;
+                                    } else {
+                                        showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
+                                    }
+                                }
                                 break;
 
                             case "addNewKbucketNode":
@@ -17029,6 +17021,7 @@
                                 }
                                 break;
                             case "trade_balance_updates":
+                                if(!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(res_obj.nodePubKey)) return;
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     const trade_balance_res = res_obj.params[0];
                                     // Verify data
@@ -17042,60 +17035,57 @@
                                         `${trade_info_str}${buyer_cash_data_str}${seller_cash_data_str}${buyer_btc_data_str}${seller_btc_data_str}`;
                                     let hashed_data = Crypto.SHA256(res_str);
 
-                                    RM_RPC.filter_legit_backup_requests(trade_balance_res.trade_infos.buyer_flo_id, 
-                                    function (is_valid_request) {
-                                        if (is_valid_request !== true) return false;
-
-                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                                             trade_balance_res.supernodePubKey)) {
-                                            if (RM_WALLET.verify(hashed_data,
-                                                    trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
+                                        if (RM_WALLET.verify(hashed_data,
+                                                trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
 
-                                                // Delete orders in clients DB
-                                                try {
-                                                    removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
-                                                    removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
-                                                } catch (error) {
-                                                    callback(false);
-                                                    throw new Error(error);
-                                                }
+                                            // Delete orders in clients DB
+                                            try {
+                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
+                                            } catch (error) {
+                                                callback(false);
+                                                throw new Error(error);
+                                            }
 
-                                                // Update balances in clients DB
-                                                try {
-                                                    updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
-                                                        trade_balance_res.trade_infos.buyer_flo_id);
-                                                    updateinDB("cash_balances", trade_balance_res.seller_cash_data,
-                                                        trade_balance_res.trade_infos.seller_flo_id);
-                                                    updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
-                                                        trade_balance_res.trade_infos.buyer_flo_id);
-                                                    updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
-                                                        trade_balance_res.trade_infos.seller_flo_id);
-                                                } catch (error) {
-                                                    callback(false);
-                                                    throw new Error(error);
-                                                }
+                                            // Update balances in clients DB
+                                            try {
+                                                updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
+                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                updateinDB("cash_balances", trade_balance_res.seller_cash_data,
+                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                                updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
+                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
+                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                            } catch (error) {
+                                                callback(false);
+                                                throw new Error(error);
                                             }
                                         }
-                                    });
+                                    }
                                 }
                                 break;
                             case "store_shamirs_secret_pvtkey_shares":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                        if(typeof res_obj.params[0].trader_flo_address !="string") return;
+                                        localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
+                                        .then(my_closest_su_list=>{
+                                            const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
+                                            const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
-                                    if(typeof res_obj.params[0].trader_flo_address !="string") return;
-                                    localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
-                                    .then(my_closest_su_list=>{
-                                        const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
-                                        const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
-
-                                        if(typeof backup_server_db_instance !== "object") {
-                                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                            showMessage(backup_db_error_msg);
-                                            throw new Error(backup_db_error_msg);
-                                        };
-                                        delete res_obj.params[0].trader_flo_address;
-                                        backup_server_db_instance.backup_addDB("supernode_private_key_chunks", res_obj.params[0]);
-                                    });
+                                            if(typeof backup_server_db_instance !== "object") {
+                                                let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                showMessage(backup_db_error_msg);
+                                                throw new Error(backup_db_error_msg);
+                                            };
+                                            delete res_obj.params[0].trader_flo_address;
+                                            backup_server_db_instance.backup_addDB("supernode_private_key_chunks", res_obj.params[0]);
+                                        });
+                                    }
                                 }
                                 break;
                             case "send_back_shamirs_secret_supernode_pvtkey":
@@ -17596,31 +17586,29 @@
                                 break;
 
                                 case "updateUserCryptoBalanceRequest":
-                                let updateUserCryptoBalanceResponseObject = res_obj.params[0];
-                                let SuPubKey = readDB('userPublicData', updateUserCryptoBalanceResponseObject.trader_flo_address)
-                                    .then(user_data => {
-                                        if (typeof user_data !== "object" || user_data.supernode_flo_public_key.length <
-                                            1)
-                                            throw new Error(`No such user exists.`);
-                                        let updateUserCryptoBalanceResponseString = JSON.stringify(
-                                            updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
-                                        let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
-                                            updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
-                                            user_data.supernode_flo_public_key
-                                        );
-                                        if (isBalanceLegit) {
-                                            updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
-                                                user_data.trader_flo_address);
-                                            if (localbitcoinplusplus.wallets.my_local_flo_address ==
-                                                updateUserCryptoBalanceResponseObject.trader_flo_address) {
-                                                displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
-                                                showMessage(`INFO: Your balance is updated.`);
-                                            }
-                                            return true;
-                                        } else {
-                                            showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                 .includes(res_obj.nodePubKey)) {
+                                    let updateUserCryptoBalanceResponseObject = res_obj.params[0];
+                                    let updateUserCryptoBalanceResponseString = JSON.stringify(
+                                                updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
+                                    let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
+                                        updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
+                                        res_obj.nodePubKey
+                                    );
+                                    if (isBalanceLegit) {
+                                        updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
+                                        updateUserCryptoBalanceResponseObject.trader_flo_address);
+                                        if (localbitcoinplusplus.wallets.my_local_flo_address ==
+                                            updateUserCryptoBalanceResponseObject.trader_flo_address) {
+                                            displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
+                                            showMessage(`INFO: Your balance is updated.`);
                                         }
-                                    });
+                                        return true;
+                                    } else {
+                                        showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
+                                    }
+                                 }
+                                
                                 break;
 
                             case "addNewKbucketNode":
@@ -18165,7 +18153,7 @@
                                                 buyOrders_data.supernodePubKey);
                                         if (isDataSignedBySuperNode === true) {
 
-                                            let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj[0].trader_flo_address);
+                                            let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(buyOrders_data.trader_flo_address);
                                             const primarySupernode = getPrimarySuObj[0].data.id;
                                             const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
 
@@ -18192,7 +18180,7 @@
                                         .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
                                             sellOrders_data.supernodePubKey);
                                     if (isDataSignedBySuperNode === true) {
-                                        let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj[0].trader_flo_address);
+                                        let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(sellOrders_data.trader_flo_address);
                                         const primarySupernode = getPrimarySuObj[0].data.id;
                                         const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
                                         
@@ -18331,6 +18319,8 @@
                             break;
 
                             case "trade_balance_updates":
+                                
+                                if(!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(res_obj.nodePubKey)) return;
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     const trade_balance_res = res_obj.params[0];
                                     // Verify data
@@ -18705,49 +18695,47 @@
                             break;
 
                             case "updateUserCryptoBalanceRequest":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object")  { 
-                                
-                                let updateUserCryptoBalanceResponseObject = res_obj.params[0];
-                                
-                                if(typeof res_obj.params[0].trader_flo_address !="string") return;
-                                localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
-                                .then(my_closest_su_list=>{
-                                    const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
-                                    const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
+                             if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                 .includes(res_obj.nodePubKey)) {
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object")  { 
+                                    
+                                        let updateUserCryptoBalanceResponseObject = res_obj.params[0];
+                                        console.log(res_obj.params[0]);
+                                        
+                                        if(typeof res_obj.params[0].trader_flo_address !="string") return;
+                                        localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
+                                        .then(my_closest_su_list=>{
+                                            const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
+                                            const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
-                                    if(typeof backup_server_db_instance !== "object") {
-                                        let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                        showMessage(backup_db_error_msg);
-                                        throw new Error(backup_db_error_msg);
-                                    };
+                                            if(typeof backup_server_db_instance !== "object") {
+                                                let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                showMessage(backup_db_error_msg);
+                                                throw new Error(backup_db_error_msg);
+                                            };
 
-                                    let SuPubKey = backup_server_db_instance.backup_readDB('userPublicData', updateUserCryptoBalanceResponseObject.trader_flo_address)
-                                    .then(user_data => {
-                                        if (typeof user_data !== "object" || user_data.supernode_flo_public_key.length <
-                                            1)
-                                            throw new Error(`No such user exists.`);
-                                        let updateUserCryptoBalanceResponseString = JSON.stringify(
-                                            updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
-                                        let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
-                                            updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
-                                            user_data.supernode_flo_public_key
-                                        );
-                                        if (isBalanceLegit) {
-                                            backup_server_db_instance.backup_updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
-                                                user_data.trader_flo_address);
-                                            if (localbitcoinplusplus.wallets.my_local_flo_address ==
-                                                updateUserCryptoBalanceResponseObject.trader_flo_address) {
-                                                displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
-                                                showMessage(`INFO: Your balance is updated.`);
+                                            let updateUserCryptoBalanceResponseString = JSON.stringify(
+                                                    updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
+                                            let isBalanceLegit = RM_WALLET.verify(updateUserCryptoBalanceResponseString,
+                                                updateUserCryptoBalanceResponseObject.updatedBTCBalanceObjectSign,
+                                                res_obj.nodePubKey
+                                            );
+                                            if (isBalanceLegit) {
+                                                backup_server_db_instance.backup_updateinDB("crypto_balances", updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject);
+                                                if (localbitcoinplusplus.wallets.my_local_flo_address ==
+                                                    updateUserCryptoBalanceResponseObject.trader_flo_address) {
+                                                    displayBalances(updateUserCryptoBalanceResponseObject.trader_flo_address);
+                                                    showMessage(`INFO: Your balance is updated.`);
+                                                }
+                                                return true;
+                                            } else {
+                                                showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
                                             }
-                                            return true;
-                                        } else {
-                                            showMessage(`WARNING: Failed to update balance in your DB. Please refresh.`);
-                                        }
-                                    });
-                                    });
-                                }
-                                break;
+                                        });
+                                    }
+                                 }
+                                
+                            break;
 
                             default: 
                             break;
