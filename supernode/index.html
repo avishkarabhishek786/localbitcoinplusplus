@@ -14030,7 +14030,7 @@
                             let res_btc;
 
                             // supernode data query
-                            _readDB('localbitcoinUser', '00-01').then(function (user_data) {
+                            readDB('localbitcoinUser', '00-01').then(function (user_data) {
                                 if (typeof user_data == "object" && typeof localbitcoinplusplus.wallets
                                     .MY_SUPERNODE_PRIVATE_KEY ==
                                     "string" && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
@@ -14130,7 +14130,7 @@
                             }
 
                             // supernode data query
-                            _readDB('localbitcoinUser', '00-01').then(function (user_data) {
+                            readDB('localbitcoinUser', '00-01').then(function (user_data) {
                                 if (typeof user_data == "object" && typeof localbitcoinplusplus.wallets
                                     .MY_SUPERNODE_PRIVATE_KEY ==
                                     "string" && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
@@ -14629,7 +14629,7 @@
                                                         }
 
                                                         // supernode data query
-                                                        _readDB('localbitcoinUser', '00-01')
+                                                        readDB('localbitcoinUser', '00-01')
                                                             .then(
                                                                 function (user_data) {
                                                                     if (typeof user_data ==
@@ -16856,9 +16856,13 @@
                                     // Only the relevent user node should get response
                                     if(buyOrders_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
                                     
-                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            buyOrders_data.supernodePubKey)) {
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" 
+                                    // Commented this because it prevents usernode to register data in db
+                                    // while a backup supernode sends it any data like trade_buy
+
+                                    //    && localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                    //         buyOrders_data.supernodePubKey)
+                                    ) {
                                         let isDataSignedBySuperNode = RM_WALLET
                                             .verify(buyOrders_data.data_hash, buyOrders_data.supernode_sign,
                                                 buyOrders_data.supernodePubKey);
@@ -16881,10 +16885,13 @@
                                     // Only the relevent user node should get response
                                     if(res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
 
-                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" &&
-                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            sellOrders_data
-                                            .supernodePubKey)) {
+                                    if (typeof localbitcoinplusplus.master_configurations.supernodesPubKeys == "object" 
+                                        // Commented this because it prevents usernode to register data in db
+                                        // while a backup supernode sends it any data like trade_buy
+    
+                                        // && localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                        // sellOrders_data.supernodePubKey)
+                                    ) {
                                         let isDataSignedBySuperNode = RM_WALLET
                                             .verify(sellOrders_data.data_hash, sellOrders_data.supernode_sign,
                                                 sellOrders_data.supernodePubKey);
@@ -17060,8 +17067,8 @@
                                         `${trade_info_str}${buyer_cash_data_str}${seller_cash_data_str}${buyer_btc_data_str}${seller_btc_data_str}`;
                                     let hashed_data = Crypto.SHA256(res_str);
 
-                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                            trade_balance_res.supernodePubKey)) {
+                                    // if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                    //         trade_balance_res.supernodePubKey)) {
                                         if (RM_WALLET.verify(hashed_data,
                                                 trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
 
@@ -17089,7 +17096,7 @@
                                                 throw new Error(error);
                                             }
                                         }
-                                    }
+                                    //}
                                 }
                                 break;
                             case "store_shamirs_secret_pvtkey_shares":
@@ -17114,7 +17121,10 @@
                                 }
                                 break;
                             case "send_back_shamirs_secret_supernode_pvtkey":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object"
+                                && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                ) {
                                     
                                     if(typeof res_obj.globalParams.primarySupernode !="string") return;
                                     localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.primarySupernode)
