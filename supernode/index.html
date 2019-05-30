@@ -15362,8 +15362,29 @@
                         if (res_obj.method==="is_node_alive_request"
                         && localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
-                        && (res_obj.params[0].receiver_flo_address == localbitcoinplusplus.wallets.my_local_flo_address)) {
-                            reactor.dispatchEvent('nodeIsAlive', res_obj);    
+                        && (res_obj.params[0].receiver_flo_address == 
+                        localbitcoinplusplus.wallets.my_local_flo_address)) {
+                            // Register his attendance
+                            reactor.dispatchEvent('nodeIsAlive', res_obj);
+                            // Send your live status to Sender
+                            const RM_RPC = new localbitcoinplusplus.rpc;
+                            RM_RPC
+                            .send_rpc
+                            .call(this, "yup_i_am_awake", {
+                                JOB: 'I_AM_ALIVE',
+                                trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
+                                receiver_flo_address: res_obj.globalParams.senderFloId
+                            }).then(req=>doSend(req));    
+                            return;
+                        }
+
+                        if (res_obj.method=="yup_i_am_awake"
+                            && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                            && (res_obj.params[0].receiver_flo_address == 
+                            localbitcoinplusplus.wallets.my_local_flo_address)) {
+                            
+                            reactor.dispatchEvent('nodeIsAlive', res_obj);
                             return;
                         }
                     }
@@ -15498,6 +15519,12 @@
         function onOpen(evt) {
            localbitcoinplusplus.amIreadyToServePrimaryUsers = false;
            reactor.dispatchEvent('new_supernode_connected', evt);
+           readAllDB('myClosestSupernodes').then(sconn=>{
+                const switchMyWS = new backupSupernodesWebSocketObject(); 
+                sconn.map((m,i)=>{
+                    if(i>0) switchMyWS.updateSupernodeAvailabilityStatus(m.trader_flo_address, false);
+                });
+           });
         }
 
         function onClose(evt) {
@@ -16632,7 +16659,7 @@
                                                     if (obj.length > 0) {
                                                         for (var prop in obj) {
                                                             if (!obj.hasOwnProperty(prop)) continue;
-                                                            await localbitcoinplusplus.newBackupDatabase.db[trader_flo_address]
+                                                            await localbitcoinplusplus.newBackupDatabase.db[su_db_data.trader_flo_address]
                                                                 .backup_updateinDB(tableStoreName, obj[prop], obj[prop]
                                                                 .trader_flo_address).then(()=>{
                                                                     showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
@@ -16640,13 +16667,13 @@
                                                         }
                                                     }
                                                 } else {
-                                                    let resdbdata = await localbitcoinplusplus.newBackupDatabase.db[trader_flo_address]
+                                                    let resdbdata = await localbitcoinplusplus.newBackupDatabase.db[su_db_data.trader_flo_address]
                                                                 .backup_removeAllinDB(tableStoreName);
                                                     if (resdbdata !== false) {
                                                         if (obj.length > 0) {
                                                             for (var prop in obj) {
                                                                 if (!obj.hasOwnProperty(prop)) continue;
-                                                                await localbitcoinplusplus.newBackupDatabase.db[trader_flo_address]
+                                                                await localbitcoinplusplus.newBackupDatabase.db[su_db_data.trader_flo_address]
                                                                 .backup_addDB(resdbdata, obj[prop]).then(()=>{
                                                                     showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
                                                                 });
@@ -16683,7 +16710,28 @@
                                 case "is_node_alive_request":
                                    if(localbitcoinplusplus.master_configurations.supernodesPubKeys
                                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                        reactor.dispatchEvent('nodeIsAlive', res_obj);    
+                                        reactor.dispatchEvent('nodeIsAlive', res_obj); 
+                                        // Send your live status to Sender
+                                        const RM_RPC = new localbitcoinplusplus.rpc;
+                                        RM_RPC
+                                        .send_rpc
+                                        .call(this, "yup_i_am_awake", {
+                                            JOB: 'I_AM_ALIVE',
+                                            trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
+                                            receiver_flo_address: res_obj.globalParams.senderFloId
+                                        }).then(req=>doSend(req)); 
+                                    }
+                                break;
+
+                                case "yup_i_am_awake":
+                                    if (res_obj.method=="yup_i_am_awake"
+                                        && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                        && (res_obj.params[0].receiver_flo_address == 
+                                        localbitcoinplusplus.wallets.my_local_flo_address)) {
+                                        
+                                        reactor.dispatchEvent('nodeIsAlive', res_obj);
+                                        return;
                                     }
                                 break;
 
@@ -18010,9 +18058,30 @@
                             case "is_node_alive_request":
                                 if(localbitcoinplusplus.master_configurations.supernodesPubKeys
                                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                    reactor.dispatchEvent('nodeIsAlive', res_obj);    
+                                    reactor.dispatchEvent('nodeIsAlive', res_obj); 
+                                    // Send your live status to Sender
+                                    const RM_RPC = new localbitcoinplusplus.rpc;
+                                    RM_RPC
+                                    .send_rpc
+                                    .call(this, "yup_i_am_awake", {
+                                        JOB: 'I_AM_ALIVE',
+                                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
+                                        receiver_flo_address: res_obj.globalParams.senderFloId
+                                    }).then(req=>doSend(req));   
                                 }  
                             break;
+
+                            case "yup_i_am_awake":
+                                if (res_obj.method=="yup_i_am_awake"
+                                    && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                    && (res_obj.params[0].receiver_flo_address == 
+                                    localbitcoinplusplus.wallets.my_local_flo_address)) {
+                                    
+                                    reactor.dispatchEvent('nodeIsAlive', res_obj);
+                                    return;
+                                }
+                                break;
 
                             default:
                                 break;
@@ -18893,9 +18962,9 @@
                                     let msg = "WARNING: Websocket not ready to broadcast messages.";
                                     showMessage(msg);
                                     console.warn(msg);
-                                    break;
+                                } else {
+                                    ws_conn.send(finalMessage);
                                 }
-                                ws_conn.send(finalMessage);
                             }
                         }
                     }
@@ -20892,7 +20961,8 @@
 
         reactor.addEventListener('nodeIsAlive', function(res_obj) {
             try {
-                if (res_obj.params[0].JOB !== "ARE_YOU_ALIVE") return;
+                if (res_obj.params[0].JOB !== "ARE_YOU_ALIVE" 
+                || res_obj.params[0].JOB !== "I_AM_ALIVE") return;
                 const params=res_obj.params[0];
                 if (params.receiver_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
                 const switchMyWS = new backupSupernodesWebSocketObject();
