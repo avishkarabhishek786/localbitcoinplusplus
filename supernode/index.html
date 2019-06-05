@@ -12612,7 +12612,8 @@
                                 const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
                                     "crypto_balances", "cash_balances", "userPublicData"
                                 ];
-                                localbitcoinplusplus.actions.get_sharable_db_data(tableArray).then(
+
+                                localbitcoinplusplus.actions.get_sharable_db_data(tableArray, primarySupernodeOfThisUser).then(
                                     function (su_db_data) {
                                         if (typeof su_db_data == "object") {
                                             su_db_data.trader_flo_address = params.trader_flo_address;
@@ -12677,7 +12678,8 @@
                                             .call(this, "sync_backup_supernode_from_backup_supernode_response",
                                                 su_db_data)
                                             .then(server_sync_response=>
-                                            doSend(server_sync_response, params.requester_flo_id));
+                                            doSend(server_sync_response));
+                                            //doSend(server_sync_response, params.requester_flo_id));
                                         }
                                     });
                             }
@@ -15351,6 +15353,7 @@
                         }
                         if (res_obj.method==="sync_backup_supernode_from_backup_supernode"
                         || res_obj.method==="sync_primary_supernode_from_backup_supernode_response"
+                        || res_obj.method==="sync_backup_supernode_from_backup_supernode_response"
                         ) {
                             onMessage(response);
                             return;
@@ -20159,14 +20162,18 @@
                                     firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
                                 } else {
                                     // it will ask backup from backup su next closest
-                                    for (let j = index-1; j >= index-localbitcoinplusplus.master_configurations.MaxBackups; j--) {
-                                        const nextBKSu = closestSuNodes[j].trader_flo_address;
+                                    for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                        let actual_num = j%index;
+                                        const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
                                         if (nextBKSu !== idbData.myLocalFLOAddress
-                                         && closestSuNodes[index].is_live==true 
+                                         && closestSuNodes[actual_num].is_live==true 
                                          && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
+                                            
+                                            firstAliveBackupFloIdForBackupSupernode = closestSuNodes[actual_num].trader_flo_address;
+
                                             localbitcoinplusplus.actions
                                             .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                                            firstAliveBackupFloIdForBackupSupernode, closestSuNodes[j].trader_flo_address);
+                                            firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
                                         }
                                     }
                                 }   
@@ -20916,7 +20923,8 @@
 
                     // ReadyState was 3 when this node disconnected. Re-initiate the 
                     // WS connection to be able to send/receive messages
-                    if (typeof localbitcoinplusplus.backupWS[getFLOId]=="object") {
+                    if (typeof localbitcoinplusplus.backupWS[getFLOId]=="object"
+                    && localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState !== 1) {
                         const back_ws_url = localbitcoinplusplus.backupWS[getFLOId].ws_url;
                         localbitcoinplusplus.backupWS[getFLOId] = null;
                         localbitcoinplusplus.backupWS[getFLOId] = new backupSupernodesWebSocketObject(back_ws_url);
