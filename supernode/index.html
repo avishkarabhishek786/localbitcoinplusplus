@@ -15253,7 +15253,7 @@
                     setTimeout(function() { 
                         if ((typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
                             || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1)
-                            ) {
+                        ) {
                             RM_WALLET.manually_assign_my_private_key();
                             loadExternalFiles();
                             dataBaseUIOperations();    
@@ -15470,7 +15470,6 @@
                     
                 if(websocket.readyState===1) {
 
-                    // Meanwhile, request backup supernodes to sync data for down supernode in their resp. db.
                     if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                         
@@ -15493,7 +15492,7 @@
                         });
                     }
 
-                    return Promise.resolve(true)
+                    return Promise.resolve(true);
                 } else {
                     let ms = `Error: Failed to connect to any supernode.`;
                     showMessage(ms)
@@ -20991,8 +20990,8 @@
                 const getSubjectSupernodeDetails = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', disconnectedWSServerFloId);
                 if (typeof getSubjectSupernodeDetails=="object" && getSubjectSupernodeDetails[0].is_live!==true) {
                     showMessage(`INFO: Connection to primary Supernode failed. Attempting to connect to secondary Supernode.`);
-                    switchMyWS.switchToBackupWS(evt.srcElement.url);        
-                } 
+                    switchMyWS.switchToBackupWS(evt.srcElement.url);    
+                }
             });
         });
         
@@ -21018,6 +21017,44 @@
                         switchMyWS.updateSupernodeAvailabilityStatus(`ws://${cs[0].ip}:${cs[0].port}`, false);
                     });
 
+                    // Find out if you are the next eligible backup supernode, 
+                    // If true, send dead su's data to all your backup supernodes 
+                    // which are not fallen supernode's backup supernodes to sync 
+                    // data from you
+                    const mcs = await readAllDB('myClosestSupernodes');
+                    const index = mcs.findIndex(f=>f.trader_flo_address==getFLOId);
+                    tail = mcs.splice(0, index);
+                    const newClosestSupernodeMasterList = mcs.concat(tail);
+                    
+                    for(i=0; i<=newClosestSupernodeMasterList.length; i++) {
+                        if(newClosestSupernodeMasterList[i].is_live==true) break; 
+                        if(newClosestSupernodeMasterList[i].trader_flo_address==
+                            localbitcoinplusplus.wallets.my_local_flo_address) {
+
+                                const nonBackUpSusForDeadSu = newClosestSupernodeMasterList
+                                    .filter(function(obj) { return mcs.indexOf(obj) == -1; });  
+
+                                console.log(nonBackUpSusForDeadSu);
+                                
+                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances"];
+
+                                localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId)
+                                .then(function (su_db_data) {
+                                    if (typeof su_db_data == "object") {
+                                        nonBackUpSusForDeadSu.map(nbs=>{
+                                            su_db_data.trader_flo_address = nbs.trader_flo_address;
+                                            su_db_data.receiver_flo_address = nbs.trader_flo_address;
+                                            RM_RPC
+                                            .send_rpc
+                                            .call(this, "sync_backup_supernode_from_backup_supernode_response", su_db_data)
+                                            .then(server_sync_response=>doSend(server_sync_response, nbs.trader_flo_address));    
+                                        });
+                                    }
+                                });
+                            break;
+                        }
+                    }
+                    
                     msg = `INFO: Supernode ${getFLOId} left.`;
                 } else {
                     msg = `INFO: User node ${getFLOId} left.`;
