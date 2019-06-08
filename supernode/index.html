@@ -10071,7 +10071,7 @@
                     RMAssets =
                         `masterFLOPubKey=029EF7838D4D103E62262394B5417E8ABFD75539D19E61CA5FD0C2051B69B29910
                         #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
-                        #!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
+                        #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
                         #!#MaxBackups=2
                         #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
                         03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
@@ -11369,7 +11369,8 @@
                                 "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
                                 const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
-                                    "crypto_balances", "cash_balances", "userPublicData"
+                                    "crypto_balances", "cash_balances", "userPublicData", 
+                                    "buyOrders", "sellOrders"
                                 ];
                                 localbitcoinplusplus.actions.get_sharable_db_data(tableArray).then(
                                     function (su_db_data) {
@@ -11582,8 +11583,7 @@
 
                                                 params.id = helper_functions.unique_id();
                                                 params.status = 1;
-                                                params.btc_address =
-                                                    generate_btc_keys_for_requester.address;
+                                                params.btc_address = generate_btc_keys_for_requester.address;
 
                                                 params.bitcoinToBePaid = RM_TRADE.calculateCryptoEquivalentOfCash(
                                                     params.depositing_amount, params.currency,
@@ -11609,7 +11609,6 @@
                                                             .supernodesPubKeys
                                                             .includes(su_data.myLocalFLOPublicKey)
                                                         ) {
-
                                                             let receivedTradeInfoHash =
                                                                 Crypto.SHA256(JSON.stringify(receivedTradeInfo));
 
@@ -11621,17 +11620,13 @@
                                                             receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
                                                             try {
-                                                                const this_btc_pvt_key =
-                                                                    generate_btc_keys_for_requester.privateKeyWIF;
-                                                                const this_btc_tx_key =
-                                                                    Crypto.util.randomBytes(64);
-                                                                const
-                                                                    this_btc_pvt_key_shamirs_secret =
+                                                                const this_btc_pvt_key = generate_btc_keys_for_requester.privateKeyWIF;
+                                                                const this_btc_tx_key = Crypto.util.randomBytes(64);
+                                                                const this_btc_pvt_key_shamirs_secret =
                                                                     RM_WALLET.createShamirsSecretShares(this_btc_pvt_key, 10, 5);
-                                                                if (typeof this_btc_pvt_key_shamirs_secret ==
-                                                                    "object" &&
-                                                                    this_btc_pvt_key_shamirs_secret
-                                                                    .length > 0) {
+                                                                if (typeof this_btc_pvt_key_shamirs_secret == "object" 
+                                                                    && this_btc_pvt_key_shamirs_secret.length > 0) {
+
                                                                     addDB("deposit", receivedTradeInfo);
 
                                                                     // Send the address to the requester
@@ -12610,7 +12605,8 @@
                                 "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
                                 const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
-                                    "crypto_balances", "cash_balances", "userPublicData"
+                                    "crypto_balances", "cash_balances", "userPublicData",
+                                    "buyOrders", "sellOrders"
                                 ];
 
                                 localbitcoinplusplus.actions.get_sharable_db_data(tableArray, primarySupernodeOfThisUser).then(
@@ -12638,7 +12634,7 @@
                                 "SYNC_PRIMARY_SUPERNODE_DB_WITH_BACKUP_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
                                 const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances",
-                                "system_btc_reserves_private_keys"];
+                                "system_btc_reserves_private_keys", "buyOrders", "sellOrders"];
 
                                 localbitcoinplusplus.actions.get_sharable_db_data(tableArray, params.trader_flo_address).then(
                                     function (su_db_data) {
@@ -12664,7 +12660,8 @@
                             if (is_valid_request === true && params.job ==
                                 "SYNC_BACKUP_SUPERNODE_DB_WITH_BACKUP_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
-                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances"];
+                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances",
+                                "buyOrders", "sellOrders"];
 
                                 let rec_flo_id = (params.receiver_flo_address==params.trader_flo_address) ? "" : params.trader_flo_address;
 
@@ -12985,12 +12982,7 @@
                                                                             let
                                                                                 chunk_ids =
                                                                                 Crypto.util
-                                                                                .bytesToHex(
-                                                                                    Crypto
-                                                                                    .util
-                                                                                    .randomBytes(
-                                                                                        64
-                                                                                    ));
+                                                                                .bytesToHex(Crypto.util.randomBytes(64));
                                                                             let
                                                                                 chunk_array = {
                                                                                     "id": chunk_ids,
@@ -14287,6 +14279,31 @@
                     !localbitcoinplusplus.master_configurations.tradableAsset2.includes(currency_code)) return false;
                 let new_price = 1000000;
 
+                if (crypto_code=="BTC" && currency_code=="USD") {
+                    new_price = 8000;
+                }
+                if (crypto_code=="BTC_TEST" && currency_code=="USD") {
+                    new_price = 8000;
+                }
+                if (crypto_code=="BTC" && currency_code=="INR") {
+                    new_price = 600000;
+                }
+                if (crypto_code=="BTC_TEST" && currency_code=="INR") {
+                    new_price = 600000;
+                }
+                if (crypto_code=="FLO" && currency_code=="USD") {
+                    new_price = 0.08;
+                }
+                if (crypto_code=="FLO_TEST" && currency_code=="USD") {
+                    new_price = 0.08;
+                }
+                if (crypto_code=="FLO" && currency_code=="INR") {
+                    new_price = 2.5;
+                }
+                if (crypto_code=="FLO_TEST" && currency_code=="INR") {
+                    new_price = 2.5;
+                }
+
                 /**************************
                     Fetch latest rates here
                 ***************************/
@@ -14296,6 +14313,26 @@
                 // } else if(crypto_code=="FLO" || crypto_code=="FLO_TEST") {
                 //     new_price = (currency_code=="USD") ? 0.08 : 5.8;
                 // }
+
+                // fetch(`https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest`, {
+                //     method: "POST", // *GET, POST, PUT, DELETE, etc.
+                //     mode: "cors", // no-cors, cors, *same-origin
+                //     cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+                //     credentials: "same-origin", // include, *same-origin, omit
+                //     headers: {
+                //         "Content-Type": "application/json",
+                //         'X-CMC_PRO_API_KEY': 'fe231f8e-6d40-49c8-a22b-231123a7543a'
+                //     },
+                //     redirect: "follow", // manual, *follow, error
+                //     referrer: "no-referrer", // no-referrer, *client
+                //     body: JSON.stringify({
+                //         'start': '1',
+                //         'limit': '1',
+                //         'convert': 'USD,BTC'
+                //       }), // body data type must match "Content-Type" header
+                // })
+                // .then(response => response.json()); // parses response to JSON
+
                 Object.defineProperty(localbitcoinplusplus.trade,
                     `current_${crypto_code}_price_in_${currency_code}`, {
                         value: {
@@ -16409,7 +16446,8 @@
                                 //     if (is_valid_request === true) {
                                         let data = res_obj.params[0];
                                         const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
-                                            "crypto_balances", "cash_balances", "userPublicData"
+                                            "crypto_balances", "cash_balances", "userPublicData",
+                                            "buyOrders", "sellOrders"
                                         ];
                                         localbitcoinplusplus.actions.get_sharable_db_data(tableArray)
                                         .then(function (su_db_data) {
@@ -17808,7 +17846,8 @@
                                 //     if (is_valid_request === true) {
                                         let data = res_obj.params[0];
                                         const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
-                                            "crypto_balances", "cash_balances", "userPublicData"
+                                            "crypto_balances", "cash_balances", "userPublicData",
+                                            "buyOrders", "sellOrders"
                                         ];
                                         localbitcoinplusplus.actions.get_sharable_db_data(tableArray)
                                         .then(function (su_db_data) {
@@ -18183,7 +18222,8 @@
                                         const requester_supernode_flo_address = received_resp.trader_flo_address;
 
                                         const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
-                                            "crypto_balances", "cash_balances", "userPublicData"
+                                            "crypto_balances", "cash_balances", "userPublicData",
+                                            "buyOrders", "sellOrders"
                                         ];
                                         localbitcoinplusplus.actions.get_sharable_db_data(tableArray).then(
                                             function (su_db_data) {
@@ -20804,8 +20844,7 @@
                         
 
                         /************************ Case of dispute *****************/
-                        if (0) {
-                            //if (trader_deposits.bitcoinToBePaid - balance > localbitcoinplusplus.master_configurations.btcTradeMargin) {
+                        if (trader_deposits.bitcoinToBePaid - balance > localbitcoinplusplus.master_configurations.btcTradeMargin) {
                             console.log(trader_deposits.bitcoinToBePaid, balance, localbitcoinplusplus.master_configurations
                                 .btcTradeMargin);
                             console.warn("User sent less cryptos");
@@ -20838,8 +20877,9 @@
                                 crypto_currency: trader_deposits.product
                             }
                             _readDB('crypto_balances', trader_depositor_cash_id).then(function (res_btc_balances) {
-                                if (typeof res_btc_balances == "object" && typeof res_btc_balances.result ==
-                                    "object" && typeof res_btc_balances.crypto_balance == "number") {
+                                if (typeof res_btc_balances == "object" 
+                                //&& typeof res_btc_balances.result == "object" 
+                                && typeof res_btc_balances.crypto_balance == "number") {
                                     updatedCryptobalances.crypto_balance = Number(parseFloat(res_btc_balances
                                         .crypto_balance + updatedCryptobalances.crypto_balance));
                                 }
@@ -21036,7 +21076,8 @@
 
                                 console.log(nonBackUpSusForDeadSu);
                                 
-                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances"];
+                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances"
+                                , "crypto_balances", "buyOrders", "sellOrders"];
 
                                 localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId)
                                 .then(function (su_db_data) {
