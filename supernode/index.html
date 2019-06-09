@@ -10071,7 +10071,7 @@
                     RMAssets =
                         `masterFLOPubKey=029EF7838D4D103E62262394B5417E8ABFD75539D19E61CA5FD0C2051B69B29910
                         #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
-                        #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
+                        #!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
                         #!#MaxBackups=2
                         #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
                         03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
@@ -16661,8 +16661,8 @@
                                                         .call(this, "reconnect_with_another_supernode", {
                                                             "trader_flo_address": su_db_data.trader_flo_address,
                                                             //"receiver_flo_address": "", // message for all
-                                                            "ws_url": websocket.url,
-                                                            "server_msg": `Your primary Supernode is live and synced. You can start using the system.`,
+                                                            //"ws_url": websocket.url,
+                                                            "server_msg": `Your primary/secondary Supernode is live and synced. You can start using the system.`,
                                                         }).then(server_response=>doSend(server_response));
                                                     
                                                     }); 
@@ -16743,19 +16743,36 @@
                                 break;
 
                                 case "reconnect_with_another_supernode":
-                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                        let su_db_data = res_obj.params[0];
-                                        const RM_RPC = new localbitcoinplusplus.rpc;
-                                        RM_RPC.filter_legit_requests(su_db_data.trader_flo_address, 
-                                            async function (is_valid_request) {
-                                                if (is_valid_request!==true) return;
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object"
+                                        && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                            .includes(res_obj.nodePubKey)
+                                    ) {
+                                        (async function() {
+                                            let su_db_data = res_obj.params[0];
+                                            const MCS = await localbitcoinplusplus.kademlia.determineClosestSupernode(su_db_data.trader_flo_address, 10);
+                                            
+                                            // If user is already connected to primary return back
+                                            if (localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == MCS[0].data.id) return;
+
+                                            // If user is already connected to given Supernode return
+                                            if (localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == su_db_data.trader_flo_address) return;
+
+                                            const mcslist = MCS.map(m=>m.data.id);
+
+                                            if(mcslist.indexOf(su_db_data.trader_flo_address) < mcslist.indexOf(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS)) {
                                                 if (websocket.readyState === WebSocket.OPEN) {
                                                     websocket.close();
-                                                    await startWebSocket(su_db_data.ws_url);
-                                                    showMssage(`INFO: ${su_db_data.server_msg}`);
+                                                    const newSu = await readDBbyIndex('myClosestSupernodes','trader_flo_address', su_db_data.trader_flo_address);
+                                                    if (typeof newSu=="object" && typeof newSu[0].trader_flo_address=="string") {
+                                                        await startWebSocket(`ws://${newSu[0].ip}:${newSu[0].port}`);
+                                                        showMssage(`INFO: ${su_db_data.server_msg}`);   
+                                                    } else {
+                                                        alert(`INFO: Please reload the page.`);
+                                                    }
                                                 }
                                             }
-                                        );
+
+                                        })();
                                     }
                                 break;
 
@@ -18158,6 +18175,40 @@
                                 }
                                 break;
 
+                                case "reconnect_with_another_supernode":
+                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object"
+                                        && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                            .includes(res_obj.nodePubKey)
+                                    ) {
+                                        (async function() {
+                                            let su_db_data = res_obj.params[0];
+                                            const MCS = await localbitcoinplusplus.kademlia.determineClosestSupernode(su_db_data.trader_flo_address, 10);
+                                            
+                                            // If user is already connected to primary return back
+                                            if (localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == MCS[0].data.id) return;
+
+                                            // If user is already connected to given Supernode return
+                                            if (localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == su_db_data.trader_flo_address) return;
+
+                                            const mcslist = MCS.map(m=>m.data.id);
+
+                                            if(mcslist.indexOf(su_db_data.trader_flo_address) < mcslist.indexOf(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS)) {
+                                                if (websocket.readyState === WebSocket.OPEN) {
+                                                    websocket.close();
+                                                    const newSu = await readDBbyIndex('myClosestSupernodes','trader_flo_address', su_db_data.trader_flo_address);
+                                                    if (typeof newSu=="object" && typeof newSu[0].trader_flo_address=="string") {
+                                                        await startWebSocket(`ws://${newSu[0].ip}:${newSu[0].port}`);
+                                                        showMssage(`INFO: ${su_db_data.server_msg}`);   
+                                                    } else {
+                                                        alert(`INFO: Please reload the page.`);
+                                                    }
+                                                }
+                                            }
+
+                                        })();
+                                    }
+                                break;
+                                
                             default:
                                 break;
                         }
@@ -20175,50 +20226,48 @@
                     wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
                     
                     if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
-                        if (typeof idbData.lastConnectedSupernode == "string"
-                        && idbData.lastConnectedSupernode !== wsUri[0].trader_flo_address) {
-                            showMessage(`INFO: We are fetching your latest data. This could take some time. Do not close the window until then.`);
-                            
-                            // Get data for deposits and withdraw starting from first (and currently alive) backup supernode
-                            let closestSuNodes = await readAllDB('myClosestSupernodes');
-                            let firstAliveBackupFloIdForPrimarySupernode;
-                            
-                            for (let index = 1; index <= closestSuNodes.length-1; index++) {
-                                if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForPrimarySupernode !== "string") {
-                                    firstAliveBackupFloIdForPrimarySupernode = closestSuNodes[index].trader_flo_address;
-                                    localbitcoinplusplus.actions
-                                    .sync_primary_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, firstAliveBackupFloIdForPrimarySupernode);
-                                }    
-                            }   
-                            
-                            // Update backup db as well for all supernodes you're serving as backup 
-                            for (let index = closestSuNodes.length-1; index >= closestSuNodes.length-localbitcoinplusplus.master_configurations.MaxBackups; index--) {
-                                let firstAliveBackupFloIdForBackupSupernode;
-                                if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
-                                    firstAliveBackupFloIdForBackupSupernode = closestSuNodes[index].trader_flo_address;
-                                    localbitcoinplusplus.actions
-                                    .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                                    firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
-                                } else {
-                                    // it will ask backup from backup su next closest
-                                    for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
-                                        let actual_num = j%index;
-                                        const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
-                                        if (nextBKSu !== idbData.myLocalFLOAddress
-                                         && closestSuNodes[actual_num].is_live==true 
-                                         && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
-                                            
-                                            firstAliveBackupFloIdForBackupSupernode = closestSuNodes[actual_num].trader_flo_address;
 
-                                            localbitcoinplusplus.actions
-                                            .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                                            firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
-                                        }
-                                    }
-                                }   
-                            }   
-
+                        showMessage(`INFO: Syncing of latest data starting. This could take some time. Do not close the window until then.`);
+                        
+                        // Get data for deposits and withdraw starting from first (and currently alive) backup supernode
+                        let closestSuNodes = await readAllDB('myClosestSupernodes');
+                        let firstAliveBackupFloIdForPrimarySupernode;
+                        
+                        for (let index = 1; index <= closestSuNodes.length-1; index++) {
+                            if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForPrimarySupernode !== "string") {
+                                firstAliveBackupFloIdForPrimarySupernode = closestSuNodes[index].trader_flo_address;
+                                localbitcoinplusplus.actions
+                                .sync_primary_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, firstAliveBackupFloIdForPrimarySupernode);
+                            }    
                         }   
+                        
+                        // Update backup db as well for all supernodes you're serving as backup 
+                        for (let index = closestSuNodes.length-1; index >= closestSuNodes.length-localbitcoinplusplus.master_configurations.MaxBackups; index--) {
+                            let firstAliveBackupFloIdForBackupSupernode;
+                            if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
+                                firstAliveBackupFloIdForBackupSupernode = closestSuNodes[index].trader_flo_address;
+                                localbitcoinplusplus.actions
+                                .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
+                                firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
+                            } else {
+                                // it will ask backup from backup su next closest
+                                for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                    let actual_num = j%index;
+                                    const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
+                                    if (nextBKSu !== idbData.myLocalFLOAddress
+                                        && closestSuNodes[actual_num].is_live==true 
+                                        && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
+                                        
+                                        firstAliveBackupFloIdForBackupSupernode = closestSuNodes[actual_num].trader_flo_address;
+
+                                        localbitcoinplusplus.actions
+                                        .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
+                                        firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
+                                    }
+                                }
+                            }   
+                        }   
+   
                     }
 
                     if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
