@@ -10071,7 +10071,7 @@
                     RMAssets =
                         `masterFLOPubKey=029EF7838D4D103E62262394B5417E8ABFD75539D19E61CA5FD0C2051B69B29910
                         #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
-                        #!#validTradingAmount=10000,50000,100000,#!#btcTradeMargin=5000
+                        #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
                         #!#MaxBackups=2
                         #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
                         03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
@@ -12336,75 +12336,32 @@
                                                             withdraw_res.currency,
                                                             withdraw_res.change_adress,
                                                             async function (res) {
-                                                                console.log(
-                                                                    res
-                                                                );
-                                                                if (typeof res ==
-                                                                    "string" &&
-                                                                    res.length >
-                                                                    0) {
+                                                                console.log(res);
+                                                                if (typeof res == "string" 
+                                                                && res.length > 0) {
                                                                     try {
-                                                                        let
-                                                                            resp_obj =
-                                                                            JSON
-                                                                            .parse(
-                                                                                res
-                                                                            );
-                                                                        let
-                                                                            resp_txid =
-                                                                            resp_obj
-                                                                            .txid
-                                                                            .result ||
-                                                                            resp_obj
-                                                                            .txid;
-                                                                        let
-                                                                            msg =
+                                                                        let resp_obj = JSON.parse(res);
+                                                                        let resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                        let msg =
                                                                             `Transaction Id for your withdrawn crypto asset: ${resp_txid}`;
 
-                                                                        readDB
-                                                                            (
-                                                                                'crypto_balances',
-                                                                                withdraw_res
-                                                                                .id
-                                                                            )
+                                                                        readDB('crypto_balances', withdraw_res.id)
                                                                             .then(
                                                                                 res_bal => {
                                                                                     // btc_eq_receiving_amount
                                                                                     //     =
                                                                                     //     Number(parseFloat(EqCryptoWd).toFixed(8));
-                                                                                    res_bal
-                                                                                        .crypto_balance -=
-                                                                                        EqCryptoWd;
-                                                                                    updateinDB
-                                                                                        (
-                                                                                            'crypto_balances',
-                                                                                            res_bal,
-                                                                                            withdraw_res
-                                                                                            .id
-                                                                                        )
-                                                                                        .then(
-                                                                                            res_obj => {
-                                                                                                const
-                                                                                                    res_obj_str =
-                                                                                                    JSON
-                                                                                                    .stringify(
-                                                                                                        res_obj
-                                                                                                    );
-                                                                                                const
-                                                                                                    res_obj_hash =
-                                                                                                    Crypto
-                                                                                                    .SHA256(
-                                                                                                        res_obj_str
-                                                                                                    );
-                                                                                                const
-                                                                                                    res_obj_sign =
-                                                                                                    RM_WALLET
-                                                                                                    .sign(
-                                                                                                        res_obj_hash,
-                                                                                                        localbitcoinplusplus
-                                                                                                        .wallets
-                                                                                                        .MY_SUPERNODE_PRIVATE_KEY
-                                                                                                    );
+                                                                                    res_bal.crypto_balance -= EqCryptoWd;
+                                                                                    updateinDB('crypto_balances', res_bal, withdraw_res.id)
+                                                                                        .then(res_obj => {
+                                                                                            const res_obj_str = JSON.stringify(res_obj);
+                                                                                            const res_obj_hash = Crypto.SHA256(res_obj_str);
+                                                                                            const res_obj_sign = RM_WALLET .sign(
+                                                                                                res_obj_hash,
+                                                                                                localbitcoinplusplus
+                                                                                                .wallets
+                                                                                                .MY_SUPERNODE_PRIVATE_KEY
+                                                                                            );
 
                                                                                                 const
                                                                                                     updateUserCryptoBalanceObject = {
@@ -14414,7 +14371,7 @@
                             trx.addoutput(change_adress, change_amount);
                            }
                             var sendFloData =
-                                `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} satoshis to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
+                                `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
                             if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
                                 trx.addflodata(sendFloData); // flochange .. create this function
                             }
@@ -14424,7 +14381,8 @@
 
                                 let signedTxHash = trx.sign(utxo_addr_wif, 1); //SIGHASH_ALL DEFAULT 1
                                 showMessage(`Signed Transaction Hash: ${signedTxHash}`);
-
+                                console.log(signedTxHash);
+                                
                                 var http = new XMLHttpRequest();
                                 var tx_send_url = `${blockchain_explorer}/api/tx/send`;
                                 var params = `{"rawtx":"${signedTxHash}"}`;
@@ -15601,13 +15559,11 @@
                 try {
                     var res_obj = JSON.parse(res);
 
-                    if (typeof res_obj.method !== "string" 
-                        || typeof res_obj.globalParams !== "object"
-                        || typeof res_obj.globalParams.receiverFloId !== "string" 
-                        || res_obj.globalParams.receiverFloId !== 
-                        localbitcoinplusplus.wallets.my_local_flo_address) {
-                            console.warn(`WARNING: Incomplete onMessage request received.`);
-                        //return;
+                    if (typeof res_obj.globalParams !== "object"
+                        || (typeof res_obj.globalParams.receiverFloId == "string" 
+                        && res_obj.globalParams.receiverFloId !== 
+                        localbitcoinplusplus.wallets.my_local_flo_address)) {
+                        return;
                     }
 
                     const isIncomingMessageValid = await validateIncomingMessage(res);
@@ -16624,10 +16580,11 @@
                                                     if (obj.length > 0) {
                                                         for (var prop in obj) {
                                                             if (!obj.hasOwnProperty(prop)) continue;
-                                                            await updateinDB(tableStoreName, obj[prop], obj[
-                                                                prop].trader_flo_address).then(()=>{
-                                                                    showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
-                                                                });
+                                                            //if(obj[prop].)
+                                                            await updateinDB(tableStoreName, obj[prop], obj[prop].id, true)
+                                                            .then(()=>{
+                                                                showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
+                                                            });
                                                         }
                                                     }
                                                 } else {
@@ -16712,8 +16669,8 @@
                                                         for (var prop in obj) {
                                                             if (!obj.hasOwnProperty(prop)) continue;
                                                             await localbitcoinplusplus.newBackupDatabase.db[su_db_data.trader_flo_address]
-                                                                .backup_updateinDB(tableStoreName, obj[prop], obj[prop]
-                                                                .trader_flo_address).then(()=>{
+                                                                .backup_updateinDB(tableStoreName, obj[prop], obj[prop].id, true)
+                                                                .then(()=>{
                                                                     showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
                                                                 });
                                                         }
@@ -17223,6 +17180,8 @@
                                     if(typeof res_obj.globalParams.primarySupernode !="string") return;
                                     localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.primarySupernode)
                                     .then(my_closest_su_list=>{
+                                        console.log(my_closest_su_list);
+                                        
                                         const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
                                         const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
@@ -17732,7 +17691,7 @@
                                 doSend(JSON.stringify(response_from_sever)); // send response to client
                                 break;
 
-                                case "updateUserCryptoBalanceRequest":
+                            case "updateUserCryptoBalanceRequest":
                                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                                  .includes(res_obj.nodePubKey)) {
                                     let updateUserCryptoBalanceResponseObject = res_obj.params[0];
@@ -19031,7 +18990,7 @@
                                                             if (!obj.hasOwnProperty(prop)) continue;
                                                             await localbitcoinplusplus.newBackupDatabase.db[su_db_data.trader_flo_address]
                                                                 .backup_updateinDB(tableStoreName, obj[prop], obj[prop]
-                                                                .trader_flo_address).then(()=>{
+                                                                .id, true).then(()=>{
                                                                     showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
                                                                 });
                                                         }
@@ -19611,7 +19570,9 @@
             }
         }
 
-        async function updateinDB(tablename, Obj, key) {
+        async function updateinDB(tablename, Obj, key, updateByVectorClock=false) {
+            // updateByVectorClock==true will not return Obj back. 
+            // Return value will be undefined
             try {
                 if(typeof Obj.vectorClock == "undefined") {
                     Obj.vectorClock = 0;
@@ -19623,9 +19584,32 @@
                 }
                 var request = db.transaction([tablename], "readwrite")
                 let store = request.objectStore(tablename)
-                await store.put(Obj);
-                await request.complete;
-                return Obj;
+                if (updateByVectorClock===true) {
+                    if (typeof key=="undefined") {
+                        key = Obj[store.keyPath];
+                    }
+                    let objectStoreRequest = store.get(key);
+                    objectStoreRequest.onsuccess = 
+                        function(event) {
+                            var myRecord = objectStoreRequest.result;
+                            if(typeof myRecord !=="object") {
+                                console.error('WARNING: Failed to update '+tablename);
+                                console.log(tablename);
+                                return;
+                            }
+                            if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                await store.put(Obj);
+                                await request.complete;
+                                resolve(Obj);        
+                            }
+                        }
+
+                } else {
+                    await store.put(Obj);
+                    await request.complete;
+                    return Obj;
+                }
+                
             } catch (error) {
                 return new Error(error);
             }
@@ -19947,7 +19931,7 @@
                     }
                 },
 
-                async backup_updateinDB(tablename, Obj, key) {
+                async backup_updateinDB(tablename, Obj, key, updateByVectorClock=false) {
                     try {
                         if(typeof Obj.vectorClock == "undefined") {
                             Obj.vectorClock = 0;
@@ -19959,9 +19943,30 @@
                         }
                         this.request = this.db.transaction([tablename], "readwrite")
                         let store = this.request.objectStore(tablename)
-                        await store.put(Obj);
-                        await this.request.complete;
-                        return Obj;
+                        
+                        if (updateByVectorClock===true) {
+                            if (typeof key=="undefined") {
+                                key = Obj[store.keyPath];
+                            }
+                            let objectStoreRequest = store.get(key);
+                            objectStoreRequest.onsuccess = 
+                                function(event) {
+                                    return new Promise(async (resolve, reject)=>{
+                                        var myRecord = objectStoreRequest.result;
+                                        if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                            await store.put(Obj);
+                                            await this.request.complete;
+                                            resolve(Obj);        
+                                        }
+                                    })
+                                }
+
+                        } else {
+                            await store.put(Obj);
+                            await this.request.complete;
+                            return Obj;
+                        }
+
                     } catch (error) {
                         return new Error(error);
                     }
@@ -20940,14 +20945,15 @@
                                         const RM_WALLET = new localbitcoinplusplus.wallets;
                                         const RM_RPC = new localbitcoinplusplus.rpc;
 
-                                        let updatedBTCBalanceObjectString = JSON.stringify(
-                                            updatedCryptobalances);
-                                        let updatedBTCBalanceObjectSign = RM_WALLET
-                                            .sign(updatedBTCBalanceObjectString,
+                                        const updatedBTCBalanceObjectString = JSON.stringify(updatedCryptobalances);
+                                        const updatedBTCBalanceObjectStringHash = Crypto.SHA256(updatedBTCBalanceObjectString);
+                                        
+                                        const updatedBTCBalanceObjectSign = RM_WALLET
+                                            .sign(updatedBTCBalanceObjectStringHash,
                                                 localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
                                             );
 
-                                        let updateUserCryptoBalanceObject = {
+                                        const updateUserCryptoBalanceObject = {
                                             updatedBTCBalanceObject: updatedBTCBalanceObject,
                                             updatedBTCBalanceObjectSign: updatedBTCBalanceObjectSign,
                                             trader_flo_address: trader_deposits.trader_flo_address,
