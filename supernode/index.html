@@ -11503,7 +11503,7 @@
                                     params.trader_flo_address, params.product, params.currency);
                                 if (typeof trade_margin.remaining_crypto_credit == "number" &&
                                     typeof trade_margin.remaining_fiat_credit == "number") {
-                                    let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(params.buy_price);
+                                    let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(params.buy_price, params.currency, params.product);
                                     if (trade_margin.remaining_crypto_credit > 0 && trade_margin.remaining_crypto_credit >=
                                         eqCrypto) {
                                         request.response = RM_TRADE.trade_sell.call(
@@ -11939,7 +11939,7 @@
                                     if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
                                             params.product)) {
                                         let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                            params.withdrawing_amount);
+                                            params.withdrawing_amount, params.currency, params.product);
                                         if (trade_margin.remaining_crypto_credit < 0 &&
                                             trade_margin.remaining_crypto_credit < eqCrypto) {
                                             err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
@@ -11985,7 +11985,7 @@
                                                 eqBTC = Number(parseFloat(eqBTC).toFixed(8));
                                                 let withdrawer_new_btc_balance =
                                                     withdrawer_btc_balance - eqBTC;
-                                                if (withdrawer_new_btc_balance > 0 &&
+                                                if (withdrawer_new_btc_balance >= 0 &&
                                                     withdrawer_btc_balance > 0 &&
                                                     withdrawing_btc_amount_in_cash > 0 &&
                                                     eqBTC > 0 && eqBTC <=
@@ -12780,7 +12780,7 @@
                                     params.trader_flo_address, params.product, params.currency, primarySupernodeForThisUser);
                                 if (typeof trade_margin.remaining_crypto_credit == "number" &&
                                     typeof trade_margin.remaining_fiat_credit == "number") {
-                                    let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(params.buy_price);
+                                    let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(params.buy_price, params.currency, params.product);
                                     if (trade_margin.remaining_crypto_credit > 0 && trade_margin.remaining_crypto_credit >=
                                         eqCrypto) {
                                         request.response = RM_TRADE.trade_sell.call(
@@ -13229,7 +13229,7 @@
                                     if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
                                             params.product)) {
                                         let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                            params.withdrawing_amount);
+                                            params.withdrawing_amount, params.currency, params.product);
                                         if (trade_margin.remaining_crypto_credit < 0 &&
                                             trade_margin.remaining_crypto_credit < eqCrypto) {
                                             err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
@@ -13275,7 +13275,7 @@
                                                 eqBTC = Number(parseFloat(eqBTC).toFixed(8));
                                                 let withdrawer_new_btc_balance =
                                                     withdrawer_btc_balance - eqBTC;
-                                                if (withdrawer_new_btc_balance > 0 &&
+                                                if (withdrawer_new_btc_balance >= 0 &&
                                                     withdrawer_btc_balance > 0 &&
                                                     withdrawing_btc_amount_in_cash > 0 &&
                                                     eqBTC > 0 && eqBTC <=
@@ -18151,14 +18151,14 @@
                                         if (localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == su_db_data.trader_flo_address) return;
 
                                         const mcslist = MCS.map(m=>m.data.id);
-
+95
                                         if(mcslist.indexOf(su_db_data.trader_flo_address) < mcslist.indexOf(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS)) {
                                             if (websocket.readyState === WebSocket.OPEN) {
                                                 websocket.close();
                                                 const newSu = await readDBbyIndex('myClosestSupernodes','trader_flo_address', su_db_data.trader_flo_address);
                                                 if (typeof newSu=="object" && typeof newSu[0].trader_flo_address=="string") {
                                                     await startWebSocket(`ws://${newSu[0].ip}:${newSu[0].port}`);
-                                                    showMssage(`INFO: ${su_db_data.server_msg}`);   
+                                                    showMessage(`INFO: ${su_db_data.server_msg}`);   
                                                 } else {
                                                     alert(`INFO: Please reload the page.`);
                                                 }
@@ -19590,17 +19590,18 @@
                     }
                     let objectStoreRequest = store.get(key);
                     objectStoreRequest.onsuccess = 
-                        function(event) {
+                        async function(event) {
                             var myRecord = objectStoreRequest.result;
                             if(typeof myRecord !=="object") {
-                                console.error('WARNING: Failed to update '+tablename);
-                                console.log(tablename);
-                                return;
-                            }
-                            if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                Obj.vectorClock = 1;
                                 await store.put(Obj);
                                 await request.complete;
-                                resolve(Obj);        
+                                return Obj;
+                            }
+                            else if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                await store.put(Obj);
+                                await request.complete;
+                                return Obj;        
                             }
                         }
 
@@ -19941,6 +19942,7 @@
                         } else {
                             Obj.vectorClock += 1;
                         }
+                        let that = this;
                         this.request = this.db.transaction([tablename], "readwrite")
                         let store = this.request.objectStore(tablename)
                         
@@ -19953,17 +19955,25 @@
                                 function(event) {
                                     return new Promise(async (resolve, reject)=>{
                                         var myRecord = objectStoreRequest.result;
-                                        if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                        var myRecord = objectStoreRequest.result;
+                                        if(typeof myRecord !=="object") {
+                                            Obj.vectorClock = 1;
                                             await store.put(Obj);
-                                            await this.request.complete;
+                                            await that.request.complete;
+                                            resolve(Obj); 
+                                            return;
+                                        }
+                                        else if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                            await store.put(Obj);
+                                            await that.request.complete;
                                             resolve(Obj);        
                                         }
-                                    })
+                                    });
                                 }
 
                         } else {
                             await store.put(Obj);
-                            await this.request.complete;
+                            await that.request.complete;
                             return Obj;
                         }
 
@@ -20247,32 +20257,45 @@
                             }    
                         }   
                         
-                        // Update backup db as well for all supernodes you're serving as backup 
-                        for (let index = closestSuNodes.length-1; index >= closestSuNodes.length-localbitcoinplusplus.master_configurations.MaxBackups; index--) {
-                            let firstAliveBackupFloIdForBackupSupernode;
-                            if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
-                                firstAliveBackupFloIdForBackupSupernode = closestSuNodes[index].trader_flo_address;
-                                localbitcoinplusplus.actions
-                                .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                                firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
-                            } else {
-                                // it will ask backup from backup su next closest
-                                for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
-                                    let actual_num = j%index;
-                                    const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
-                                    if (nextBKSu !== idbData.myLocalFLOAddress
-                                        && closestSuNodes[actual_num].is_live==true 
-                                        && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
-                                        
-                                        firstAliveBackupFloIdForBackupSupernode = closestSuNodes[actual_num].trader_flo_address;
+                        // Let current live status be recorded in DB 
+                        localbitcoinplusplus.actions.delay(5000).then(()=>{
+                            // Update backup db as well for all supernodes you're serving as backup 
+                            for (let index = closestSuNodes.length-1; index >= closestSuNodes.length-localbitcoinplusplus.master_configurations.MaxBackups; index--) {
+                                let firstAliveBackupFloIdForBackupSupernode;
+                                if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
+                                    firstAliveBackupFloIdForBackupSupernode = closestSuNodes[index].trader_flo_address;
 
-                                        localbitcoinplusplus.actions
-                                        .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                                        firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
+                                    localbitcoinplusplus.actions
+                                    .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
+                                    firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
+                                    
+                                } else {
+                                    // it will ask backup from backup su next closest
+                                    for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                        let actual_num = j;
+                                        if(actual_num>=closestSuNodes.length-1) {
+                                            actual_num = j%index
+                                        } else {
+                                            actual_num = j+1;
+                                        }
+                                        const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
+                                        if (nextBKSu !== idbData.myLocalFLOAddress
+                                            && closestSuNodes[actual_num].is_live==true 
+                                            && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
+                                            
+                                            firstAliveBackupFloIdForBackupSupernode = closestSuNodes[actual_num].trader_flo_address;
+
+                                            localbitcoinplusplus.actions
+                                            .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
+                                            firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
+
+                                        }
                                     }
-                                }
+                                }   
                             }   
-                        }   
+
+                        });
+
    
                     }
 
