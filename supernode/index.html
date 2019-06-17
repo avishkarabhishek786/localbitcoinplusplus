@@ -11272,16 +11272,27 @@
                             request.globalParams.senderFloId = resObj.myLocalFLOAddress;
 
                             if (typeof params[0].trader_flo_address !=="string") {
+                                const n = localbitcoinplusplus.master_configurations.MaxBackups+1;
                                 const my_closest_su = await localbitcoinplusplus.kademlia
-                                .determineClosestSupernode(resObj.myLocalFLOAddress);
+                                .determineClosestSupernode(resObj.myLocalFLOAddress, n);
+                                
                                 if (typeof my_closest_su=="object") {
                                     request.globalParams.primarySupernode = my_closest_su[0].data.id;
+                                    request.globalParams["receiversList"] = [];
+                                    for (let j = 0; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                        request.globalParams.receiversList.push(my_closest_su[j].data.id);
+                                    }
                                 }
                             }
                         }    
 
                         if (typeof params[0].receiver_flo_address == "string") {
                             request.globalParams.receiverFloId = params[0].receiver_flo_address;
+                            if (typeof request.globalParams.receiversList == "object") {
+                                if (!request.globalParams.receiversList.includes(params[0].receiver_flo_address)) {
+                                    request.globalParams.receiversList.push(params[0].receiver_flo_address);
+                                }
+                            }
                         }
         
                         return resolve(request.toString());
@@ -11580,6 +11591,8 @@
 
                                                 let generate_btc_keys_for_requester = RM_WALLET
                                                     .generateFloKeys(null, params.product);
+
+                                                console.table(generate_btc_keys_for_requester);
 
                                                 params.id = helper_functions.unique_id();
                                                 params.status = 1;
@@ -12858,6 +12871,8 @@
 
                                                 let generate_btc_keys_for_requester = RM_WALLET
                                                     .generateFloKeys(null, params.product);
+
+                                                console.table(generate_btc_keys_for_requester);
 
                                                 params.id = helper_functions.unique_id();
                                                 params.status = 1;
@@ -15560,11 +15575,10 @@
                     var res_obj = JSON.parse(res);
 
                     if (typeof res_obj.globalParams !== "object"
-                        || (typeof res_obj.globalParams.receiverFloId == "string" 
-                        && res_obj.globalParams.receiverFloId !== 
-                        localbitcoinplusplus.wallets.my_local_flo_address)) {
-                        return;
-                    }
+                        || (typeof res_obj.globalParams.receiversList == "object" 
+                        && !request.globalParams.receiversList
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
+                    )) return;
 
                     const isIncomingMessageValid = await validateIncomingMessage(res);
                     console.log("isIncomingMessageValid: ", isIncomingMessageValid);
@@ -16811,11 +16825,11 @@
                 try {
                     var res_obj = JSON.parse(res);
 
-                    // if (typeof res_obj.globalParams.receiverFloId=="string" 
-                    // && res_obj.globalParams.receiverFloId !== 
-                    // localbitcoinplusplus.wallets.my_local_flo_address) {
-                    //     return;
-                    // }
+                    if (typeof res_obj.globalParams !== "object"
+                        || (typeof res_obj.globalParams.receiversList == "object" 
+                        && !request.globalParams.receiversList
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
+                    )) return;
 
                     // Check if request is from primary user or backup user
                     // If request is from backup user, divert the request to backup onmessage event 
