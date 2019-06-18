@@ -10348,8 +10348,8 @@
                     }
 
                     Promise.all(promises).then(cs=>{
-                        let isPreviousSupernodesLive = cs.map((su_status, index)=>
-                            (typeof su_status[index] !== "object" || su_status[index].is_live == true )
+                        let isPreviousSupernodesLive = cs.map((su_status)=>
+                            (typeof su_status[0] !== "object" || su_status[0].is_live == true )
                         );   
 
                         if (!isPreviousSupernodesLive.includes(true)) {
@@ -12833,7 +12833,7 @@
                             // already processed above 
                         break;
                         case "deposit_asset_request":
-                            RM_RPC.filter_legit_backup_requests(params.trader_flo_address, function (is_valid_request) {
+                            RM_RPC.filter_legit_backup_requests(params.trader_flo_address, async function (is_valid_request) {
 
                                 if (is_valid_request !== true) return false;
 
@@ -12853,355 +12853,357 @@
                                     typeof params.trader_flo_address == "string" &&
                                     params.trader_flo_address.length > 0
                                 ) {
-                                    RM_WALLET.getUserPublicKey(params.trader_flo_address,
-                                        async function (requester_public_key) {
-                                            if (requester_public_key == undefined ||
-                                                requester_public_key == null) {
-                                                err_msg = 'Failed to get public key of the user.';
+                                    const requester_public_req = await backup_server_db_instance
+                                      .backup_readDB('userPublicData', params.trader_flo_address);
+                                        if (typeof requester_public_req!=="object") return;
+                                        const requester_public_key = requester_public_req.trader_flo_pubKey;
+                                        
+                                        if (typeof requester_public_key == "undefined" ||
+                                            requester_public_key == null) {
+                                            err_msg = 'Failed to get public key of the user.';
+                                            showMessage(err_msg);
+                                            throw new Error(err_msg);
+                                        }
+                                        params.depositor_public_key = requester_public_key;
+
+                                        await RM_TRADE.resolve_current_crypto_price_in_fiat(
+                                            params.product, params.currency);
+
+                                        if (localbitcoinplusplus.master_configurations.tradableAsset1
+                                            .includes(params.product)) {
+
+                                            let generate_btc_keys_for_requester = RM_WALLET
+                                                .generateFloKeys(null, params.product);
+
+                                            console.table(generate_btc_keys_for_requester);
+
+                                            params.id = helper_functions.unique_id();
+                                            params.status = 1;
+                                            params.btc_address =
+                                                generate_btc_keys_for_requester.address;
+
+                                            params.bitcoinToBePaid = RM_TRADE.calculateCryptoEquivalentOfCash(
+                                                params.depositing_amount, params.currency,
+                                                params.product);
+
+                                            let receivedTradeInfo = { ...params };
+
+                                            if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
+                                                "undefined") {
+                                                err_msg = 'Failed to determine Super node signing key.';
                                                 showMessage(err_msg);
                                                 throw new Error(err_msg);
                                             }
-                                            params.depositor_public_key = requester_public_key;
 
-                                            await RM_TRADE.resolve_current_crypto_price_in_fiat(
-                                                params.product, params.currency);
+                                            readDB("localbitcoinUser", "00-01").then(
+                                                function (su_data) {
+                                                    if (typeof su_data == "object" &&
+                                                        typeof su_data.myLocalFLOPublicKey ==
+                                                        "string" &&
+                                                        su_data.myLocalFLOPublicKey.length >
+                                                        0 &&
+                                                        localbitcoinplusplus.master_configurations
+                                                        .supernodesPubKeys
+                                                        .includes(su_data.myLocalFLOPublicKey)
+                                                    ) {
 
-                                            if (localbitcoinplusplus.master_configurations.tradableAsset1
-                                                .includes(params.product)) {
+                                                        let receivedTradeInfoHash =
+                                                            Crypto.SHA256(JSON.stringify(receivedTradeInfo));
 
-                                                let generate_btc_keys_for_requester = RM_WALLET
-                                                    .generateFloKeys(null, params.product);
+                                                        receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
+                                                        receivedTradeInfo["order_validator_sign"] =
+                                                            RM_WALLET.sign(receivedTradeInfoHash,
+                                                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                            );
+                                                        receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
-                                                console.table(generate_btc_keys_for_requester);
+                                                        try {
+                                                            const this_btc_pvt_key =
+                                                                generate_btc_keys_for_requester.privateKeyWIF;
+                                                            const this_btc_tx_key =
+                                                                Crypto.util.randomBytes(64);
+                                                            const
+                                                                this_btc_pvt_key_shamirs_secret =
+                                                                RM_WALLET.createShamirsSecretShares(this_btc_pvt_key, 10, 5);
+                                                            if (typeof this_btc_pvt_key_shamirs_secret ==
+                                                                "object" &&
+                                                                this_btc_pvt_key_shamirs_secret
+                                                                .length > 0) {
+                                                                backup_server_db_instance.backup_addDB("deposit", receivedTradeInfo);
 
-                                                params.id = helper_functions.unique_id();
-                                                params.status = 1;
-                                                params.btc_address =
-                                                    generate_btc_keys_for_requester.address;
-
-                                                params.bitcoinToBePaid = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                                    params.depositing_amount, params.currency,
-                                                    params.product);
-
-                                                let receivedTradeInfo = { ...params };
-
-                                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
-                                                    "undefined") {
-                                                    err_msg = 'Failed to determine Super node signing key.';
-                                                    showMessage(err_msg);
-                                                    throw new Error(err_msg);
-                                                }
-
-                                                readDB("localbitcoinUser", "00-01").then(
-                                                    function (su_data) {
-                                                        if (typeof su_data == "object" &&
-                                                            typeof su_data.myLocalFLOPublicKey ==
-                                                            "string" &&
-                                                            su_data.myLocalFLOPublicKey.length >
-                                                            0 &&
-                                                            localbitcoinplusplus.master_configurations
-                                                            .supernodesPubKeys
-                                                            .includes(su_data.myLocalFLOPublicKey)
-                                                        ) {
-
-                                                            let receivedTradeInfoHash =
-                                                                Crypto.SHA256(JSON.stringify(receivedTradeInfo));
-
-                                                            receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
-                                                            receivedTradeInfo["order_validator_sign"] =
-                                                                RM_WALLET.sign(receivedTradeInfoHash,
-                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                );
-                                                            receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
-
-                                                            try {
-                                                                const this_btc_pvt_key =
-                                                                    generate_btc_keys_for_requester.privateKeyWIF;
-                                                                const this_btc_tx_key =
-                                                                    Crypto.util.randomBytes(64);
-                                                                const
-                                                                    this_btc_pvt_key_shamirs_secret =
-                                                                    RM_WALLET.createShamirsSecretShares(this_btc_pvt_key, 10, 5);
-                                                                if (typeof this_btc_pvt_key_shamirs_secret ==
-                                                                    "object" &&
+                                                                // Send the address to the requester
+                                                                let
+                                                                    deposit_response_object = {
+                                                                        error: false,
+                                                                        method: "deposit_asset_request_response",
+                                                                        msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
+                                                                        data: receivedTradeInfo
+                                                                    };
+                                                                deposit_response_object.receiver_flo_address = params.trader_flo_address;
+                                                                deposit_response_object.trader_flo_address = params.trader_flo_address;
+                                                                
+                                                                RM_RPC
+                                                                    .send_rpc
+                                                                    .call(this,
+                                                                        "deposit_asset_request_response",
+                                                                        deposit_response_object
+                                                                    ).then(deposit_request_response=>
+                                                                    doSend(deposit_request_response));
+                                                                
+                                                                let
+                                                                    this_btc_pvt_key_shamirs_secret_array =
                                                                     this_btc_pvt_key_shamirs_secret
-                                                                    .length > 0) {
-                                                                    backup_server_db_instance.backup_addDB("deposit", receivedTradeInfo);
+                                                                    .map(chunks => {
+                                                                        let
+                                                                            chunk_ids =
+                                                                            Crypto.util
+                                                                            .bytesToHex(Crypto.util.randomBytes(64));
+                                                                        let
+                                                                            chunk_array = {
+                                                                                "id": chunk_ids,
+                                                                                "privateKeyChunks": Crypto
+                                                                                    .AES
+                                                                                    .encrypt(
+                                                                                        chunks,
+                                                                                        this_btc_tx_key
+                                                                                    ),
+                                                                                "trader_flo_address": params.trader_flo_address
+                                                                            };
+                                                                        return chunk_array;
+                                                                    });
 
-                                                                    // Send the address to the requester
-                                                                    let
-                                                                        deposit_response_object = {
-                                                                            error: false,
-                                                                            method: "deposit_asset_request_response",
-                                                                            msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
-                                                                            data: receivedTradeInfo
-                                                                        };
-                                                                    deposit_response_object.receiver_flo_address = params.trader_flo_address;
-                                                                    deposit_response_object.trader_flo_address = params.trader_flo_address;
-                                                                    
-                                                                    RM_RPC
-                                                                        .send_rpc
-                                                                        .call(this,
-                                                                            "deposit_asset_request_response",
-                                                                            deposit_response_object
-                                                                        ).then(deposit_request_response=>
-                                                                        doSend(deposit_request_response));
-                                                                    
-                                                                    let
-                                                                        this_btc_pvt_key_shamirs_secret_array =
-                                                                        this_btc_pvt_key_shamirs_secret
-                                                                        .map(chunks => {
+                                                                // Send chunks of private keys to other supernodes 
+                                                                this_btc_pvt_key_shamirs_secret_array
+                                                                    .map(shares => {
+                                                                        RM_RPC
+                                                                            .send_rpc
+                                                                            .call(
+                                                                                this,
+                                                                                "store_shamirs_secret_pvtkey_shares",
+                                                                                shares
+                                                                            ).then(store_pvtkey_req=>
+                                                                            doSend(store_pvtkey_req));
+                                                                        
+                                                                    });
+
+                                                                if (typeof localbitcoinplusplus
+                                                                    .wallets.my_local_flo_address ==
+                                                                    "string" &&
+                                                                    typeof localbitcoinplusplus
+                                                                    .wallets.my_local_flo_public_key ==
+                                                                    "string" &&
+                                                                    typeof localbitcoinplusplus
+                                                                    .master_configurations
+                                                                    .supernodesPubKeys ==
+                                                                    "object" &&
+                                                                    localbitcoinplusplus
+                                                                    .master_configurations
+                                                                    .supernodesPubKeys.includes(
+                                                                        localbitcoinplusplus
+                                                                        .wallets.my_local_flo_public_key
+                                                                    )) {
+                                                                    try {
+                                                                        let
+                                                                            this_btc_pvt_key_shamirs_secret__id_array =
+                                                                            this_btc_pvt_key_shamirs_secret_array
+                                                                            .map(i => i.id);
+                                                                        let
+                                                                            btc_private_key_shamirs_id =
+                                                                            this_btc_pvt_key_shamirs_secret__id_array;
+                                                                        let
+                                                                            supernode_transaction_key =
+                                                                            this_btc_tx_key;
+                                                                        const
+                                                                            system_btc_reserves_private_keys_object = {
+                                                                                id: helper_functions
+                                                                                    .unique_id(),
+                                                                                product: params
+                                                                                    .product,
+                                                                                btc_address: params
+                                                                                    .btc_address,
+                                                                                balance: null,
+                                                                                trader_flo_address: params
+                                                                                    .trader_flo_address,
+                                                                                btc_private_key_shamirs_id: btc_private_key_shamirs_id,
+                                                                                supernode_transaction_key: supernode_transaction_key
+                                                                            }
+                                                                        backup_server_db_instance.backup_addDB(
+                                                                            "system_btc_reserves_private_keys",
+                                                                            system_btc_reserves_private_keys_object
+                                                                        );
+                                                                    } catch (error) {
+                                                                        throw new Error( error);
+                                                                    }
+                                                                }
+                                                                return true;
+                                                            }
+                                                        } catch (error) {
+                                                            throw new Error(error);
+                                                        }
+
+                                                        // Send the address to the requester
+                                                        let deposit_response_object = {
+                                                            error: false,
+                                                            method: "deposit_asset_request_response",
+                                                            msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
+                                                            data: receivedTradeInfo,
+                                                            receiver_flo_address: params.trader_flo_address,
+                                                            trader_flo_address: params.trader_flo_address,
+                                                        };
+
+                                                        RM_RPC.send_rpc
+                                                            .call(this,
+                                                                "deposit_asset_request_response",
+                                                                deposit_response_object
+                                                            ).then(deposit_request_response=>
+                                                            doSend(deposit_request_response));
+                                                        return true;
+                                                    }
+                                                });
+
+                                            return false;
+
+                                        } else if (!localbitcoinplusplus.master_configurations
+                                            .tradableAsset1.includes(params.product)) {
+                                            params.id = helper_functions.unique_id();
+                                            params.status = 1;
+                                            // IMPORTANT - If deposit is a fiat make sure product and currency are both same
+                                            params.currency = params.product;
+                                            let receivedTradeInfo = { ...params };
+
+                                            backup_server_db_instance.backup_readDB("localbitcoinUser", "00-01").then(
+                                                function (su_data) {
+                                                    if (typeof su_data == "object" &&
+                                                        typeof su_data.myLocalFLOPublicKey ==
+                                                        "string" &&
+                                                        su_data.myLocalFLOPublicKey.length >
+                                                        0 &&
+                                                        localbitcoinplusplus.master_configurations
+                                                        .supernodesPubKeys
+                                                        .includes(su_data.myLocalFLOPublicKey)
+                                                    ) {
+                                                        let receivedTradeInfoHash =
+                                                            Crypto.SHA256(JSON.stringify(
+                                                                receivedTradeInfo));
+
+                                                        receivedTradeInfo[
+                                                                "depositDataHash"] =
+                                                            receivedTradeInfoHash;
+                                                        receivedTradeInfo[
+                                                                "order_validator_sign"] =
+                                                            RM_WALLET.sign(
+                                                                receivedTradeInfoHash,
+                                                                localbitcoinplusplus.wallets
+                                                                .MY_SUPERNODE_PRIVATE_KEY
+                                                            );
+                                                        receivedTradeInfo[
+                                                            "order_validator_public_key"
+                                                        ] = su_data.myLocalFLOPublicKey;
+
+                                                        // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NO ONE IS WITHDRAWING
+                                                        try {
+                                                            backup_server_db_instance.backup_addDB("deposit",
+                                                                receivedTradeInfo);
+                                                            backup_server_db_instance.backup_readDBbyIndex(
+                                                                "withdraw_cash",
+                                                                "status", 1).then(
+                                                                function (
+                                                                    withdrawers_list
+                                                                ) {
+                                                                    if (typeof withdrawers_list ==
+                                                                        "object") {
+                                                                        if (
+                                                                            withdrawers_list.length > 0) {
+                                                                            withdrawers_list.filter(
+                                                                                    wd => wd.currency ==
+                                                                                    params.currency).map(
+                                                                                    function (withdrawer) {
+                                                                                        if (
+                                                                                            withdrawer.withdraw_amount ==
+                                                                                            params.depositing_amount &&
+                                                                                            withdrawer.currency ==
+                                                                                            params.currency
+                                                                                        ) {
+                                                                                            withdrawer.status = 2; // A depositor has been asked to deposit money
+                                                                                            withdrawer.depositor_found_at = + new Date();
+                                                                                            withdrawer.depositor_flo_id = receivedTradeInfo.trader_flo_address;
+                                                                                            backup_server_db_instance.backup_updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
+
+                                                                                            receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
+                                                                                            backup_server_db_instance.backup_updateinDB(
+                                                                                                "deposit",
+                                                                                                receivedTradeInfo,
+                                                                                                receivedTradeInfo.trader_flo_address
+                                                                                            );
+
+                                                                                            let withdrawer_bank_account = withdrawer.receivinAddress;
+
+                                                                                            let deposit_response_object = {
+                                                                                                error: false,
+                                                                                                method: "deposit_asset_request_response",
+                                                                                                msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                                                data: receivedTradeInfo,
+                                                                                                withdrawer_data: withdrawer,
+                                                                                                receiver_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                                trader_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                            };
+
+                                                                                                RM_RPC.send_rpc.call(
+                                                                                                    this,
+                                                                                                    "deposit_asset_request_response",
+                                                                                                    deposit_response_object
+                                                                                                ).then(deposit_request_response=>
+                                                                                                doSend(deposit_request_response));
+                                                                                            return true;
+                                                                                        } else {
+                                                                                            err_msg = "Deposit request failed: We could not find a withdrawer.";
+                                                                                            showMessage(err_msg);
+                                                                                            throw new Error(err_msg);
+                                                                                        }
+                                                                                    }
+                                                                                );
+                                                                        } else {
+                                                                            //No one is withdrawing so provide your bank details
                                                                             let
-                                                                                chunk_ids =
-                                                                                Crypto.util
-                                                                                .bytesToHex(Crypto.util.randomBytes(64));
-                                                                            let
-                                                                                chunk_array = {
-                                                                                    "id": chunk_ids,
-                                                                                    "privateKeyChunks": Crypto
-                                                                                        .AES
-                                                                                        .encrypt(
-                                                                                            chunks,
-                                                                                            this_btc_tx_key
-                                                                                        ),
-                                                                                    "trader_flo_address": params.trader_flo_address
+                                                                                deposit_response_object = {
+                                                                                    error: false,
+                                                                                    method: "deposit_asset_request_response",
+                                                                                    msg: `Plese send the money to following bank address: "System determined bank".`,
+                                                                                    data: receivedTradeInfo,
+                                                                                    receiver_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                    trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                 };
-                                                                            return chunk_array;
-                                                                        });
 
-                                                                    // Send chunks of private keys to other supernodes 
-                                                                    this_btc_pvt_key_shamirs_secret_array
-                                                                        .map(shares => {
+                                                                            receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
+                                                                            updateinDB
+                                                                                (
+                                                                                    "deposit",
+                                                                                    receivedTradeInfo,
+                                                                                    receivedTradeInfo
+                                                                                    .trader_flo_address
+                                                                                );
+                                                                            
                                                                             RM_RPC
                                                                                 .send_rpc
                                                                                 .call(
                                                                                     this,
-                                                                                    "store_shamirs_secret_pvtkey_shares",
-                                                                                    shares
-                                                                                ).then(store_pvtkey_req=>
-                                                                                doSend(store_pvtkey_req));
-                                                                            
-                                                                        });
-
-                                                                    if (typeof localbitcoinplusplus
-                                                                        .wallets.my_local_flo_address ==
-                                                                        "string" &&
-                                                                        typeof localbitcoinplusplus
-                                                                        .wallets.my_local_flo_public_key ==
-                                                                        "string" &&
-                                                                        typeof localbitcoinplusplus
-                                                                        .master_configurations
-                                                                        .supernodesPubKeys ==
-                                                                        "object" &&
-                                                                        localbitcoinplusplus
-                                                                        .master_configurations
-                                                                        .supernodesPubKeys.includes(
-                                                                            localbitcoinplusplus
-                                                                            .wallets.my_local_flo_public_key
-                                                                        )) {
-                                                                        try {
-                                                                            let
-                                                                                this_btc_pvt_key_shamirs_secret__id_array =
-                                                                                this_btc_pvt_key_shamirs_secret_array
-                                                                                .map(i => i.id);
-                                                                            let
-                                                                                btc_private_key_shamirs_id =
-                                                                                this_btc_pvt_key_shamirs_secret__id_array;
-                                                                            let
-                                                                                supernode_transaction_key =
-                                                                                this_btc_tx_key;
-                                                                            const
-                                                                                system_btc_reserves_private_keys_object = {
-                                                                                    id: helper_functions
-                                                                                        .unique_id(),
-                                                                                    product: params
-                                                                                        .product,
-                                                                                    btc_address: params
-                                                                                        .btc_address,
-                                                                                    balance: null,
-                                                                                    trader_flo_address: params
-                                                                                        .trader_flo_address,
-                                                                                    btc_private_key_shamirs_id: btc_private_key_shamirs_id,
-                                                                                    supernode_transaction_key: supernode_transaction_key
-                                                                                }
-                                                                            backup_server_db_instance.backup_addDB(
-                                                                                "system_btc_reserves_private_keys",
-                                                                                system_btc_reserves_private_keys_object
-                                                                            );
-                                                                        } catch (error) {
-                                                                            throw new Error( error);
+                                                                                    "deposit_asset_request_response",
+                                                                                    deposit_response_object
+                                                                                ).then(deposit_request_response=>
+                                                                                doSend(deposit_request_response));
+                                                                            return true;
                                                                         }
                                                                     }
-                                                                    return true;
-                                                                }
-                                                            } catch (error) {
-                                                                throw new Error(error);
-                                                            }
-
-                                                            // Send the address to the requester
-                                                            let deposit_response_object = {
-                                                                error: false,
-                                                                method: "deposit_asset_request_response",
-                                                                msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
-                                                                data: receivedTradeInfo,
-                                                                receiver_flo_address: params.trader_flo_address,
-                                                                trader_flo_address: params.trader_flo_address,
-                                                            };
-
-                                                            RM_RPC.send_rpc
-                                                                .call(this,
-                                                                    "deposit_asset_request_response",
-                                                                    deposit_response_object
-                                                                ).then(deposit_request_response=>
-                                                                doSend(deposit_request_response));
-                                                            return true;
+                                                                });
+                                                        } catch (error) {
+                                                            err_msg = "Deposit request failed: We could not find a withdrawer. Come again later.";
+                                                            showMessage(err_msg);
+                                                            throw new Error(err_msg);
                                                         }
-                                                    });
 
-                                                return false;
-
-                                            } else if (!localbitcoinplusplus.master_configurations
-                                                .tradableAsset1.includes(params.product)) {
-                                                params.id = helper_functions.unique_id();
-                                                params.status = 1;
-                                                // IMPORTANT - If deposit is a fiat make sure product and currency are both same
-                                                params.currency = params.product;
-                                                let receivedTradeInfo = { ...params };
-
-                                                backup_server_db_instance.backup_readDB("localbitcoinUser", "00-01").then(
-                                                    function (su_data) {
-                                                        if (typeof su_data == "object" &&
-                                                            typeof su_data.myLocalFLOPublicKey ==
-                                                            "string" &&
-                                                            su_data.myLocalFLOPublicKey.length >
-                                                            0 &&
-                                                            localbitcoinplusplus.master_configurations
-                                                            .supernodesPubKeys
-                                                            .includes(su_data.myLocalFLOPublicKey)
-                                                        ) {
-                                                            let receivedTradeInfoHash =
-                                                                Crypto.SHA256(JSON.stringify(
-                                                                    receivedTradeInfo));
-
-                                                            receivedTradeInfo[
-                                                                    "depositDataHash"] =
-                                                                receivedTradeInfoHash;
-                                                            receivedTradeInfo[
-                                                                    "order_validator_sign"] =
-                                                                RM_WALLET.sign(
-                                                                    receivedTradeInfoHash,
-                                                                    localbitcoinplusplus.wallets
-                                                                    .MY_SUPERNODE_PRIVATE_KEY
-                                                                );
-                                                            receivedTradeInfo[
-                                                                "order_validator_public_key"
-                                                            ] = su_data.myLocalFLOPublicKey;
-
-                                                            // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NO ONE IS WITHDRAWING
-                                                            try {
-                                                                backup_server_db_instance.backup_addDB("deposit",
-                                                                    receivedTradeInfo);
-                                                                backup_server_db_instance.backup_readDBbyIndex(
-                                                                    "withdraw_cash",
-                                                                    "status", 1).then(
-                                                                    function (
-                                                                        withdrawers_list
-                                                                    ) {
-                                                                        if (typeof withdrawers_list ==
-                                                                            "object") {
-                                                                            if (
-                                                                                withdrawers_list.length > 0) {
-                                                                                withdrawers_list.filter(
-                                                                                        wd => wd.currency ==
-                                                                                        params.currency).map(
-                                                                                        function (withdrawer) {
-                                                                                            if (
-                                                                                                withdrawer.withdraw_amount ==
-                                                                                                params.depositing_amount &&
-                                                                                                withdrawer.currency ==
-                                                                                                params.currency
-                                                                                            ) {
-                                                                                                withdrawer.status = 2; // A depositor has been asked to deposit money
-                                                                                                withdrawer.depositor_found_at = + new Date();
-                                                                                                withdrawer.depositor_flo_id = receivedTradeInfo.trader_flo_address;
-                                                                                                backup_server_db_instance.backup_updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
-
-                                                                                                receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
-                                                                                                backup_server_db_instance.backup_updateinDB(
-                                                                                                    "deposit",
-                                                                                                    receivedTradeInfo,
-                                                                                                    receivedTradeInfo.trader_flo_address
-                                                                                                );
-
-                                                                                                let withdrawer_bank_account = withdrawer.receivinAddress;
-
-                                                                                                let deposit_response_object = {
-                                                                                                    error: false,
-                                                                                                    method: "deposit_asset_request_response",
-                                                                                                    msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
-                                                                                                    data: receivedTradeInfo,
-                                                                                                    withdrawer_data: withdrawer,
-                                                                                                    receiver_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                                    trader_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                                };
-
-                                                                                                    RM_RPC.send_rpc.call(
-                                                                                                        this,
-                                                                                                        "deposit_asset_request_response",
-                                                                                                        deposit_response_object
-                                                                                                    ).then(deposit_request_response=>
-                                                                                                    doSend(deposit_request_response));
-                                                                                                return true;
-                                                                                            } else {
-                                                                                                err_msg = "Deposit request failed: We could not find a withdrawer.";
-                                                                                                showMessage(err_msg);
-                                                                                                throw new Error(err_msg);
-                                                                                            }
-                                                                                        }
-                                                                                    );
-                                                                            } else {
-                                                                                //No one is withdrawing so provide your bank details
-                                                                                let
-                                                                                    deposit_response_object = {
-                                                                                        error: false,
-                                                                                        method: "deposit_asset_request_response",
-                                                                                        msg: `Plese send the money to following bank address: "System determined bank".`,
-                                                                                        data: receivedTradeInfo,
-                                                                                        receiver_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                        trader_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                    };
-
-                                                                                receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
-                                                                                updateinDB
-                                                                                    (
-                                                                                        "deposit",
-                                                                                        receivedTradeInfo,
-                                                                                        receivedTradeInfo
-                                                                                        .trader_flo_address
-                                                                                    );
-                                                                                
-                                                                                RM_RPC
-                                                                                    .send_rpc
-                                                                                    .call(
-                                                                                        this,
-                                                                                        "deposit_asset_request_response",
-                                                                                        deposit_response_object
-                                                                                    ).then(deposit_request_response=>
-                                                                                    doSend(deposit_request_response));
-                                                                                return true;
-                                                                            }
-                                                                        }
-                                                                    });
-                                                            } catch (error) {
-                                                                err_msg = "Deposit request failed: We could not find a withdrawer. Come again later.";
-                                                                showMessage(err_msg);
-                                                                throw new Error(err_msg);
-                                                            }
-
-                                                        }
-                                                    });
-                                            }
-                                        });
+                                                    }
+                                                });
+                                        }
 
                                 } else {
                                     err_msg = "deposit asset request error";
@@ -15576,7 +15578,7 @@
 
                     if (typeof res_obj.globalParams !== "object"
                         || (typeof res_obj.globalParams.receiversList == "object" 
-                        && !request.globalParams.receiversList
+                        && !res_obj.globalParams.receiversList
                         .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
                     )) return;
 
@@ -16634,7 +16636,8 @@
                                                             //"receiver_flo_address": "", // message for all
                                                             //"ws_url": websocket.url,
                                                             "server_msg": `Your primary/secondary Supernode is live and synced. You can start using the system.`,
-                                                        }).then(server_response=>doSend(server_response));
+                                                        })
+                                                        //.then(server_response=>doSend(server_response));
                                                     
                                                     }); 
                                                 }
@@ -16827,7 +16830,7 @@
 
                     if (typeof res_obj.globalParams !== "object"
                         || (typeof res_obj.globalParams.receiversList == "object" 
-                        && !request.globalParams.receiversList
+                        && !res_obj.globalParams.receiversList
                         .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
                     )) return;
 
@@ -20256,7 +20259,7 @@
                     wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
                     
                     if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(idbData.myLocalFLOPublicKey)) {
-
+                        return;
                         showMessage(`INFO: Syncing of latest data starting. This could take some time. Do not close the window until then.`);
                         
                         // Get data for deposits and withdraw starting from first (and currently alive) backup supernode
@@ -20954,8 +20957,7 @@
                                     if (typeof reserve_res == "object") {
                                         reserve_res.map(reserves => {
                                             reserves.balance = balance;
-                                            _updateinDB('system_btc_reserves_private_keys', reserves,
-                                                reserves.id);
+                                            _updateinDB('system_btc_reserves_private_keys', reserves, reserves.id);
                                         });
                                     }
                                 });
