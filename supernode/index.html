@@ -10249,15 +10249,15 @@
                     const dbDataOfSupernodeStr = JSON.stringify(dbDataOfSupernode);
                     const dbDataOfSupernodeHash = Crypto.SHA256(dbDataOfSupernodeStr);
 
-                    myArray["id"] = `SU_DB_${subjectDB}`;
+                    myArray["id"] = `SU_DB_${su}`;
                     myArray["DBHash"] = dbDataOfSupernodeHash;
                     myArray["trader_flo_address"] = localbitcoinplusplus.wallets.my_local_flo_address;
-                    myArray["data_of"] = subjectDB;
+                    myArray["data_of"] = su;
                     myArray["timestamp"] = + new Date();
 
                     const RM_RPC = new localbitcoinplusplus.rpc;
 
-                    if (su=="") {
+                    if (su==localbitcoinplusplus.wallets.my_local_flo_address) {
                         updateinDB('supernodesDbHash', myArray)
                         .then((resp)=>{
                             RM_RPC
@@ -10286,6 +10286,22 @@
 
                 }
                 return false;
+            },
+
+            check_if_you_have_latest_dbhash_of_a_db: function(su=localbitcoinplusplus.wallets.my_local_flo_address) {
+                if (su=localbitcoinplusplus.wallets.my_local_flo_address) {
+                    readDB('supernodesDbHash', `SU_DB_${su}`)
+                    .then(resp=>{
+                        if (typeof resp=="object") {
+                            RM_RPC
+                            .send_rpc
+                            .call(this, "validate_latest_db_hash", resp)
+                            .then(supernodesDbHash_response=>
+                            console.log(supernodesDbHash_response));
+                            showMessage(`INFO: Request sent to check latest DB hash for ${su}.`);
+                        }
+                    });
+                }
             },
 
             claim_deposit_withdraw: function (claim_id) {
@@ -10503,7 +10519,7 @@
                 readDB('kBucketStore', kbuck.decodedId).then(kres=>{
                     if (typeof kres=="object") {
                         kres.data = data;
-                        kres.primary_supernode_flo_public_key = closestSupernodePubKey[0]
+                        kres.primary_supernode_flo_public_key = closestSupernodePubKey[0];
                     } else {
                         kbuckObj={
                             id: kbuck.decodedId,
@@ -16638,9 +16654,6 @@
                                     su_db_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
                                 ) return false;
 
-                                // const BACKUP_DB = new newBackupDB();
-                                // BACKUP_DB.createNewDB();
-
                                 (async function () {
                                     for (let tableStoreName in su_db_data) {
                                         // skip loop if the property is from prototype
@@ -18153,9 +18166,6 @@
                                     su_db_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
                                 ) return false;
 
-                                // const BACKUP_DB = new newBackupDB();
-                                // BACKUP_DB.createNewDB();
-
                                 (async function () {
                                     for (let tableStoreName in su_db_data) {
                                         // skip loop if the property is from prototype
@@ -19465,6 +19475,62 @@
                                 
                             break;
 
+                            case "validate_latest_db_hash":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(res_obj.nodePubKey)) {
+                                        const response_object = res_obj.params[0];
+                                        if(typeof response_object.trader_flo_address !="string") return;
+
+                                        localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
+                                            .then(my_closest_su_list=>{
+                                                const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
+                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
+
+                                                if(typeof backup_server_db_instance !== "object" 
+                                                    || backup_server_db_instance==localbitcoinplusplus.wallets.my_local_flo_address) {
+                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                    showMessage(backup_db_error_msg);
+                                                    throw new Error(backup_db_error_msg);
+                                                };
+
+                                                backup_server_db_instance.backup_readDB('supernodesDbHash', response_object.id)
+                                                .then(my_db_hash_obj=>{
+                                                    if(typeof my_db_hash_obj=="object") {
+                                                        if((my_db_hash_obj.vectorClock>=response_object.vectorClock)
+                                                        || (my_db_hash_obj.timestamp>=response_object.timestamp)) {
+                                                            
+                                                            let diffs = []; // compare two objects and get the tables with difference in hash
+
+                                                            for (key in my_db_hash_obj) {
+                                                                if (my_db_hash_obj.hasOwnProperty(key)) {
+                                                                    if (response_object[key] && response_object[key] !== my_db_hash_obj[key] 
+                                                                    && !['DBHash', 'data_of', 'id', 'timestamp', 'vectorClock'].includes(key)) {
+                                                                        diffs[key] = my_db_hash_obj[key];
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            localbitcoinplusplus.actions.get_sharable_db_data(diffs, primarySupernodeOfThisUser)
+                                                            .then(function (su_db_data) {
+                                                                if (typeof su_db_data == "object") {
+                                                                    su_db_data.trader_flo_address = primarySupernodeOfThisUser;
+                                                                    su_db_data.receiver_flo_address = res_obj.globalParams.senderFloId;
+                                                                    RM_RPC
+                                                                    .send_rpc
+                                                                    .call(this, "sync_backup_supernode_from_backup_supernode_response", su_db_data)
+                                                                    .then(server_sync_response=>doSend(server_sync_response));
+                                                                }
+                                                            });
+                                                            
+                                                        }
+                                                    }
+                                                });
+                                                
+                                        });
+                                    
+                                }
+                            break;
+
                             default: 
                             break;
                         }
@@ -19740,7 +19806,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 2);
+        const request = window.indexedDB.open(DBName, 1);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -20009,7 +20075,7 @@
                 // Update the DB Hash and inform rest
                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                    localbitcoinplusplus.actions.getDBHash();
+                    //localbitcoinplusplus.actions.getDBHash();
                 }
                 return dbObject;
             } catch (error) {
@@ -20056,7 +20122,7 @@
                 // Update the DB Hash and inform rest
                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                    localbitcoinplusplus.actions.getDBHash();
+                    //localbitcoinplusplus.actions.getDBHash();
                 }
                 return Obj;
                 
@@ -20303,6 +20369,20 @@
                                 unique: false
                             });
                         }
+                        if (!this.db.objectStoreNames.contains('supernodesDbHash')) {
+                            var objectStore = this.db.createObjectStore("supernodesDbHash", {
+                                keyPath: 'id'
+                            });
+                            objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                                unique: false
+                            });
+                            objectStore.createIndex('data_of', 'data_of', {
+                                unique: true
+                            });
+                            objectStore.createIndex('DBHash', 'DBHash', {
+                                unique: true
+                            });
+                        }
 
                     }.bind(this)
 
@@ -20379,7 +20459,7 @@
                         if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                             .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                                 if (typeof dbObject.trader_flo_address=="string") {
-                                    localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
+                                    //localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
                                 }
                         }
                         return dbObject;
@@ -20441,7 +20521,7 @@
                             if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                                 .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                                     if (typeof dbObject.trader_flo_address=="string") {
-                                        localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
+                                        //localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
                                     }
                             }
                             
@@ -21574,8 +21654,8 @@
                     });
 
                     // Find out if you are the next eligible backup supernode, 
-                    // If true, send dead su's data to all your backup supernodes 
-                    // which are not fallen supernode's backup supernodes to sync 
+                    // If true, send dead supernode's data to all your backup supernodes 
+                    // which are not dead supernode's backup supernodes to sync 
                     // data from you
                     const mcs = await readAllDB('myClosestSupernodes');
                     const index = mcs.findIndex(f=>f.trader_flo_address==getFLOId);
@@ -21587,13 +21667,19 @@
                         if(newClosestSupernodeMasterList[i].trader_flo_address==
                             localbitcoinplusplus.wallets.my_local_flo_address) {
 
+                                // First check if you yourself have the right data to serve
+                                // If not, either get the data or don't serve the users of
+                                // that dead supernode.
+
+                                await localbitcoinplusplus.actions.getDBHash(getFLOId);
+
                                 const nonBackUpSusForDeadSu = newClosestSupernodeMasterList
                                     .filter(function(obj) { return mcs.indexOf(obj) == -1; });  
 
                                 console.log(nonBackUpSusForDeadSu);
                                 
                                 const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances"
-                                , "crypto_balances", "buyOrders", "sellOrders"];
+                                , "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
                                 localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId)
                                 .then(function (su_db_data) {
