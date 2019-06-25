@@ -10229,23 +10229,70 @@
                 return arr;
             },
 
-            getDBHash: async function(su=localbitcoinplusplus.wallets.my_local_flo_address) {
-                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances",
-                    "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
+            getHighestVectorClockInTablesOfaDB: function(dbDataOfSupernode=[]) {
+                return new Promise((resolve, reject)=>{
+                    let higestVCList = [];
+                    Object.keys(dbDataOfSupernode).map((m,i)=>{
+                        if(typeof dbDataOfSupernode[m]=="object") {
+                            arr = dbDataOfSupernode[m].map(d=>{
+                                if(typeof d !== 'undefined') {
+                                    return d.vectorClock;
+                                }
+                            });
+                            var max = Math.max.apply( null, arr );
+                            if(typeof max !=="number" || [-Infinity, NaN, false, null, undefined].includes(max)) max=0;
+                            return higestVCList[`${m}_HVC`] = max;
+                        }
+                    });
+                    resolve(higestVCList);
+                });
+            },
 
+            getHighestTimestampInTablesOfaDB: function(dbDataOfSupernode=[]) {
+                return new Promise((resolve, reject)=>{
+                    let higestVCList = [];
+                    Object.keys(dbDataOfSupernode).map((m,i)=>{
+                        if(typeof dbDataOfSupernode[m]=="object") {
+                            arr = dbDataOfSupernode[m].map(d=>{
+                                if(typeof d !== 'undefined') {
+                                    return d.timestamp;
+                                }
+                            });
+                            var max = Math.max.apply( null, arr );
+                            if(typeof max !=="number" || [-Infinity, NaN, false, null, undefined].includes(max)) max=0;
+                            return higestVCList[`${m}_HVC`] = max;
+                        }
+                    });
+                    resolve(higestVCList);
+                });
+            },
+
+            getDBTablesLatestHashAndTimestamp: async function(su=localbitcoinplusplus.wallets.my_local_flo_address, actual_db_data=false, tableArray=false) {
+            
                 let get_su = await localbitcoinplusplus.kademlia.determineClosestSupernode(su);
 
                 const supernode_flo_id = get_su[0].data.id;
 
                 const subjectDB = (supernode_flo_id==localbitcoinplusplus.wallets.my_local_flo_address) ? "":supernode_flo_id;
 
-                const dbDataOfSupernode = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, subjectDB); 
+                let dbDataOfSupernode;
+
+                if (actual_db_data==false) {
+                    if (typeof tableArray!=="object") {
+                        tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances",
+                        "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];    
+                    }
+                    dbDataOfSupernode = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, subjectDB);                    
+                }
+ 
                 if (typeof dbDataOfSupernode=="object" && Object.keys(dbDataOfSupernode).length>0) {
                     
                     myArray = {};
                     Object.keys(dbDataOfSupernode)
                     .map(m=>myArray[m] = Crypto.SHA256(JSON.stringify(dbDataOfSupernode[m])));
-
+                    
+                    const higestTimestampList = await localbitcoinplusplus.actions.getHighestTimestampInTablesOfaDB(dbDataOfSupernode);
+                    
                     const dbDataOfSupernodeStr = JSON.stringify(dbDataOfSupernode);
                     const dbDataOfSupernodeHash = Crypto.SHA256(dbDataOfSupernodeStr);
 
@@ -10253,37 +10300,18 @@
                     myArray["DBHash"] = dbDataOfSupernodeHash;
                     myArray["trader_flo_address"] = localbitcoinplusplus.wallets.my_local_flo_address;
                     myArray["data_of"] = su;
-                    myArray["timestamp"] = + new Date();
+                    myArray["higestTimestampList"] = higestTimestampList;
+     
+                    return myArray;
 
-                    const RM_RPC = new localbitcoinplusplus.rpc;
+                    // const RM_RPC = new localbitcoinplusplus.rpc;
 
-                    if (su==localbitcoinplusplus.wallets.my_local_flo_address) {
-                        updateinDB('supernodesDbHash', myArray)
-                        .then((resp)=>{
-                            RM_RPC
-                            .send_rpc
-                            .call(this, "hash_of_a_supernode_db_response", myArray)
-                            .then(supernodesDbHash_response=>
-                                doSend(supernodesDbHash_response)
-                            );
-
-                        showMessage(`INFO: "supernodesDbHash" table updated.`)});
-                    } else {
-                        if (typeof localbitcoinplusplus.newBackupDatabase.db[su]!=="object") {
-                            return false;
-                        }
-                        localbitcoinplusplus.newBackupDatabase.db[su]
-                            .backup_updateinDB('supernodesDbHash', myArray)
-                            .then(resp=>{
-                            RM_RPC
-                            .send_rpc
-                            .call(this, "hash_of_a_supernode_db_response", myArray)
-                            .then(supernodesDbHash_response=>
-                            doSend(supernodesDbHash_response));
-                            showMessage(`INFO: "supernodesDbHash" table updated.`)
-                        });
-                    }
-
+                    // RM_RPC
+                    // .send_rpc
+                    // .call(this, "do_you_have_latest_data_for_this_supernode", myArray)
+                    // .then(supernodesDbHash_response=>
+                    //     doSend(supernodesDbHash_response));
+                    
                 }
                 return false;
             },
@@ -10386,16 +10414,7 @@
 
                 const promise2 = removeAllinDB('my_supernode_private_key_chunks');
 
-                return Promise.all([promise1, promise2])
-                .then(() => {
-                    // Update the DB Hash and inform rest
-                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                        localbitcoinplusplus.actions.getDBHash();
-                    }
-                    return true;
-                })
-                .catch(e => false);
+                return Promise.all([promise1, promise2]).then(() => true).catch(e => false);
             },
 
             // https://stackoverflow.com/a/39538518/5348972
@@ -10611,14 +10630,7 @@
             },
             updateClosestSupernodeSeeds: function(flo_addr) {
                 return new Promise(async (resolve, reject) => {
-                    await removeAllinDB('myClosestSupernodes')
-                    .then(()=>{
-                        // Update the DB Hash and inform rest
-                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                            localbitcoinplusplus.actions.getDBHash();
-                        }
-                    });
+                    await removeAllinDB('myClosestSupernodes');
                     let nearestSupernodeAddresslist = await localbitcoinplusplus.kademlia.addClosestSupernodeInDB(flo_addr);
                     nearestSupernodeAddresslist.map((nearestSupernodeAddress, index)=>{
                         updateinDB('myClosestSupernodes', {
@@ -12547,11 +12559,6 @@
                                                                                                         deposit_arr
                                                                                                         .trader_flo_address
                                                                                                     );
-                                                                                                // Update the DB Hash and inform rest
-                                                                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                                                    localbitcoinplusplus.actions.getDBHash();
-                                                                                                }
                                                                                             }
                                                                                         }
                                                                                     );
@@ -13852,13 +13859,7 @@
                                                                                                     (
                                                                                                         "deposit",
                                                                                                         deposit_arr.trader_flo_address
-                                                                                                    ).then(()=>{
-                                                                                                        // Update the DB Hash and inform rest
-                                                                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                                                            localbitcoinplusplus.actions.getDBHash(deposit_arr.trader_flo_address);
-                                                                                                        }
-                                                                                                    });
+                                                                                                    );
                                                                                             }
                                                                                         }
                                                                                     );
@@ -14761,28 +14762,8 @@
                                                                         .length > 0) {
                                                                         // Delete orders
                                                                         try {
-                                                                            _removeinDB(
-                                                                                "buyOrders",
-                                                                                buyPipeObj
-                                                                                .id)
-                                                                            .then(()=>{
-                                                                                // Update the DB Hash and inform rest
-                                                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                                    localbitcoinplusplus.actions.getDBHash(buyPipeObj.trader_flo_address);
-                                                                                }
-                                                                            });
-                                                                            _removeinDB(
-                                                                                "sellOrders",
-                                                                                sellPipeObj
-                                                                                .id)
-                                                                                .then(()=>{
-                                                                                // Update the DB Hash and inform rest
-                                                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                                    localbitcoinplusplus.actions.getDBHash(sellPipeObj.trader_flo_address);
-                                                                                }
-                                                                            });
+                                                                            _removeinDB("buyOrders", buyPipeObj.id);
+                                                                            _removeinDB("sellOrders", sellPipeObj.id);
                                                                         } catch (error) {
                                                                             callback(false);
                                                                             showMessage(`WARNING: Failed to delete respective buy and sell orders in an operation.`);
@@ -15860,11 +15841,6 @@
                                                                 await addDB(resdbdata, obj[prop]);
                                                             }
                                                         }
-                                                        // Update the DB Hash and inform rest
-                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                            localbitcoinplusplus.actions.getDBHash();
-                                                        }
                                                     }
                                                 }
 
@@ -15942,14 +15918,7 @@
                                                 .verify(cancel_request.trade_id, cancel_request.signed_trade_id,
                                                     trader_data.trader_flo_pubKey)) {
                                                 removeinDB(tradeDB, cancel_request.trade_id)
-                                                    .then((id) => {
-                                                        // Update the DB Hash and inform rest
-                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                            localbitcoinplusplus.actions.getDBHash();
-                                                        }
-                                                        showMessage(`Trade Id ${id} deleted.`);
-                                                    });
+                                                    .then((id) => showMessage(`Trade Id ${id} deleted.`));
                                             } else {
                                                 showMessage(
                                                     `Failed to verify trade for trade id ${cancel_request.trade_id}`
@@ -15982,20 +15951,8 @@
                                                 trade_balance_res.supernode_sign, trade_balance_res.supernodePubKey)) {
                                             // Delete orders in clients DB
                                             try {
-                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id).then(()=>{
-                                                    // Update the DB Hash and inform rest
-                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                        localbitcoinplusplus.actions.getDBHash();
-                                                    }
-                                                });
-                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id).then(()=>{
-                                                    // Update the DB Hash and inform rest
-                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                        localbitcoinplusplus.actions.getDBHash();
-                                                    }
-                                                });
+                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
                                             } catch (error) {
                                                 callback(false);
                                                 throw new Error(error);
@@ -16190,21 +16147,8 @@
                                                             removeByIndex('deposit',
                                                                 'trader_flo_address',
                                                                 depositor_cash_data.trader_flo_address
-                                                            ).then(()=>{
-                                                                // Update the DB Hash and inform rest
-                                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                    localbitcoinplusplus.actions.getDBHash();
-                                                                }
-                                                            });
-                                                            removeinDB('withdraw_cash', withdraw_data.id)
-                                                            .then(()=>{
-                                                                // Update the DB Hash and inform rest
-                                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                    localbitcoinplusplus.actions.getDBHash();
-                                                                }
-                                                            });
+                                                            );
+                                                            removeinDB('withdraw_cash', withdraw_data.id);
 
                                                             let update_cash_balance_obj = {
                                                                 depositor_cash_data: depositor_cash_data,
@@ -16328,20 +16272,8 @@
                                         updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
                                         updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
                                         removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data
-                                            .trader_flo_address).then(()=>{
-                                            // Update the DB Hash and inform rest
-                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                localbitcoinplusplus.actions.getDBHash();
-                                            }
-                                        });
-                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id).then(()=>{
-                                            // Update the DB Hash and inform rest
-                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                localbitcoinplusplus.actions.getDBHash();
-                                            }
-                                        });
+                                            .trader_flo_address);
+                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
                                         return true;
                                     }
                                     return false;
@@ -16681,11 +16613,6 @@
                                                         }
                                                     }
                                                 }
-                                                // Update the DB Hash and inform rest
-                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                    localbitcoinplusplus.actions.getDBHash(su_db_data.trader_flo_address);
-                                                }
                                             }
 
                                         } catch (error) {
@@ -16812,11 +16739,6 @@
                                                                 });
                                                             }
                                                         }
-                                                        // Update the DB Hash and inform rest
-                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                            localbitcoinplusplus.actions.getDBHash();
-                                                        }
                                                     }
                                                 }
 
@@ -16906,11 +16828,6 @@
                                                                 .backup_addDB(resdbdata, obj[prop]).then(()=>{
                                                                     showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
                                                                 });
-                                                            }
-                                                            // Update the DB Hash and inform rest
-                                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                localbitcoinplusplus.actions.getDBHash(su_db_data.trader_flo_address);
                                                             }
                                                         }
                                                     }
@@ -17221,11 +17138,6 @@
                                                                 await addDB(resdbdata, obj[prop]);
                                                             }
                                                         }
-                                                        // Update the DB Hash and inform rest
-                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                            localbitcoinplusplus.actions.getDBHash();
-                                                        }
                                                     }
                                                 }
 
@@ -17321,14 +17233,7 @@
                                                     .verify(cancel_request.trade_id, cancel_request.signed_trade_id,
                                                         trader_data.trader_flo_pubKey)) {
                                                     backup_server_db_instance.backup_removeinDB(tradeDB, cancel_request.trade_id)
-                                                        .then((id) => {
-                                                            // Update the DB Hash and inform rest
-                                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                localbitcoinplusplus.actions.getDBHash(trader_data.trader_flo_address);
-                                                            }
-                                                            showMessage(`Trade Id ${id} deleted.`);
-                                                        });
+                                                        .then((id) =>showMessage(`Trade Id ${id} deleted.`));
                                                 } else {
                                                     showMessage(
                                                         `Failed to verify trade for trade id ${cancel_request.trade_id}`
@@ -17363,22 +17268,8 @@
 
                                             // Delete orders in clients DB
                                             try {
-                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id)
-                                                .then(()=>{
-                                                    // Update the DB Hash and inform rest
-                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                        localbitcoinplusplus.actions.getDBHash();
-                                                    }
-                                                });
-                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id)
-                                                .then(()=>{
-                                                    // Update the DB Hash and inform rest
-                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                        localbitcoinplusplus.actions.getDBHash();
-                                                    }
-                                                });
+                                                removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
                                             } catch (error) {
                                                 callback(false);
                                                 throw new Error(error);
@@ -17650,21 +17541,8 @@
                                                                 backup_server_db_instance.backup_removeByIndex('deposit',
                                                                     'trader_flo_address',
                                                                     depositor_cash_data.trader_flo_address
-                                                                ).then(()=>{
-                                                                    // Update the DB Hash and inform rest
-                                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                        localbitcoinplusplus.actions.getDBHash(depositor_cash_data.trader_flo_address);
-                                                                    }
-                                                                });
-                                                                backup_server_db_instance.backup_removeinDB('withdraw_cash', withdraw_data.id)
-                                                                .then(()=>{
-                                                                    // Update the DB Hash and inform rest
-                                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                        localbitcoinplusplus.actions.getDBHash(withdraw_data.trader_flo_address);
-                                                                    }
-                                                                });
+                                                                );
+                                                                backup_server_db_instance.backup_removeinDB('withdraw_cash', withdraw_data.id);
 
                                                                 let update_cash_balance_obj = {
                                                                     depositor_cash_data: depositor_cash_data,
@@ -17796,21 +17674,8 @@
                                         updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
                                         updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
                                         removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data
-                                            .trader_flo_address).then(()=>{
-                                            // Update the DB Hash and inform rest
-                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                localbitcoinplusplus.actions.getDBHash();
-                                            }
-                                        });
-                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id)
-                                        .then(()=>{
-                                            // Update the DB Hash and inform rest
-                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                localbitcoinplusplus.actions.getDBHash();
-                                            }
-                                        });
+                                            .trader_flo_address);
+                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
                                         return true;
                                     }
                                     return false;
@@ -18191,11 +18056,6 @@
                                                             if (!obj.hasOwnProperty(prop)) continue;
                                                             await BACKUP_DB.backup_addDB(resdbdata, obj[prop]);
                                                         }
-                                                    }
-                                                    // Update the DB Hash and inform rest
-                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                        localbitcoinplusplus.actions.getDBHash(su_db_data.trader_flo_address);
                                                     }
                                                 }
                                             }
@@ -18595,11 +18455,6 @@
                                                             await addDB(resdbdata, obj[prop]);
                                                         }
                                                     }
-                                                    // Update the DB Hash and inform rest
-                                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                        localbitcoinplusplus.actions.getDBHash();
-                                                    }
                                                 }
                                             }
 
@@ -18777,14 +18632,7 @@
                                                     .verify(cancel_request.trade_id, cancel_request.signed_trade_id,
                                                         trader_data.trader_flo_pubKey)) {
                                                     backup_server_db_instance.backup_removeinDB(tradeDB, cancel_request.trade_id)
-                                                        .then((id) => {
-                                                            // Update the DB Hash and inform rest
-                                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                localbitcoinplusplus.actions.getDBHash(cancel_request.trader_flo_address);
-                                                            }
-                                                            showMessage(`Trade Id ${id} deleted.`);
-                                                        });
+                                                        .then((id) => showMessage(`Trade Id ${id} deleted.`));
                                                 } else {
                                                     showMessage(
                                                         `Failed to verify trade for trade id ${cancel_request.trade_id}`
@@ -18836,22 +18684,8 @@
 
                                                 // Delete orders in clients DB
                                                 try {
-                                                    backup_server_db_instance.backup_removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id)
-                                                    .then(()=>{
-                                                        // Update the DB Hash and inform rest
-                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                            localbitcoinplusplus.actions.getDBHash(trade_balance_res.trade_infos.buyer_flo_id);
-                                                        }
-                                                    });
-                                                    backup_server_db_instance.backup_removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id)
-                                                    .then(()=>{
-                                                        // Update the DB Hash and inform rest
-                                                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                            localbitcoinplusplus.actions.getDBHash(trade_balance_res.trade_infos.seller_flo_id);
-                                                        }
-                                                    });
+                                                    backup_server_db_instance.backup_removeinDB("buyOrders", trade_balance_res.trade_infos.buy_order_id);
+                                                    backup_server_db_instance.backup_removeinDB("sellOrders", trade_balance_res.trade_infos.sell_order_id);
                                                 } catch (error) {
                                                     callback(false);
                                                     throw new Error(error);
@@ -18954,21 +18788,8 @@
                                             backup_server_db_instance.backup_updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
                                             backup_server_db_instance.backup_updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
                                             backup_server_db_instance.backup_removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data
-                                                .trader_flo_address).then(()=>{
-                                                // Update the DB Hash and inform rest
-                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                    localbitcoinplusplus.actions.getDBHash(withdraw_success_response.depositor_cash_data.trader_flo_address);
-                                                }
-                                            });
-                                            backup_server_db_instance.backup_removeinDB('withdraw_cash', withdraw_success_response.withdraw_id)
-                                            .then(()=>{
-                                                // Update the DB Hash and inform rest
-                                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                    localbitcoinplusplus.actions.getDBHash(withdraw_success_response.trader_flo_address);
-                                                }
-                                            });
+                                                .trader_flo_address);
+                                            backup_server_db_instance.backup_removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
                                             return true;
                                         }
                                         return false;
@@ -19423,11 +19244,6 @@
                                                                     showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
                                                                 });
                                                             }
-                                                            // Update the DB Hash and inform rest
-                                                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                                                localbitcoinplusplus.actions.getDBHash(su_db_data.trader_flo_address);
-                                                            }    
                                                         }
                                                     }
                                                 }
@@ -19440,7 +19256,7 @@
                                 }
                             break;
 
-                            case "hash_of_a_supernode_db_response":
+                            case "do_you_have_latest_data_for_this_supernode":
                                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                                  .includes(res_obj.nodePubKey)) {
                                     const response_object = res_obj.params[0];
@@ -19458,16 +19274,18 @@
                                                 throw new Error(backup_db_error_msg);
                                             };
 
-                                            backup_server_db_instance.backup_readDB('supernodesDbHash', response_object.id)
-                                            .then(old_db_hash_obj=>{
-                                                if(typeof old_db_hash_obj=="object") {
-                                                    if((old_db_hash_obj.vectorClock>=response_object.vectorClock)
-                                                    || (old_db_hash_obj.timestamp>=response_object.timestamp)) return;
-                                                }
-                                                backup_server_db_instance.backup_updateinDB('supernodesDbHash', response_object)
-                                                .then(()=>showMessage(`INFO: Datastore "supernodesDbHash" updated 
-                                                    with hash ${response_object.DBHash} on ${response_object.timestamp}.`));
-                                            });
+                                            // backup_server_db_instance.backup_readDB('supernodesDbHash', response_object.id)
+                                            // .then(old_db_hash_obj=>{
+                                            //     if(typeof old_db_hash_obj=="object") {
+                                            //         if((old_db_hash_obj.vectorClock>=response_object.vectorClock)
+                                            //         || (old_db_hash_obj.timestamp>=response_object.timestamp)) return;
+                                            //     }
+                                            //     backup_server_db_instance.backup_updateinDB('supernodesDbHash', response_object)
+                                            //     .then(()=>showMessage(`INFO: Datastore "supernodesDbHash" updated 
+                                            //         with hash ${response_object.DBHash} on ${response_object.timestamp}.`));
+                                            // });
+
+                                            
                                             
                                     });
                                 
@@ -19503,7 +19321,8 @@
 
                                                             for (key in my_db_hash_obj) {
                                                                 if (my_db_hash_obj.hasOwnProperty(key)) {
-                                                                    if (response_object[key] && response_object[key] !== my_db_hash_obj[key] 
+                                                                    if (response_object[key] 
+                                                                    && response_object[key] !== my_db_hash_obj[key] 
                                                                     && !['DBHash', 'data_of', 'id', 'timestamp', 'vectorClock'].includes(key)) {
                                                                         diffs[key] = my_db_hash_obj[key];
                                                                     }
@@ -20072,11 +19891,6 @@
                 await store.add(dbObject);
                 await request.complete;
                 console.info("Data added in " + tablename);
-                // Update the DB Hash and inform rest
-                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                    //localbitcoinplusplus.actions.getDBHash();
-                }
                 return dbObject;
             } catch (error) {
                 return new Error(error);
@@ -20118,11 +19932,6 @@
                 } else {
                     await store.put(Obj);
                     await request.complete;
-                }
-                // Update the DB Hash and inform rest
-                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                       .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                    //localbitcoinplusplus.actions.getDBHash();
                 }
                 return Obj;
                 
@@ -20455,13 +20264,6 @@
                         await store.add(dbObject);
                         await this.request.complete;
                         console.info("Data added in " + tablename);
-                        // Update the DB Hash and inform rest
-                        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                if (typeof dbObject.trader_flo_address=="string") {
-                                    //localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
-                                }
-                        }
                         return dbObject;
                     } catch (error) {
                         return new Error(error);
@@ -20502,13 +20304,6 @@
                                             await that.request.complete;
                                         }
                                     });
-                                    // Update the DB Hash and inform rest
-                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                            if (typeof dbObject.trader_flo_address=="string") {
-                                                localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
-                                            }
-                                    }
                                     resolve(Obj); 
                                     return;
                                 }
@@ -20516,15 +20311,6 @@
                         } else {
                             await store.put(Obj);
                             await that.request.complete;
-                            
-                            // Update the DB Hash and inform rest
-                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                    if (typeof dbObject.trader_flo_address=="string") {
-                                        //localbitcoinplusplus.actions.getDBHash(dbObject.trader_flo_address);   
-                                    }
-                            }
-                            
                             return Obj;
                         }
 
@@ -21654,14 +21440,12 @@
                     });
 
                     // Find out if you are the next eligible backup supernode, 
-                    // If true, send dead supernode's data to all your backup supernodes 
-                    // which are not dead supernode's backup supernodes to sync 
-                    // data from you
+                    
                     const mcs = await readAllDB('myClosestSupernodes');
                     const index = mcs.findIndex(f=>f.trader_flo_address==getFLOId);
                     tail = mcs.splice(0, index);
                     const newClosestSupernodeMasterList = mcs.concat(tail);
-                    
+
                     for(i=0; i<=newClosestSupernodeMasterList.length; i++) {
                         if(newClosestSupernodeMasterList[i].is_live==true) break; 
                         if(newClosestSupernodeMasterList[i].trader_flo_address==
@@ -21671,29 +21455,42 @@
                                 // If not, either get the data or don't serve the users of
                                 // that dead supernode.
 
-                                await localbitcoinplusplus.actions.getDBHash(getFLOId);
+                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                                "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
+
+                                const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId);
+
+                                const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(getFLOId, su_db_data);
+
+                                // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
+                                // if you have the latest data. If you don't have the latest data, someone
+                                // will send you the latest data which you can verify before updating.
+
+                                RM_RPC
+                                .send_rpc
+                                .call(this, "do_you_have_latest_data_for_this_supernode", dbHashData)
+                                .then(server_sync_response=>doSend(server_sync_response));    
+                                                        
+                                // Send dead supernode's data to all your backup supernodes 
+                                // which are not dead supernode's backup supernodes to sync 
+                                // data from you
 
                                 const nonBackUpSusForDeadSu = newClosestSupernodeMasterList
                                     .filter(function(obj) { return mcs.indexOf(obj) == -1; });  
 
                                 console.log(nonBackUpSusForDeadSu);
-                                
-                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances"
-                                , "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
+    
+                                if (typeof su_db_data == "object") {
+                                    nonBackUpSusForDeadSu.map(nbs=>{
+                                        su_db_data.trader_flo_address = nbs.trader_flo_address;
+                                        su_db_data.receiver_flo_address = nbs.trader_flo_address;
 
-                                localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId)
-                                .then(function (su_db_data) {
-                                    if (typeof su_db_data == "object") {
-                                        nonBackUpSusForDeadSu.map(nbs=>{
-                                            su_db_data.trader_flo_address = nbs.trader_flo_address;
-                                            su_db_data.receiver_flo_address = nbs.trader_flo_address;
-                                            RM_RPC
-                                            .send_rpc
-                                            .call(this, "sync_backup_supernode_from_backup_supernode_response", su_db_data)
-                                            .then(server_sync_response=>doSend(server_sync_response, nbs.trader_flo_address));    
-                                        });
-                                    }
-                                });
+                                        RM_RPC
+                                        .send_rpc
+                                        .call(this, "sync_backup_supernode_from_backup_supernode_response", su_db_data)
+                                        .then(server_sync_response=>doSend(server_sync_response, nbs.trader_flo_address));    
+                                    });
+                                }
                             break;
                         }
                     }
