@@ -9635,8 +9635,8 @@
                 btc_mainnet: "https://blockexplorer.com",
                 btc_testnet: "https://testnet.blockexplorer.com",
                 flo_mainnet: "http://flosight.duckdns.org",
-                //flo_testnet: "http://testnet-flosight.duckdns.org"
-                flo_testnet: "https://testnet.flocha.in"
+                flo_testnet: "http://testnet-flosight.duckdns.org"
+                //flo_testnet: "https://testnet.flocha.in"
             },
             writable: false,
             configurable: false,
@@ -10035,6 +10035,7 @@
 
         localbitcoinplusplus.actions = {
             parse_flo_comments: function (callback) {
+                return callback('fofof');
                 if (this.floAddress == null) {
                     return false;
                 }
@@ -10273,6 +10274,10 @@
 
                 const supernode_flo_id = get_su[0].data.id;
 
+                if (typeof supernode_flo_id !=="string") {
+                    throw new Error(`WARNING: Failed to calculate supenode of this FLO Id: ${su}.`);
+                }
+
                 const subjectDB = (supernode_flo_id==localbitcoinplusplus.wallets.my_local_flo_address) ? "":supernode_flo_id;
 
                 let dbDataOfSupernode;
@@ -10289,7 +10294,10 @@
                     
                     myArray = {};
                     Object.keys(dbDataOfSupernode)
-                    .map(m=>myArray[m] = Crypto.SHA256(JSON.stringify(dbDataOfSupernode[m])));
+                    .map(m=>{
+                        // SORT THE DATA HERE A/C TO TIMESTAMP AND THEN HASH
+                        myArray[m] = Crypto.SHA256(JSON.stringify(dbDataOfSupernode[m]));
+                    });
                     
                     const higestTimestampList = await localbitcoinplusplus.actions.getHighestTimestampInTablesOfaDB(dbDataOfSupernode);
                     
@@ -10300,7 +10308,7 @@
                     myArray["DBHash"] = dbDataOfSupernodeHash;
                     myArray["trader_flo_address"] = localbitcoinplusplus.wallets.my_local_flo_address;
                     myArray["data_of"] = su;
-                    myArray["higestTimestampList"] = higestTimestampList;
+                    myArray["higestTimestampList"] = {...higestTimestampList};
      
                     return myArray;
 
@@ -19263,7 +19271,7 @@
                                     if(typeof response_object.trader_flo_address !="string") return;
 
                                     localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
-                                        .then(my_closest_su_list=>{
+                                        .then(async my_closest_su_list=>{
                                             const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
                                             const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
@@ -19274,18 +19282,56 @@
                                                 throw new Error(backup_db_error_msg);
                                             };
 
-                                            // backup_server_db_instance.backup_readDB('supernodesDbHash', response_object.id)
-                                            // .then(old_db_hash_obj=>{
-                                            //     if(typeof old_db_hash_obj=="object") {
-                                            //         if((old_db_hash_obj.vectorClock>=response_object.vectorClock)
-                                            //         || (old_db_hash_obj.timestamp>=response_object.timestamp)) return;
-                                            //     }
-                                            //     backup_server_db_instance.backup_updateinDB('supernodesDbHash', response_object)
-                                            //     .then(()=>showMessage(`INFO: Datastore "supernodesDbHash" updated 
-                                            //         with hash ${response_object.DBHash} on ${response_object.timestamp}.`));
-                                            // });
+                                            console.log(response_object);
 
-                                            
+                                            const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                                            "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
+
+                                            const su_db_data_from_my_db = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, primarySupernodeOfThisUser);
+
+                                            const dbHashData_from_my_db = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(primarySupernodeOfThisUser, su_db_data_from_my_db);
+ 
+                                            // If you have same data as the sender has, you don't need to return any data to him
+                                            if (dbHashData_from_my_db.DBHash===response_object.DBHash) return;
+                                            if (dbHashData_from_my_db.id===response_object.id) return;
+                                            if (dbHashData_from_my_db.data_of===response_object.data_of) return;
+                                            if (dbHashData_from_my_db.trader_flo_address===response_object.trader_flo_address) return;
+
+                                            let mismatched_fields = [];
+
+                                            for (var q in dbHashData_from_my_db) {
+                                                if (dbHashData_from_my_db.hasOwnProperty(q) 
+                                                  || q=='higestTimestampList'
+                                                  || q=='id'
+                                                  || q=='data_of' 
+                                                  || q=='trader_flo_address') {
+                                                    if (dbHashData_from_my_db[q]!==response_object[q]) {
+                                                        mismatched_fields.push(q);
+                                                    }
+                                                }
+                                            }
+
+                                            console.log(mismatched_fields);
+
+                                            let latest_data = {};
+
+                                            mismatched_fields.map(mf=>{
+                                                backup_server_db_instance.backup_readAllDB(mf)
+                                                .then(res_data_obj=>{
+
+                                                    let filtered_data = res_data_obj.filter(odho=>{
+                                                        if (typeof odho.vectorClock=="number"
+                                                        && typeof response_object.higestTimestampList[`${mf}_HVC`] !=='undefined') {
+                                                           return odho.vectorClock >= response_object.higestTimestampList[`${mf}_HVC`]; 
+                                                        }
+                                                    });
+
+                                                    latest_data[mf] = {...filtered_data};
+                                                });
+                                            });
+
+                                            // Send the data back to sender
+                                            console.log(latest_data);
                                             
                                     });
                                 
@@ -19636,6 +19682,7 @@
 
         request.onsuccess = function (event) {
             db = request.result;
+            doShreeGanesh();
             loadLocalDBData();
         };
 
@@ -19867,9 +19914,13 @@
             });
         }
 
-        function readAllDB(tablename) {
+        function readAllDB(tablename, limit=0) {
             return new Promise((resolve, reject) => {
                 let response = [];
+                // let keyRangeValue;
+                // if (limit>0) {
+                //     keyRangeValue = IDBKeyRange.lowerBound(limit);
+                // }
                 var objectStore = db.transaction(tablename).objectStore(tablename);
                 objectStore.openCursor().onsuccess = function (event) {
                     let cursor = event.target.result;
@@ -20387,7 +20438,6 @@
                 throw new Error(`Failed to fetch configurations: ${error}`);
             }
         }
-        doShreeGanesh();
     </script>
 
     <script>
