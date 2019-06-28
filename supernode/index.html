@@ -10159,7 +10159,7 @@
                     }).then(sync_request=>doSend(sync_request));
             },
             
-            sync_primary_supernode_from_backup_supernode: function (primary_su="", backup_su="") {
+            sync_primary_supernode_from_backup_supernode: async function (primary_su="", backup_su="") {
                 const RM_RPC = new localbitcoinplusplus.rpc;
                 // RM_RPC.send_rpc.call(this,
                 //     "sync_primary_supernode_from_backup_supernode", { 
@@ -10181,10 +10181,10 @@
                 const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
                 "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
-                const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, primary_su);
+                const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray);
 
                 const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(primary_su, su_db_data);
-
+                dbHashData['allowed_receivers'] = backup_su;
                 // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
                 // if you have the latest data. If you don't have the latest data, someone
                 // will send you the latest data which you can verify before updating.
@@ -10196,7 +10196,7 @@
 
             },
             
-            sync_backup_supernode_from_backup_supernode: function (requester="", receiver="", flo_addr_of_backup="") {
+            sync_backup_supernode_from_backup_supernode: async function (requester="", receiver="", flo_addr_of_backup="") {
                 const RM_RPC = new localbitcoinplusplus.rpc;
                 // RM_RPC.send_rpc.call(this,
                 //     "sync_backup_supernode_from_backup_supernode", { 
@@ -10222,7 +10222,7 @@
                 const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, flo_addr_of_backup);
 
                 const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(flo_addr_of_backup, su_db_data);
-
+                dbHashData['allowed_receivers'] = receiversList;
                 // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
                 // if you have the latest data. If you don't have the latest data, someone
                 // will send you the latest data which you can verify before updating.
@@ -10303,7 +10303,7 @@
                             });
                             var max = Math.max.apply( null, arr );
                             if(typeof max !=="number" || [-Infinity, NaN, false, null, undefined].includes(max)) max=0;
-                            return higestVCList[`${m}_HVC`] = max;
+                            return higestVCList[`${m}_TIME`] = max;
                         }
                     });
                     resolve(higestVCList);
@@ -19302,6 +19302,9 @@
                                  .includes(res_obj.nodePubKey)) {
                                     const response_object = res_obj.params[0];
                                     if(typeof response_object.trader_flo_address !="string") return;
+                                    if(typeof response_object.allowed_receivers=="object" 
+                                    && !response_object.allowed_receivers
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_address)) return;
 
                                     localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
                                         .then(async my_closest_su_list=>{
@@ -19359,8 +19362,8 @@
                                                 const res_data_obj = await _readAllDB(mf)
                                                 let filtered_data = res_data_obj.filter(odho=>{
                                                     if (typeof odho.timestamp=="number"
-                                                    && typeof response_object.higestTimestampList[`${mf}_HVC`] !=='undefined') {
-                                                        return odho.timestamp >= response_object.higestTimestampList[`${mf}_HVC`]; 
+                                                    && typeof response_object.higestTimestampList[`${mf}_TIME`] !=='undefined') {
+                                                        return odho.timestamp >= Number(response_object.higestTimestampList[`${mf}_TIME`]-3600);
                                                     }
                                                 });
 
@@ -21705,50 +21708,38 @@
                 
                 // Get data for deposits and withdraw starting from first (and currently alive) backup supernode
                 let closestSuNodes = await readAllDB('myClosestSupernodes');
-                let firstAliveBackupFloIdForPrimarySupernode;
                 
-                for (let index = 1; index <= closestSuNodes.length-1; index++) {
-                    if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForPrimarySupernode !== "string") {
-                        firstAliveBackupFloIdForPrimarySupernode = closestSuNodes[index].trader_flo_address;
-                        localbitcoinplusplus.actions
-                        .sync_primary_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, firstAliveBackupFloIdForPrimarySupernode);
-                    }    
-                }   
+                let closestSuNodesList = closestSuNodes.map(m=>m.trader_flo_address)
+                    .slice(1, localbitcoinplusplus.master_configurations.MaxBackups+1);
+                console.log(closestSuNodesList);
+                   
+                localbitcoinplusplus.actions
+                .sync_primary_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, closestSuNodesList);
                 
-                // Update backup db as well for all supernodes you're serving as backup 
+                // Update backup db as well for all supernodes you're serving as backup
+                
+                let backup_su_list = [];
                 for (let index = closestSuNodes.length-1; index >= closestSuNodes.length-localbitcoinplusplus.master_configurations.MaxBackups; index--) {
-                    let firstAliveBackupFloIdForBackupSupernode;
-                    if (closestSuNodes[index].is_live==true && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
-                        firstAliveBackupFloIdForBackupSupernode = closestSuNodes[index].trader_flo_address;
-
-                        localbitcoinplusplus.actions
-                        .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                        firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
-                        
-                    } else {
-                        // it will ask backup from backup su next closest
-                        for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
-                            let actual_num = j;
-                            if(actual_num>=closestSuNodes.length-1) {
-                                actual_num = j%index
-                            } else {
-                                actual_num = j+1;
-                            }
-                            const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
-                            if (nextBKSu !== localbitcoinplusplus.wallets.my_local_flo_address
-                                && closestSuNodes[actual_num].is_live==true 
-                                && typeof firstAliveBackupFloIdForBackupSupernode !== "string") {
-                                
-                                firstAliveBackupFloIdForBackupSupernode = closestSuNodes[actual_num].trader_flo_address;
-
-                                localbitcoinplusplus.actions
-                                .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
-                                firstAliveBackupFloIdForBackupSupernode, closestSuNodes[index].trader_flo_address);
-
-                            }
+					
+					backup_su_list[closestSuNodes[index].trader_flo_address] = [];
+                    for (let j = index; j < index+localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                        let actual_num = j;
+                        if(actual_num>=closestSuNodes.length-1) {
+                            actual_num = j%index
+                        } else {
+                            actual_num = j+1;
                         }
-                    }   
-                }   
+						const nextBKSu = closestSuNodes[actual_num].trader_flo_address;
+						if(nextBKSu==localbitcoinplusplus.wallets.my_local_flo_address) continue;
+                        backup_su_list[closestSuNodes[index].trader_flo_address].push(nextBKSu);                               
+                    }
+            	}
+				console.log(backup_su_list);
+
+                backup_su_list.map(bsl=>localbitcoinplusplus.actions
+                .sync_backup_supernode_from_backup_supernode(closestSuNodes[0].trader_flo_address, 
+                bsl, closestSuNodes[index].trader_flo_address));
+
             }
         });
 
