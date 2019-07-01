@@ -9632,8 +9632,10 @@
 
         Object.defineProperty(localbitcoinplusplus, 'server', {
             value: {
-                btc_mainnet: "https://blockexplorer.com",
-                btc_testnet: "https://testnet.blockexplorer.com",
+                //btc_mainnet: "https://blockexplorer.com",
+                btc_mainnet: "https://insight.bitpay.com",
+                //btc_testnet: "https://testnet.blockexplorer.com",
+                btc_testnet: "https://test-insight.bitpay.com",
                 flo_mainnet: "http://flosight.duckdns.org",
                 //flo_testnet: "http://testnet-flosight.duckdns.org"
                 flo_testnet: "https://testnet.flocha.in"
@@ -10074,6 +10076,7 @@
                         #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
                         #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
                         #!#MaxBackups=2
+                        #!#miners_fee={"btc":0.0003, "flo":0.0003}
                         #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
                         03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
                         03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB
@@ -12633,7 +12636,7 @@
                                         let res_data_obj = {
                                             trader_flo_address: params.data.trader_flo_address,
                                             trader_flo_pubKey: params.data.trader_flo_pubKey,
-                                            trader_status: params.data.trader_status,
+                                            trader_reputation: params.data.trader_reputation,
                                             timestamp: params.data.timestamp
                                         };
                                         let res_data_hash = Crypto.SHA256(JSON.stringify(res_data_obj));
@@ -13934,7 +13937,7 @@
                                         let res_data_obj = {
                                             trader_flo_address: params.data.trader_flo_address,
                                             trader_flo_pubKey: params.data.trader_flo_pubKey,
-                                            trader_status: params.data.trader_status,
+                                            trader_reputation: params.data.trader_reputation,
                                             timestamp: params.data.timestamp
                                         };
                                         let res_data_hash = Crypto.SHA256(JSON.stringify(res_data_obj));
@@ -14390,64 +14393,116 @@
                     return last_update_of_fiat_price_obj;
                 }
             },
+            usd_to_fiat_exchange_rate(currency_code='INR') {
+                return new Promise((resolve, reject)=>{
+                    helper_functions.ajaxGet('http://apilayer.net/api/live?access_key=3abc51aa522420e4e185ac22733b0f30')
+                    .then(res=>{
+                        if (typeof res=="object" && typeof res.quotes.USDINR=="number") {
+
+                            Object.defineProperty(localbitcoinplusplus.trade,
+                                `current_USD_price_in_${currency_code}`, {
+                                    value: {
+                                        rate: res.quotes.USDINR,
+                                        timestamp: +new Date()
+                                    },
+                                    writable: true,
+                                    configurable: false,
+                                    enumerable: true
+                                });
+                            
+                            localbitcoinplusplus.trade[`current_USD_price_in_${currency_code}`];
+                
+                            resolve(res['quotes'][`USD${currency_code}`]);
+                            return;
+                        } 
+                        reject(false);
+                    })
+                });
+            },
+            fiat_to_crypto_exchange_rate(fiat="USD", crypto="BTC") {
+                return new Promise((resolve, reject)=>{
+                    if (crypto=="BTC") {
+                        helper_functions.ajaxGet('https://api.coinmarketcap.com/v1/ticker/?limit=5')
+                        .then(async res=>{
+                            if(typeof res== 'object') {
+                                let btc_obj = res.filter(f=>f.id=='bitcoin');
+                                console.log(btc_obj[0].price_usd);
+                                new_price = btc_obj[0].price_usd; 
+                                if (typeof btc_obj[0].price_usd=="number") {
+                                    if (fiat=="INR") {
+                                        let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(fiat);
+                                        new_price = Number(new_price*usd_to_fiat_price);        
+                                    }
+                                    resolve(new_price);
+                                    return;
+                                } 
+                            }
+
+                            throw new Error(`No data`);
+                        }).catch(e=>{
+                            helper_functions.ajaxGet(`https://api.coindesk.com/v1/bpi/currentprice.json`)
+                            .then(async res=>{
+                                if (typeof res=="object" && typeof res.bpi.USD.rate_float=="number") {
+                                    new_price = res.bpi.USD.rate_float;
+                                    if (fiat=="INR") {
+                                        let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(fiat);
+                                        new_price = Number(new_price*usd_to_fiat_price);        
+                                    }
+                                    resolve(new_price);
+                                    return;
+                                } else {
+                                    reject(false);
+                                }
+                            });
+                        });    
+                    } else if(crypto=="FLO") {
+                        helper_functions.ajaxGet('https://min-api.cryptocompare.com/data/histoday?fsym=FLO&tsym=USD&limit=1&aggregate=3&e=CCCAGG')
+                        .then(async res=>{
+                            if(typeof res== 'object' && typeof res.Data[0].close=="number") {
+                                new_price = res.Data[0].close;
+                                if (fiat=="INR") {
+                                    let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(fiat);
+                                    new_price = Number(new_price*usd_to_fiat_price);        
+                                }
+                                resolve(new_price);
+                                return;
+                            }
+                            reject(false);
+                        });
+                    }
+                });
+            },
             async set_current_crypto_price_in_fiat(crypto_code, currency_code) {
                 if (!localbitcoinplusplus.master_configurations.tradableAsset1.includes(crypto_code) ||
                     !localbitcoinplusplus.master_configurations.tradableAsset2.includes(currency_code)) return false;
-                let new_price = 1000000;
+                let new_price = 0;
 
                 if (crypto_code=="BTC" && currency_code=="USD") {
-                    new_price = 8000;
+                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="BTC_TEST" && currency_code=="USD") {
-                    new_price = 8000;
+                    new_price = await this.fiat_to_crypto_exchange_rate("BTC", currency_code);
                 }
                 if (crypto_code=="BTC" && currency_code=="INR") {
-                    new_price = 600000;
+                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="BTC_TEST" && currency_code=="INR") {
-                    new_price = 600000;
+                    new_price = await this.fiat_to_crypto_exchange_rate(BTC_TEST, currency_code);
                 }
                 if (crypto_code=="FLO" && currency_code=="USD") {
-                    new_price = 0.08;
+                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="FLO_TEST" && currency_code=="USD") {
-                    new_price = 0.08;
+                    new_price = await this.fiat_to_crypto_exchange_rate("FLO", currency_code);
                 }
                 if (crypto_code=="FLO" && currency_code=="INR") {
-                    new_price = 2.5;
+                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="FLO_TEST" && currency_code=="INR") {
-                    new_price = 2.5;
+                    new_price = await this.fiat_to_crypto_exchange_rate("FLO_TEST", currency_code);
                 }
 
-                /**************************
-                    Fetch latest rates here
-                ***************************/
-
-                // if(crypto_code=="BTC" || crypto_code=="BTC_TEST") {
-                //     new_price = (currency_code=="USD") ? 3540 : 300000;
-                // } else if(crypto_code=="FLO" || crypto_code=="FLO_TEST") {
-                //     new_price = (currency_code=="USD") ? 0.08 : 5.8;
-                // }
-
-                // fetch(`https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest`, {
-                //     method: "POST", // *GET, POST, PUT, DELETE, etc.
-                //     mode: "cors", // no-cors, cors, *same-origin
-                //     cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
-                //     credentials: "same-origin", // include, *same-origin, omit
-                //     headers: {
-                //         "Content-Type": "application/json",
-                //         'X-CMC_PRO_API_KEY': 'fe231f8e-6d40-49c8-a22b-231123a7543a'
-                //     },
-                //     redirect: "follow", // manual, *follow, error
-                //     referrer: "no-referrer", // no-referrer, *client
-                //     body: JSON.stringify({
-                //         'start': '1',
-                //         'limit': '1',
-                //         'convert': 'USD,BTC'
-                //       }), // body data type must match "Content-Type" header
-                // })
-                // .then(response => response.json()); // parses response to JSON
+                if(typeof new_price !== "number" || new_price<=0) throw new Error(`WARNING: Failed to get price.`);
 
                 Object.defineProperty(localbitcoinplusplus.trade,
                     `current_${crypto_code}_price_in_${currency_code}`, {
@@ -14464,14 +14519,20 @@
             sendTransaction(crypto_type, utxo_addr, utxo_addr_wif, receiver_address, receiving_amount,
                 receiving_amount_currency = null, change_adress, callback) {
                 let blockchain_explorer;
+                let miners_fee = 0.0003;
+                const miner_fee_obj=JSON.parse(localbitcoinplusplus.master_configurations.miners_fee);
                 if (crypto_type == "BTC") {
                     blockchain_explorer = localbitcoinplusplus.server.btc_mainnet;
+                    miners_fee = miner_fee_obj.btc;
                 } else if (crypto_type == "BTC_TEST") {
                     blockchain_explorer = localbitcoinplusplus.server.btc_testnet;
+                    miners_fee = miner_fee_obj.btc;
                 } else if (crypto_type == "FLO") {
                     blockchain_explorer = localbitcoinplusplus.server.flo_mainnet;
+                    miners_fee = miner_fee_obj.flo;
                 } else if (crypto_type == "FLO_TEST") {
                     blockchain_explorer = localbitcoinplusplus.server.flo_testnet;
+                    miners_fee = miner_fee_obj.flo;
                 }
 
                 if(typeof blockchain_explorer !== "string") {
@@ -14504,7 +14565,6 @@
 
                             let trx = bitjs[crypto_type].transaction();
                             let sum = 0;
-                            const miners_fee = 0.00030000;
 
                             for (var key in utxo_list) {
                                 if (utxo_list[key].confirmations !== 0) {
@@ -16370,7 +16430,7 @@
                                                         trader_flo_address: req_data.trader_flo_address,
                                                         trader_flo_pubKey: req_data.trader_flo_pubKey,
                                                         supernode_flo_public_key: supernode_flo_public_key,
-                                                        trader_status: 0,
+                                                        trader_reputation: 0,
                                                         timestamp: +new Date()
                                                     }
 
@@ -17784,7 +17844,7 @@
                                                         trader_flo_address: req_data.trader_flo_address,
                                                         trader_flo_pubKey: req_data.trader_flo_pubKey,
                                                         supernode_flo_public_key: supernode_flo_public_key,
-                                                        trader_status: 0,
+                                                        trader_reputation: 0,
                                                         timestamp: +new Date()
                                                     }
 
@@ -18983,7 +19043,7 @@
                                                     trader_flo_address: req_data.trader_flo_address,
                                                     trader_flo_pubKey: req_data.trader_flo_pubKey,
                                                     supernode_flo_public_key: supernode_flo_public_key,
-                                                    trader_status: 0,
+                                                    trader_reputation: 0,
                                                     timestamp: +new Date()
                                                 }
 
@@ -19029,7 +19089,7 @@
                                                     trader_flo_address: req_data.trader_flo_address,
                                                     trader_flo_pubKey: req_data.trader_flo_pubKey,
                                                     supernode_flo_public_key: supernode_flo_public_key,
-                                                    trader_status: 0,
+                                                    trader_reputation: 0,
                                                     timestamp: +new Date()
                                                 }
 
@@ -19668,7 +19728,7 @@
         const userPublicData = {
             trader_flo_address: null,
             trader_flo_pubKey: null,
-            trader_status: null,
+            trader_reputation: null,
             supernode_flo_public_key: null,
             timestamp: null
         };
@@ -19753,14 +19813,6 @@
             data: null,
             primary_supernode_flo_public_key: null,
             last_updated_on: null,
-        }
-
-        const messages_table = {
-            id: null,
-            trader_flo_address: null,
-            supernode_flo_address: null,
-            timestamp: null,
-            message: null
         }
 
         const ipTable = {
@@ -19903,7 +19955,7 @@
                 objectStore.createIndex('trader_flo_pubKey', 'trader_flo_pubKey', {
                     unique: true
                 });
-                objectStore.createIndex('trader_status', 'trader_status', {
+                objectStore.createIndex('trader_reputation', 'trader_reputation', {
                     unique: false
                 });
             }
@@ -19924,17 +19976,6 @@
                     unique: false
                 });
             }
-            if (!db.objectStoreNames.contains('messages_table')) {
-                var objectStore = db.createObjectStore("messages_table", {
-                    keyPath: 'id'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
-                    unique: true
-                });
-                objectStore.createIndex('supernode_flo_address', 'supernode_flo_address', {
-                    unique: false
-                });
-            }
             if (!db.objectStoreNames.contains('myClosestSupernodes')) {
                 var objectStore = db.createObjectStore("myClosestSupernodes", {
                     keyPath: 'id'
@@ -19952,20 +19993,6 @@
                 });
                 objectStore.createIndex('temporary_ip', 'temporary_ip', {
                     unique: false
-                });
-            }
-            if (!db.objectStoreNames.contains('supernodesDbHash')) {
-                var objectStore = db.createObjectStore("supernodesDbHash", {
-                    keyPath: 'id'
-                });
-                objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
-                    unique: false
-                });
-                objectStore.createIndex('data_of', 'data_of', {
-                    unique: true
-                });
-                objectStore.createIndex('DBHash', 'DBHash', {
-                    unique: true
                 });
             }
         }
@@ -20286,7 +20313,7 @@
                             objectStore.createIndex('trader_flo_pubKey', 'trader_flo_pubKey', {
                                 unique: true
                             });
-                            objectStore.createIndex('trader_status', 'trader_status', {
+                            objectStore.createIndex('trader_reputation', 'trader_reputation', {
                                 unique: false
                             });
                         }
@@ -20303,17 +20330,6 @@
                                 keyPath: "id"
                             })
                         }
-                        if (!this.db.objectStoreNames.contains('messages_table')) {
-                            var objectStore = this.db.createObjectStore("messages_table", {
-                                keyPath: 'id'
-                            });
-                            objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
-                                unique: true
-                            });
-                            objectStore.createIndex('supernode_flo_address', 'supernode_flo_address', {
-                                unique: false
-                            });
-                        }
                         if (!this.db.objectStoreNames.contains('ipTable')) {
                             var objectStore = this.db.createObjectStore("ipTable", {
                                 keyPath: 'flo_public_key'
@@ -20328,20 +20344,6 @@
                             });
                             objectStore.createIndex('ip', 'ip', {
                                 unique: false
-                            });
-                        }
-                        if (!this.db.objectStoreNames.contains('supernodesDbHash')) {
-                            var objectStore = this.db.createObjectStore("supernodesDbHash", {
-                                keyPath: 'id'
-                            });
-                            objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
-                                unique: false
-                            });
-                            objectStore.createIndex('data_of', 'data_of', {
-                                unique: true
-                            });
-                            objectStore.createIndex('DBHash', 'DBHash', {
-                                unique: true
                             });
                         }
 
@@ -20721,7 +20723,7 @@
                                 .call(this, "add_user_public_data", {
                                     trader_flo_address: MY_LOCAL_FLO_ADDRESS,
                                     trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
-                                    trader_status: 0,
+                                    trader_reputation: 0,
                                     timestamp: +new Date()
                             }).then(add_user_public_data_req=>doSend(add_user_public_data_req));
                         }
