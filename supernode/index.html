@@ -10073,7 +10073,7 @@
                     // btcTradeMargin is tolerable difference between Crypto trader should deposit and cryptos he actually deposited 
                     RMAssets =
                         `masterFLOPubKey=029EF7838D4D103E62262394B5417E8ABFD75539D19E61CA5FD0C2051B69B29910
-                        #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,BTC,FLO,BTC_TEST,FLO_TEST,
+                        #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
                         #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
                         #!#MaxBackups=2
                         #!#miners_fee={"btc":0.0003, "flo":0.0003}
@@ -14377,7 +14377,26 @@
                 throw new Error(err_msg);
             },
             get_current_crypto_price_in_fiat(crypto_code, currency_code) {
-                return localbitcoinplusplus.trade[`current_${crypto_code}_price_in_${currency_code}`];
+                let current_rate_obj = localbitcoinplusplus.trade[`current_${crypto_code}_price_in_${currency_code}`];
+                if (typeof current_rate_obj=="object" 
+                && localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(current_rate_obj.supernode_pub_key)) {
+                    
+                    let rate_obj = {
+                        id: `${current_rate_obj.crypto_code}_${current_rate_obj.currency_code}`,
+                        crypto_code: crypto_code, 
+                        currency_code: currency_code, 
+                        rate: current_rate_obj.rate, 
+                        timestamp: current_rate_obj.timestamp
+                    };
+                    const rate_obj_str = JSON.stringify(rate_obj);
+                    const rate_obj_hash = Crypto.SHA256(rate_obj_str);
+                    
+                    const RM_WALLET = new localbitcoinplusplus.wallets;
+                    if (RM_WALLET.verify(rate_obj_hash, current_rate_obj.sign, current_rate_obj.supernode_pub_key)) {
+                        return current_rate_obj;
+                    }
+                    return false;
+                }
             },
             async resolve_current_crypto_price_in_fiat(crypto_code, currency_code) {
                 let today = + new Date();
@@ -14386,8 +14405,7 @@
                     currency_code);
                 if (typeof last_update_of_fiat_price_obj !== "object" ||
                     (today - last_update_of_fiat_price_obj.timestamp > 3600000)) {
-                    last_update_of_fiat_price_obj = await RM_TRADE.set_current_crypto_price_in_fiat(crypto_code,
-                        currency_code);
+                    last_update_of_fiat_price_obj = await RM_TRADE.set_current_crypto_price_in_fiat(crypto_code, currency_code);
                     return last_update_of_fiat_price_obj;
                 } else {
                     return last_update_of_fiat_price_obj;
@@ -14419,15 +14437,15 @@
                     })
                 });
             },
-            fiat_to_crypto_exchange_rate(fiat="USD", crypto="BTC") {
+            fiat_to_crypto_exchange_rate(crypto_code="", fiat="") {
                 return new Promise((resolve, reject)=>{
-                    if (crypto=="BTC") {
+                    if (crypto_code=="BTC") {
                         helper_functions.ajaxGet('https://api.coinmarketcap.com/v1/ticker/?limit=5')
                         .then(async res=>{
                             if(typeof res== 'object') {
                                 let btc_obj = res.filter(f=>f.id=='bitcoin');
                                 console.log(btc_obj[0].price_usd);
-                                new_price = btc_obj[0].price_usd; 
+                                let new_price = btc_obj[0].price_usd; 
                                 if (typeof btc_obj[0].price_usd=="number") {
                                     if (fiat=="INR") {
                                         let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(fiat);
@@ -14443,7 +14461,7 @@
                             helper_functions.ajaxGet(`https://api.coindesk.com/v1/bpi/currentprice.json`)
                             .then(async res=>{
                                 if (typeof res=="object" && typeof res.bpi.USD.rate_float=="number") {
-                                    new_price = res.bpi.USD.rate_float;
+                                    let new_price = res.bpi.USD.rate_float;
                                     if (fiat=="INR") {
                                         let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(fiat);
                                         new_price = Number(new_price*usd_to_fiat_price);        
@@ -14455,11 +14473,11 @@
                                 }
                             });
                         });    
-                    } else if(crypto=="FLO") {
+                    } else if(crypto_code=="FLO") {
                         helper_functions.ajaxGet('https://min-api.cryptocompare.com/data/histoday?fsym=FLO&tsym=USD&limit=1&aggregate=3&e=CCCAGG')
                         .then(async res=>{
                             if(typeof res== 'object' && typeof res.Data[0].close=="number") {
-                                new_price = res.Data[0].close;
+                                let new_price = res.Data[0].close;
                                 if (fiat=="INR") {
                                     let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(fiat);
                                     new_price = Number(new_price*usd_to_fiat_price);        
@@ -14473,8 +14491,11 @@
                 });
             },
             async set_current_crypto_price_in_fiat(crypto_code, currency_code) {
-                if (!localbitcoinplusplus.master_configurations.tradableAsset1.includes(crypto_code) ||
-                    !localbitcoinplusplus.master_configurations.tradableAsset2.includes(currency_code)) return false;
+                if (!localbitcoinplusplus.master_configurations.tradableAsset1.includes(crypto_code) 
+                    || !localbitcoinplusplus.master_configurations.tradableAsset2.includes(currency_code)
+                    || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return false;
+
                 let new_price = 0;
 
                 if (crypto_code=="BTC" && currency_code=="USD") {
@@ -14487,7 +14508,7 @@
                     new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="BTC_TEST" && currency_code=="INR") {
-                    new_price = await this.fiat_to_crypto_exchange_rate(BTC_TEST, currency_code);
+                    new_price = await this.fiat_to_crypto_exchange_rate("BTC", currency_code);
                 }
                 if (crypto_code=="FLO" && currency_code=="USD") {
                     new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
@@ -14499,17 +14520,29 @@
                     new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="FLO_TEST" && currency_code=="INR") {
-                    new_price = await this.fiat_to_crypto_exchange_rate("FLO_TEST", currency_code);
+                    new_price = await this.fiat_to_crypto_exchange_rate("FLO", currency_code);
                 }
 
                 if(typeof new_price !== "number" || new_price<=0) throw new Error(`WARNING: Failed to get price.`);
 
+                let rate_obj = {
+                    id: `${crypto_code}_${currency_code}`,
+                    crypto_code: crypto_code, 
+                    currency_code: currency_code, 
+                    rate: new_price, 
+                    timestamp: +new Date()
+                };
+                const rate_obj_str = JSON.stringify(rate_obj);
+                const rate_obj_hash = Crypto.SHA256(rate_obj_str);
+                const RM_WALLET = new localbitcoinplusplus.wallets;
+                const rate_obj_sign = RM_WALLET.sign(rate_obj_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+                rate_obj['supernode_pub_key'] = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                rate_obj['sign'] = rate_obj_sign;
+                console.log(rate_obj);
+                
                 Object.defineProperty(localbitcoinplusplus.trade,
                     `current_${crypto_code}_price_in_${currency_code}`, {
-                        value: {
-                            rate: new_price,
-                            timestamp: +new Date()
-                        },
+                        value: rate_obj,
                         writable: true,
                         configurable: false,
                         enumerable: true
