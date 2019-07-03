@@ -14401,8 +14401,7 @@
             async resolve_current_crypto_price_in_fiat(crypto_code, currency_code) {
                 let today = + new Date();
                 const RM_TRADE = new localbitcoinplusplus.trade;
-                let last_update_of_fiat_price_obj = RM_TRADE.get_current_crypto_price_in_fiat(crypto_code,
-                    currency_code);
+                let last_update_of_fiat_price_obj = RM_TRADE.get_current_crypto_price_in_fiat(crypto_code, currency_code);
                 if (typeof last_update_of_fiat_price_obj !== "object" ||
                     (today - last_update_of_fiat_price_obj.timestamp > 3600000)) {
                     last_update_of_fiat_price_obj = await RM_TRADE.set_current_crypto_price_in_fiat(crypto_code, currency_code);
@@ -18493,7 +18492,7 @@
                                         if (localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == su_db_data.trader_flo_address) return;
 
                                         const mcslist = MCS.map(m=>m.data.id);
-95
+
                                         if(mcslist.indexOf(su_db_data.trader_flo_address) < mcslist.indexOf(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS)) {
                                             if (websocket.readyState === WebSocket.OPEN) {
                                                 websocket.close();
@@ -21630,71 +21629,86 @@
                     .includes(op[0].flo_public_key)) {
 
                     // Update Node availability status to true/false
-                    readDBbyIndex('myClosestSupernodes', 'trader_flo_address', getFLOId)
-                    .then(cs=>{
-                        if(cs.length<1) {
-                            console.log(temp_ip, getFLOId);
-                            console.error(`WARNING: Failed to update Supernodes status.`);
-                            return;
-                        }
-                        const switchMyWS = new backupSupernodesWebSocketObject();
-                        switchMyWS.updateSupernodeAvailabilityStatus(`ws://${cs[0].ip}:${cs[0].port}`, false);
-                    });
+                    const cs = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', getFLOId);
+                    if(cs.length<1) {
+                        console.log(temp_ip, getFLOId);
+                        console.error(`WARNING: Failed to update Supernodes status.`);
+                        return;
+                    }
+                    const switchMyWS = new backupSupernodesWebSocketObject();
+                    await switchMyWS.updateSupernodeAvailabilityStatus(`ws://${cs[0].ip}:${cs[0].port}`, false);
 
-                    // Find out if you are the next eligible backup supernode, 
+                    // Wait for 10 seconds if the 'dead' supernode only refreshed the page 
+                    await localbitcoinplusplus.actions.delay(10000);
                     
-                    const mcs = await readAllDB('myClosestSupernodes');
-                    const index = mcs.findIndex(f=>f.trader_flo_address==getFLOId);
-                    tail = mcs.splice(0, index);
-                    const newClosestSupernodeMasterList = mcs.concat(tail);
+                    // Get the current status now
+                    const getStatusOfDeadSuAgain = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', getFLOId);
+                    
+                    // If its still dead find out if you are the next eligible backup supernode
+                    // If true, take charge of ded supernode's operations
+                    if (getStatusOfDeadSuAgain[0].is_live==false) {
+                                               
+                        const mcs = await readAllDB('myClosestSupernodes');
+                        const myClosestSupList = mcs.filter((k,i)=>i<=localbitcoinplusplus.master_configurations.MaxBackups);
+                        const index = mcs.findIndex(f=>f.trader_flo_address==getFLOId);
+                        tail = mcs.splice(0, index);
+                        const newClosestSupernodeMasterList = mcs.concat(tail).filter((k,i)=>i<=localbitcoinplusplus.master_configurations.MaxBackups);
 
-                    for(i=0; i<=newClosestSupernodeMasterList.length; i++) {
-                        if(newClosestSupernodeMasterList[i].is_live==true) break; 
-                        if(newClosestSupernodeMasterList[i].trader_flo_address==
-                            localbitcoinplusplus.wallets.my_local_flo_address) {
+                        const RM_RPC = new localbitcoinplusplus.rpc;
 
-                                // First check if you yourself have the right data to serve
-                                // If not, either get the data or don't serve the users of
-                                // that dead supernode.
+                        for(i=0; i<=newClosestSupernodeMasterList.length; i++) {
 
-                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
-                                "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
+                            if(newClosestSupernodeMasterList[i].is_live==true
+                            && newClosestSupernodeMasterList[i].trader_flo_address !==
+                                localbitcoinplusplus.wallets.my_local_flo_address) break; 
+                        
+                            if(newClosestSupernodeMasterList[i].trader_flo_address==
+                                localbitcoinplusplus.wallets.my_local_flo_address) {
 
-                                const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId);
+                                    // First check if you yourself have the right data to serve
+                                    // If not, either get the data or don't serve the users of
+                                    // that dead supernode.
 
-                                const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(getFLOId, su_db_data);
+                                    const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                                    "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
-                                // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
-                                // if you have the latest data. If you don't have the latest data, someone
-                                // will send you the latest data which you can verify before updating.
+                                    const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId);
 
-                                RM_RPC
-                                .send_rpc
-                                .call(this, "do_you_have_latest_data_for_this_supernode", dbHashData)
-                                .then(server_sync_response=>doSend(server_sync_response));    
-                                                        
-                                // Send dead supernode's data to all your backup supernodes 
-                                // which are not dead supernode's backup supernodes to sync 
-                                // data from you
+                                    const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(getFLOId, su_db_data);
 
-                                const nonBackUpSusForDeadSu = newClosestSupernodeMasterList
-                                    .filter(function(obj) { return mcs.indexOf(obj) == -1; });  
+                                    // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
+                                    // if you have the latest data. If you don't have the latest data, someone
+                                    // will send you the latest data which you can verify before updating.
 
-                                console.log(nonBackUpSusForDeadSu);
-    
-                                if (typeof su_db_data == "object") {
-                                    nonBackUpSusForDeadSu.map(nbs=>{
-                                        su_db_data.trader_flo_address = nbs.trader_flo_address;
-                                        su_db_data.receiver_flo_address = nbs.trader_flo_address;
+                                    RM_RPC
+                                    .send_rpc
+                                    .call(this, "do_you_have_latest_data_for_this_supernode", dbHashData)
+                                    .then(server_sync_response=>doSend(server_sync_response));    
+                                                            
+                                    // Send dead supernode's data to all your backup supernodes 
+                                    // which are not dead supernode's backup supernodes to sync 
+                                    // data from you
 
-                                        RM_RPC
-                                        .send_rpc
-                                        .call(this, "sync_backup_supernode_from_backup_supernode_response", su_db_data)
-                                        .then(server_sync_response=>doSend(server_sync_response, nbs.trader_flo_address));    
-                                    });
-                                }
-                            break;
+                                    const nonBackUpSusForDeadSu = myClosestSupList
+                                    .filter(obj=>newClosestSupernodeMasterList.indexOf(obj) == -1);  
+
+                                    console.log(nonBackUpSusForDeadSu);
+        
+                                    if (typeof su_db_data == "object") {
+                                        nonBackUpSusForDeadSu.map(nbs=>{
+                                            su_db_data.trader_flo_address = nbs.trader_flo_address;
+                                            su_db_data.receiver_flo_address = nbs.trader_flo_address;
+
+                                            RM_RPC
+                                            .send_rpc
+                                            .call(this, "sync_backup_supernode_from_backup_supernode_response", su_db_data)
+                                            .then(server_sync_response=>doSend(server_sync_response, nbs.trader_flo_address));    
+                                        });
+                                    }
+                                break;
+                            }
                         }
+
                     }
                     
                     msg = `INFO: Supernode ${getFLOId} left.`;
