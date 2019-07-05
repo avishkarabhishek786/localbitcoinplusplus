@@ -15615,8 +15615,8 @@
                         || res_obj.method==="retrieve_shamirs_secret_btc_pvtkey"
                         || res_obj.method==="do_you_have_latest_data_for_this_supernode"
                         ) {
-                                handle_backup_server_messages(response);
-                                return;
+                            handle_backup_server_messages(response);
+                            return;
                         }
                         if (res_obj.method==="sync_backup_supernode_from_backup_supernode"
                         || res_obj.method==="sync_primary_supernode_from_backup_supernode_response"
@@ -15789,7 +15789,6 @@
         }
 
         function onOpen(evt) {
-           localbitcoinplusplus.amIreadyToServePrimaryUsers = false;
            reactor.dispatchEvent('new_supernode_connected', evt);
            readAllDB('myClosestSupernodes').then(sconn=>{
                 const switchMyWS = new backupSupernodesWebSocketObject(); 
@@ -16913,7 +16912,7 @@
                                                     await localbitcoinplusplus.actions.delay(180000).then(()=>{
                                                         showMessage(`INFO: Balance syncing is complete.`);
 
-                                                        localbitcoinplusplus.amIreadyToServePrimaryUsers = true;
+                                                        localbitcoinplusplus.services[`can_serve_${su_db_data.trader_flo_address}`] = true;
 
                                                         const RM_RPC = new localbitcoinplusplus.rpc;
                                                         
@@ -16958,7 +16957,7 @@
                                                 // await localbitcoinplusplus.actions.delay(180000).then(()=>{
                                                 //     showMessage(`INFO: Balance syncing is complete.`);
 
-                                                    localbitcoinplusplus.amIreadyToServePrimaryUsers = true;
+                                                    localbitcoinplusplus.services[`can_serve_${su_db_data[`trader_flo_address`]}`] = true;
     
                                                 //}); 
                                             }
@@ -19386,7 +19385,7 @@
                                                 // await localbitcoinplusplus.actions.delay(180000).then(()=>{
                                                 //     showMessage(`INFO: Balance syncing is complete.`);
 
-                                                    localbitcoinplusplus.amIreadyToServePrimaryUsers = true;
+                                                    localbitcoinplusplus.services[`can_serve_${su_db_data.trader_flo_address}`] = true;
     
                                                 //}); 
                                             }
@@ -19502,7 +19501,7 @@
 
                                             for (var i = 0; i < mismatched_fields.length; i++) {
                                                 const mf = mismatched_fields[i];
-                                                const res_data_obj = await _readAllDB(mf)
+                                                const res_data_obj = await _readAllDB(mf);
                                                 let filtered_data = res_data_obj.filter(odho=>{
                                                     if (typeof odho.timestamp=="number"
                                                     && typeof response_object.higestTimestampList[`${mf}_TIME`] !=='undefined') {
@@ -20149,11 +20148,12 @@
             try {
                 if(typeof Obj.vectorClock == "undefined") {
                     Obj.vectorClock = 0;
-                    Obj.timestamp = + new Date();
                 } else if(increaseVectorClock === false) {
                     // leave the vector clock field unchanged
                 } else {
                     Obj.vectorClock += 1;
+                }
+                if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = + new Date();
                 }
                 var request = db.transaction([tablename], "readwrite")
@@ -20498,11 +20498,12 @@
                     try {
                         if(typeof Obj.vectorClock == "undefined") {
                             Obj.vectorClock = 0;
-                            Obj.timestamp = + new Date();
                         } else if(increaseVectorClock === false) {
                             // leave the vector clock field unchanged
                         } else {
                             Obj.vectorClock += 1;
+                        }
+                        if (typeof Obj.timestamp !== "number") {
                             Obj.timestamp = + new Date();
                         }
                         let that = this;
@@ -20863,10 +20864,7 @@
                                 reactor.dispatchEvent('sync_primary_and_backup_db');
                                 showMessage(`INFO: You need to update serve to true to start serving as Primary Supernode.`);
                             } else {
-                                for (let w = 0; w <= localbitcoinplusplus.master_configurations.MaxBackups; w++) {
-                                    const element = closestSuList[w];
-                                    localbitcoinplusplus.services[`can_serve_${element.trader_flo_address}`] = true;    
-                                }
+                                localbitcoinplusplus.services[`can_serve_${localbitcoinplusplus.wallets.my_local_flo_address}`] = true;    
                             }
                     }
 
