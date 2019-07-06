@@ -12498,55 +12498,68 @@
                                                             withdraw_res.change_adress,
                                                             async function (res) {
                                                                 console.log(res);
-                                                                if (typeof res == "string" 
-                                                                && res.length > 0) {
+                                                                if (typeof res == "object") {
                                                                     try {
-                                                                        let resp_obj = JSON.parse(res);
-                                                                        let resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                                                        let msg =
-                                                                            `Transaction Id for your withdrawn crypto asset: ${resp_txid}`;
+                                                                        let msg = '';
+                                                                        if (typeof res.txid=="string" && res.txid.length>0) {
+                                                                            resp_obj = JSON.parse(res.txid);
+                                                                            resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                            msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;                                                                            
+                                                                        } else if (res.signedTxHash.length>0) {
+                                                                            msg = `INFO: We could not broadcast your transaction. Please broadcast 
+                                                                            this Signed Raw Tx manually yourself: ${res.signedTxHash}`;   
+                                                                        } else {
+                                                                            console.log(res);
+                                                                            throw new Errror(`ERROR: Failed to make transaction.`);
+                                                                            return false;
+                                                                        }
+
+                                                                        if (msg.length>0) {
+                                                                            const RM_RPC = new localbitcoinplusplus.rpc;
+                                                                            RM_RPC
+                                                                                .send_rpc
+                                                                                .call(this, "supernode_message", {
+                                                                                    "trader_flo_address": withdraw_res.trader_flo_address,
+                                                                                    "receiver_flo_address": withdraw_res.trader_flo_address,
+                                                                                    "server_msg": msg
+                                                                                }).then(server_response=>doSend(server_response));
+                                                                        } else return;
 
                                                                         readDB('crypto_balances', withdraw_res.id)
-                                                                            .then(
-                                                                                res_bal => {
-                                                                                    // btc_eq_receiving_amount
-                                                                                    //     =
-                                                                                    //     Number(parseFloat(EqCryptoWd).toFixed(8));
-                                                                                    res_bal.crypto_balance -= EqCryptoWd;
-                                                                                    updateinDB('crypto_balances', res_bal, withdraw_res.id)
-                                                                                        .then(res_obj => {
-                                                                                            const res_obj_str = JSON.stringify(res_obj);
-                                                                                            const res_obj_hash = Crypto.SHA256(res_obj_str);
-                                                                                            const res_obj_sign = RM_WALLET .sign(
-                                                                                                res_obj_hash,
-                                                                                                localbitcoinplusplus
-                                                                                                .wallets
-                                                                                                .MY_SUPERNODE_PRIVATE_KEY
-                                                                                            );
+                                                                            .then(res_bal => {
+                                                                                // btc_eq_receiving_amount
+                                                                                //     =
+                                                                                //     Number(parseFloat(EqCryptoWd).toFixed(8));
+                                                                                res_bal.crypto_balance -= EqCryptoWd;
+                                                                                updateinDB('crypto_balances', res_bal, withdraw_res.id)
+                                                                                    .then(res_obj => {
+                                                                                        const res_obj_str = JSON.stringify(res_obj);
+                                                                                        const res_obj_hash = Crypto.SHA256(res_obj_str);
+                                                                                        const res_obj_sign = RM_WALLET .sign(
+                                                                                            res_obj_hash,
+                                                                                            localbitcoinplusplus
+                                                                                            .wallets
+                                                                                            .MY_SUPERNODE_PRIVATE_KEY
+                                                                                        );
 
-                                                                                                const
-                                                                                                    updateUserCryptoBalanceObject = {
-                                                                                                        updatedBTCBalanceObject: res_bal,
-                                                                                                        updatedBTCBalanceObjectSign: res_obj_sign,
-                                                                                                        trader_flo_address: withdraw_res.trader_flo_address,
-                                                                                                        receiver_flo_address: withdraw_res.trader_flo_address,
-                                                                                                    }
+                                                                                        const updateUserCryptoBalanceObject = {
+                                                                                            updatedBTCBalanceObject: res_bal,
+                                                                                            updatedBTCBalanceObjectSign: res_obj_sign,
+                                                                                            trader_flo_address: withdraw_res.trader_flo_address,
+                                                                                            receiver_flo_address: withdraw_res.trader_flo_address,
+                                                                                        }
 
-                                                                                                RM_RPC
-                                                                                                .send_rpc(
-                                                                                                    "updateUserCryptoBalanceRequest",
-                                                                                                    updateUserCryptoBalanceObject
-                                                                                                ).then(updateUserCryptoBalanceRequestObject=>
-                                                                                                doSend(updateUserCryptoBalanceRequestObject));
+                                                                                        RM_RPC
+                                                                                        .send_rpc(
+                                                                                            "updateUserCryptoBalanceRequest",
+                                                                                            updateUserCryptoBalanceObject
+                                                                                        ).then(updateUserCryptoBalanceRequestObject=>
+                                                                                        doSend(updateUserCryptoBalanceRequestObject));
 
-                                                                                            }
-                                                                                        )
-
+                                                                                    });
                                                                                 }
                                                                             );
-                                                                    } catch (
-                                                                        error
-                                                                    ) {
+                                                                    } catch (error) {
                                                                         console.warn(error);
                                                                         showMessage(error);
                                                                     }
@@ -12558,60 +12571,29 @@
                                                                 *******************CHECK ACTUAL BTC BALANCE HERE THROUGH AN API AND UPDATE DEPOSIT TABLE****************************************************
                                                                 ************************************************************************************************************************************/
 
-                                                                readDBbyIndex
-                                                                    (
-                                                                        'deposit',
-                                                                        'btc_address',
-                                                                        withdraw_res
-                                                                        .utxo_addr
-                                                                    ).then(
-                                                                        function (
-                                                                            deposit_arr_resp
-                                                                        ) {
-                                                                            if (
-                                                                                typeof deposit_arr_resp ==
-                                                                                "object"
-                                                                            ) {
-                                                                                deposit_arr_resp
-                                                                                    .map(
-                                                                                        deposit_arr => {
-                                                                                            deposit_arr
-                                                                                                .bitcoinToBePaid -=
-                                                                                                EqCryptoWd;
+                                                                readDBbyIndex('deposit', 'btc_address', withdraw_res.utxo_addr)
+                                                                .then(function (deposit_arr_resp) {
+                                                                    if (typeof deposit_arr_resp == "object") {
+                                                                        deposit_arr_resp.map(deposit_arr => {
+                                                                            deposit_arr.bitcoinToBePaid -= EqCryptoWd;
 
-                                                                                            if (
-                                                                                                deposit_arr
-                                                                                                .bitcoinToBePaid >
-                                                                                                0
-                                                                                            ) {
-                                                                                                // update deposits in db
-                                                                                                deposit_arr
-                                                                                                    .status =
-                                                                                                    2; // UTXO ready to be used again
-                                                                                                updateinDB
-                                                                                                    (
-                                                                                                        "deposit",
-                                                                                                        deposit_arr,
-                                                                                                        deposit_arr
-                                                                                                        .trader_flo_address
-                                                                                                    );
+                                                                        if (deposit_arr.bitcoinToBePaid > 0) {
+                                                                            // update deposits in db
+                                                                            deposit_arr.status = 2; // UTXO ready to be used again
+                                                                            updateinDB("deposit", deposit_arr,
+                                                                                deposit_arr.trader_flo_address);
 
-                                                                                            } else {
-                                                                                                // delete entry in deposits in db
-                                                                                                removeinDB
-                                                                                                    (
-                                                                                                        "deposit",
-                                                                                                        deposit_arr
-                                                                                                        .trader_flo_address
-                                                                                                    );
-                                                                                            }
-                                                                                        }
-                                                                                    );
-                                                                                return true;
-                                                                            }
-                                                                        });
-
+                                                                        } else {
+                                                                            // delete entry in deposits in db
+                                                                            removeinDB("deposit", deposit_arr.trader_flo_address);
+                                                                        }
+                                                                    }
+                                                                );
+                                                                return true;
+                                                                }
                                                             });
+
+                                                        });
                                                     }
                                                 }
                                             });
@@ -13799,11 +13781,32 @@
                                                             withdraw_res.change_adress,
                                                             async function (res) {
                                                                 console.log(res);
-                                                                if (typeof res == "string" && res.length > 0) {
+                                                                if (typeof res == "object") {
                                                                     try {
-                                                                        let resp_obj = JSON.parse(res);
-                                                                        let resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                                                        let msg=`Transaction Id for your withdrawn crypto asset: ${resp_txid}`;
+                                                                        let msg = '';
+                                                                        if (typeof res.txid=="string" && res.txid.length>0) {
+                                                                            resp_obj = JSON.parse(res.txid);
+                                                                            resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                            msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;                                                                            
+                                                                        } else if (res.signedTxHash.length>0) {
+                                                                            msg = `INFO: We could not broadcast your transaction. Please broadcast 
+                                                                            this Signed Raw Tx manually yourself: ${res.signedTxHash}`;   
+                                                                        } else {
+                                                                            console.log(res);
+                                                                            throw new Errror(`ERROR: Failed to make transaction.`);
+                                                                            return false;
+                                                                        }
+
+                                                                        if (msg.length>0) {
+                                                                            const RM_RPC = new localbitcoinplusplus.rpc;
+                                                                            RM_RPC
+                                                                                .send_rpc
+                                                                                .call(this, "supernode_message", {
+                                                                                    "trader_flo_address": withdraw_res.trader_flo_address,
+                                                                                    "receiver_flo_address": withdraw_res.trader_flo_address,
+                                                                                    "server_msg": msg
+                                                                                }).then(server_response=>doSend(server_response));
+                                                                        } else return;
 
                                                                         let withdrawer_crypto_bal_id = `${withdraw_res.trader_flo_address}_${withdraw_res.product}`;
                                                                             backup_server_db_instance.backup_readDB
@@ -14627,9 +14630,9 @@
                             }
 
                             trx.addoutput(receiver_address, btc_eq_receiving_amount);
-                           if (change_amount>0) {
-                            trx.addoutput(change_adress, change_amount);
-                           }
+                            if (change_amount>0) {
+                                trx.addoutput(change_adress, change_amount);
+                            }
                             var sendFloData =
                                 `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
                             if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
@@ -14649,10 +14652,30 @@
                                 http.open('POST', tx_send_url, true);
                                 http.setRequestHeader('Content-type', 'application/json');
                                 http.onreadystatechange = function () { //Call a function when the state changes.
-                                    if (http.readyState == 4 && http.status == 200) {
-                                        showMessage(http.responseText);
-                                        callback(http.responseText);
+                                    if (http.readyState == 4) {
+                                        if (http.status == 200) {
+                                            console.log(http.responseText);
+                                            let response_obj = {
+                                                signedTxHash: signedTxHash,
+                                                txid: http.responseText 
+                                            }
+                                            //callback(http.responseText);
+                                            callback(response_obj);
+                                        } else {
+                                            let response_obj = {
+                                                signedTxHash: signedTxHash,
+                                                txid: "" 
+                                            }
+                                            callback(response_obj);        
+                                        }
                                     }
+                                }
+                                http.onerror = function() {
+                                    let response_obj = {
+                                        signedTxHash: signedTxHash,
+                                        txid: "" 
+                                    }
+                                    callback(response_obj);
                                 }
                                 http.send(params);
 
@@ -21411,16 +21434,21 @@
                     receiving_crypto_amount_input.value, null, change_adress_input.value,
                     async function (res) {
                         console.log(res);
-                        if (typeof res == "string" && res.length > 0) {
+                        if (typeof res == "object") {
                             try {
-                                let resp_obj = JSON.parse(res);
+                                let resp_obj = JSON.parse(res.txid);
                                 let resp_txid = resp_obj.txid.result || resp_obj.txid;
                                 let msg = `Transaction Id for your deposited crypto asset: ${resp_txid}`;
+                                showMessage(msg);
+                                
+                                msg = `Signed Raw Tx for your deposited crypto asset: ${res.signedTxHash}`;
                                 showMessage(msg);
                                 return true;
                             } catch (error) {
                                 console.warn(error);
                                 showMessage(error);
+                                showMessage(`INFO: We could not broadcast your transaction. Please broadcast 
+                                this Signed Raw Tx manually yourself: ${res.signedTxHash}`);
                             }
                         }
                     });
