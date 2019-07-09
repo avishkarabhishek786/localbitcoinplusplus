@@ -14686,7 +14686,6 @@
                         _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
                         _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
                         _removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
-                        _removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                     } else {
                         err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                         showMessage(err_msg);
@@ -15928,6 +15927,8 @@
                             
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let su_db_data = res_obj.params[0];
+                                    if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
                                     if (typeof localbitcoinplusplus.wallets.my_local_flo_address !== "string" ||
                                         su_db_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
                                     ) return false;
@@ -16721,12 +16722,12 @@
                                                     }
                                                 }
                                             } else {
-                                                let resdbdata = await BACKUP_DB.backup_removeAllinDB(tableStoreName);
                                                 if (resdbdata !== false) {
                                                     if (obj.length > 0) {
                                                         for (var prop in obj) {
                                                             if (!obj.hasOwnProperty(prop)) continue;
-                                                            await BACKUP_DB.backup_addDB(resdbdata, obj[prop]);
+                                                            await BACKUP_DB.backup_updateinDB(resdbdata, obj[prop], obj[
+                                                            prop].trader_flo_address, true, false);
                                                         }
                                                     }
                                                 }
@@ -16831,29 +16832,15 @@
                                             || !su_db_data.hasOwnProperty(tableStoreName)) continue;
 
                                             try {
+                                                
                                                 let obj = su_db_data[tableStoreName];
-                                                if (["crypto_balances", "cash_balances", "userPublicData", "system_btc_reserves_private_keys"]
-                                                .includes(tableStoreName)) {
-                                                    if (obj.length > 0) {
-                                                        for (var prop in obj) {
-                                                            if (!obj.hasOwnProperty(prop)) continue;
-                                                            await updateinDB(tableStoreName, obj[prop], obj[prop].id, true, false)
-                                                            .then(()=>{
-                                                                showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
-                                                            });
-                                                        }
-                                                    }
-                                                } else {
-                                                    let resdbdata = await removeAllinDB(tableStoreName);
-                                                    if (resdbdata !== false) {
-                                                        if (obj.length > 0) {
-                                                            for (var prop in obj) {
-                                                                if (!obj.hasOwnProperty(prop)) continue;
-                                                                await updateinDB(resdbdata, obj[prop], obj[prop].id, true, false).then(()=>{
-                                                                    showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
-                                                                });
-                                                            }
-                                                        }
+                                                if (obj.length > 0) {
+                                                    for (var prop in obj) {
+                                                        if (!obj.hasOwnProperty(prop)) continue;
+                                                        await updateinDB(tableStoreName, obj[prop], obj[prop].id, true, false)
+                                                        .then(()=>{
+                                                            showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
+                                                        });
                                                     }
                                                 }
 
@@ -16909,7 +16896,6 @@
                                                 _readDB = foreign_db.backup_readDB.bind(foreign_db);
                                                 _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
                                                 _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
-                                                _removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                                             } else {
                                                 err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                                                 showMessage(err_msg);
@@ -16928,29 +16914,15 @@
                                             || !su_db_data.hasOwnProperty(tableStoreName)) continue;
 
                                             try {
+                                                
                                                 let obj = su_db_data[tableStoreName];
-                                                if (["crypto_balances", "cash_balances", "userPublicData", "system_btc_reserves_private_keys"]
-                                                .includes(tableStoreName)) {
-                                                    if (obj.length > 0) {
-                                                        for (var prop in obj) {
-                                                            if (!obj.hasOwnProperty(prop)) continue;
-                                                            _updateinDB(tableStoreName, obj[prop], obj[prop].id, true, false)
-                                                                .then(()=>{
-                                                                    showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
-                                                                });
-                                                        }
-                                                    }
-                                                } else {
-                                                    let resdbdata = await _removeAllinDB(tableStoreName); // returns tableStoreName or false
-                                                    if (resdbdata !== false) {
-                                                        if (obj.length > 0) {
-                                                            for (var prop in obj) {
-                                                                if (!obj.hasOwnProperty(prop)) continue;
-                                                                _updateinDB(resdbdata, obj[prop], obj[prop].id, true, false).then(()=>{
-                                                                    showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
-                                                                });
-                                                            }
-                                                        }
+                                                if (obj.length > 0) {
+                                                    for (var prop in obj) {
+                                                        if (!obj.hasOwnProperty(prop)) continue;
+                                                        _updateinDB(tableStoreName, obj[prop], obj[prop].id, true, false)
+                                                            .then(()=>{
+                                                                showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
+                                                            });
                                                     }
                                                 }
 
@@ -17368,8 +17340,7 @@
                                                         showMessage(err_msg);
                                                         throw new Error(err_msg);
                                                 }
-                                                tradeDB = cancel_request.trade_type == "buy" ? "buyOrders" :
-                                                    "sellOrders";
+                                                tradeDB = cancel_request.trade_type == "buy" ? "buyOrders" : "sellOrders";
                                                 if (RM_WALLET
                                                     .verify(cancel_request.trade_id, cancel_request.signed_trade_id,
                                                         trader_data.trader_flo_pubKey)) {
@@ -18190,12 +18161,12 @@
                                                     }
                                                 }
                                             } else {
-                                                let resdbdata = await BACKUP_DB.backup_removeAllinDB(tableStoreName);
                                                 if (resdbdata !== false) {
                                                     if (obj.length > 0) {
                                                         for (var prop in obj) {
                                                             if (!obj.hasOwnProperty(prop)) continue;
-                                                            await BACKUP_DB.backup_addDB(resdbdata, obj[prop]);
+                                                            await BACKUP_DB.backup_updateinDB(resdbdata, obj[prop], 
+                                                            obj[prop].trader_flo_address, true, false);
                                                         }
                                                     }
                                                 }
@@ -18547,7 +18518,10 @@
                                     || localbitcoinplusplus.master_configurations.supernodesPubKeys
                                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
                                 let su_backup_db_data = res_obj.params[0];
-                            
+                                
+                                if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
+                                    
                                 RM_RPC.filter_legit_backup_requests(su_backup_db_data.trader_flo_address, 
                                 async function (is_valid_request) {
                                     if(!is_valid_request) return false;
@@ -19345,7 +19319,6 @@
                                                 _readDB = foreign_db.backup_readDB.bind(foreign_db);
                                                 _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
                                                 _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
-                                                _removeAllinDB = foreign_db.backup_removeAllinDB.bind(foreign_db);
                                             } else {
                                                 err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                                                 showMessage(err_msg);
@@ -19365,28 +19338,12 @@
 
                                             try {
                                                 let obj = su_db_data[tableStoreName];
-                                                if (["crypto_balances", "cash_balances", "userPublicData", "system_btc_reserves_private_keys"]
-                                                .includes(tableStoreName)) {
-                                                    if (obj.length > 0) {
-                                                        for (var prop in obj) {
-                                                            if (!obj.hasOwnProperty(prop)) continue;
-                                                            _updateinDB(tableStoreName, obj[prop], obj[prop].id, true, false)
-                                                            .then(()=>{
-                                                                showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
-                                                            });
-                                                        }
-                                                    }
-                                                } else {
-                                                    let resdbdata = await _removeAllinDB(tableStoreName);
-                                                    if (resdbdata !== false) {
-                                                        if (obj.length > 0) {
-                                                            for (var prop in obj) {
-                                                                if (!obj.hasOwnProperty(prop)) continue;
-                                                                _updateinDB(resdbdata, obj[prop], obj[prop].id, true, false).then(()=>{
-                                                                    showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
-                                                                });
-                                                            }
-                                                        }
+                                                if (obj.length > 0) {
+                                                    for (var prop in obj) {
+                                                        if (!obj.hasOwnProperty(prop)) continue;
+                                                        _updateinDB(resdbdata, obj[prop], obj[prop].id, true, false).then(()=>{
+                                                            showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
+                                                        });
                                                     }
                                                 }
 
@@ -20529,10 +20486,31 @@
                 async backup_removeinDB(tablename, id) {
                     try {
                         this.request = this.db.transaction([tablename], "readwrite")
+                        
                         let store = this.request.objectStore(tablename)
-                        await store.delete(id);
-                        await this.request.complete;
-                        return id;
+                        let objectStoreRequest = store.get(id);
+                        let that = this;
+                        objectStoreRequest.onsuccess = 
+                            function(event) {
+                                return new Promise(async (resolve, reject)=>{
+                                    var myRecord = objectStoreRequest.result;
+                                    
+                                    if(typeof myRecord =="object") {
+                                        myRecord.vectorClock += 1;
+                                       
+                                        // https://stackoverflow.com/a/39333479/5348972
+                                        const modifiedRecord = (({ id, timestamp, vectorClock }) => 
+                                            ({ id, timestamp, vectorClock }))(myRecord);
+                                       
+                                        modifiedRecord.is_deletable = true;
+                                        
+                                        await store.put(modifiedRecord);
+                                        await that.request.complete;
+                                        return id;
+                                    }
+                                });
+                                reject(false);
+                            }
                     } catch (error) {
                         return new Error(error);
                     }
@@ -20542,13 +20520,23 @@
                     return new Promise((resolve, reject) => {
                         this.request = this.db.transaction([tablename], "readwrite")
                             .objectStore(tablename);
-                        let parent_request = this.request;
                         var index = this.request.index(indexName);
+                        let parent_request = this.request;
                         this.request = index.openCursor(IDBKeyRange.only(indexValue));
-                        this.request.onsuccess = function () {
-                            var cursor = parent_request.result;
+                        this.request.onsuccess = async function (event) {
+                            var cursor = event.target.result;
                             if (cursor) {
-                                cursor.delete();
+                                let myRecord = cursor.value;
+                                myRecord.vectorClock += 1;
+                                
+                                // https://stackoverflow.com/a/39333479/5348972
+                                const modifiedRecord = (({ id, timestamp, vectorClock }) => 
+                                    ({ id, timestamp, vectorClock }))(myRecord);
+                                
+                                modifiedRecord.is_deletable = true;
+
+                                await parent_request.put(modifiedRecord);
+                                await parent_request.complete;
                                 cursor.continue();
                             } else {
                                 resolve(true);
@@ -20559,19 +20547,6 @@
                         }
                     });
                 },
-
-                async backup_removeAllinDB(tablename) {
-                    try {
-                        this.request = this.db.transaction([tablename], "readwrite")
-                        var objectStore = this.request.objectStore(tablename);
-                        var objectStoreRequest = await objectStore.clear();
-                        await this.request.complete;
-                        console.info("All the data entry has been removed from your database " + tablename);
-                        return tablename;
-                    } catch (error) {
-                        return new Error(error);
-                    }
-                }
             }                
     
     </script>    
