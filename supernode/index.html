@@ -11387,6 +11387,10 @@
                                 .determineClosestSupernode(localbitcoinplusplus.wallets.my_local_flo_address);
                                 if (typeof my_closest_su=="object") {
                                     request.globalParams.primarySupernode = my_closest_su[0].data.id;
+                                    request.globalParams["receiversList"] = [];
+                                    for (let j = 0; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                        request.globalParams.receiversList.push(my_closest_su[j].data.id);
+                                    }
                                 }
                             }
                         } else {
@@ -14356,7 +14360,43 @@
                     })
                 });
             },
-            fiat_to_crypto_exchange_rate(crypto_code="", fiat="") {
+            // This function should be run periodically maybe through cron job
+            update_fiat_to_crypto_exchange_rate(crypto_code="", fiat="") {
+                this.fiat_to_crypto_exchange_rate_from_API(crypto_code, fiat)
+                    .then(new_price=>{
+                        console.log(new_price);
+                        if (typeof new_price=="number") {
+                            
+                            let rate_obj = {
+                                id: `${crypto_code}_${fiat}`,
+                                crypto_code: crypto_code, 
+                                currency_code: fiat, 
+                                rate: new_price, 
+                                timestamp: +new Date()
+                            };
+                            const rate_obj_str = JSON.stringify(rate_obj);
+                            const rate_obj_hash = Crypto.SHA256(rate_obj_str);
+                            const RM_WALLET = new localbitcoinplusplus.wallets;
+                            const rate_obj_sign = RM_WALLET.sign(rate_obj_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+                            rate_obj['supernode_pub_key'] = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                            rate_obj['sign'] = rate_obj_sign;
+
+                            updateinDB('crypto_fiat_rates', rate_obj)
+                            .then(()=>{
+                                showMessage(`INFO: ${crypto_code}<=>${fiat} rate updated.`);
+                                this.resolve_current_crypto_price_in_fiat(crypto_code, fiat);
+                            })
+                            .catch(()=>console.error(`ERROR: Failed to update ${crypto_code}<=>${fiat} rate.`));
+                            
+                            return true;
+                        } else {
+                            console.error(`ERROR: Failed to get valid response while fetching ${crypto_code}<=>${fiat} rate.`);
+                        }
+                    }).catch(e=>{
+                        console.error(e);
+                    }); 
+            },
+            fiat_to_crypto_exchange_rate_from_API(crypto_code="", fiat="") {
                 return new Promise((resolve, reject)=>{
                     if (crypto_code=="BTC") {
 
@@ -14403,55 +14443,56 @@
                     }
                 });
             },
+            fiat_to_crypto_exchange_rate(crypto_code="", fiat="") {
+                return new Promise((resolve, reject)=>{
+                    try {
+                        let id = `${crypto_code}_${fiat}`;
+                        readDB('crypto_fiat_rates', id)
+                        .then(res=>{
+                            if (typeof res=="object") {
+                                return resolve(res);
+                            }
+                            reject(false);
+                        });
+                    } catch(e) {
+                        reject(e);
+                    }
+                });
+            },
             async set_current_crypto_price_in_fiat(crypto_code, currency_code) {
                 if (!localbitcoinplusplus.master_configurations.tradableAsset1.includes(crypto_code) 
                     || !localbitcoinplusplus.master_configurations.tradableAsset2.includes(currency_code)
                     || !localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return false;
 
-                let new_price = 0;
+                let rate_obj = null;
 
                 if (crypto_code=="BTC" && currency_code=="USD") {
-                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="BTC_TEST" && currency_code=="USD") {
-                    new_price = await this.fiat_to_crypto_exchange_rate("BTC", currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate("BTC", currency_code);
                 }
                 if (crypto_code=="BTC" && currency_code=="INR") {
-                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="BTC_TEST" && currency_code=="INR") {
-                    new_price = await this.fiat_to_crypto_exchange_rate("BTC", currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate("BTC", currency_code);
                 }
                 if (crypto_code=="FLO" && currency_code=="USD") {
-                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="FLO_TEST" && currency_code=="USD") {
-                    new_price = await this.fiat_to_crypto_exchange_rate("FLO", currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate("FLO", currency_code);
                 }
                 if (crypto_code=="FLO" && currency_code=="INR") {
-                    new_price = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate(crypto_code, currency_code);
                 }
                 if (crypto_code=="FLO_TEST" && currency_code=="INR") {
-                    new_price = await this.fiat_to_crypto_exchange_rate("FLO", currency_code);
+                    rate_obj = await this.fiat_to_crypto_exchange_rate("FLO", currency_code);
                 }
 
-                if(typeof new_price !== "number" || new_price<=0) throw new Error(`WARNING: Failed to get price.`);
-
-                let rate_obj = {
-                    id: `${crypto_code}_${currency_code}`,
-                    crypto_code: crypto_code, 
-                    currency_code: currency_code, 
-                    rate: new_price, 
-                    timestamp: +new Date()
-                };
-                const rate_obj_str = JSON.stringify(rate_obj);
-                const rate_obj_hash = Crypto.SHA256(rate_obj_str);
-                const RM_WALLET = new localbitcoinplusplus.wallets;
-                const rate_obj_sign = RM_WALLET.sign(rate_obj_hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
-                rate_obj['supernode_pub_key'] = localbitcoinplusplus.wallets.my_local_flo_public_key;
-                rate_obj['sign'] = rate_obj_sign;
-                console.log(rate_obj);
+                if(rate_obj == null) throw new Error(`WARNING: Failed to get price.`);
                 
                 Object.defineProperty(localbitcoinplusplus.trade,
                     `current_${crypto_code}_price_in_${currency_code}`, {
@@ -15723,6 +15764,12 @@
 
         function onOpen(evt) {
            reactor.dispatchEvent('new_supernode_connected', evt);
+           readDB('localbitcoinUser', '00-01').then(res=>{
+               if (typeof res=="object" && res.myLocalFLOAddress=="string") {
+                    localbitcoinplusplus.wallets.my_local_flo_address = res.myLocalFLOAddress;
+                    localbitcoinplusplus.wallets.my_local_flo_public_key = res.myLocalFLOPublicKey;
+               }
+           })
            readAllDB('myClosestSupernodes').then(sconn=>{
                 const switchMyWS = new backupSupernodesWebSocketObject(); 
                 sconn.map((m,i)=>{
@@ -19825,6 +19872,16 @@
             temporary_ip: null
         }
 
+        const crypto_fiat_rates = {
+            id: null,
+            crypto_code: null, 
+            currency_code: null, 
+            rate: 0, 
+            supernode_pub_key: null,
+            sign: null,
+            timestamp: +new Date()
+        }
+
         var db;
         const DBName = "localbitcoinDB";
         const request = window.indexedDB.open(DBName, 1);
@@ -19997,6 +20054,17 @@
                     keyPath: 'flo_public_key'
                 });
                 objectStore.createIndex('temporary_ip', 'temporary_ip', {
+                    unique: false
+                });
+            }
+            if (!db.objectStoreNames.contains('crypto_fiat_rates')) {
+                var objectStore = db.createObjectStore("crypto_fiat_rates", {
+                    keyPath: 'id'
+                });
+                objectStore.createIndex('currency_code', 'currency_code', {
+                    unique: false
+                });
+                objectStore.createIndex('crypto_code', 'crypto_code', {
                     unique: false
                 });
             }
@@ -20351,6 +20419,17 @@
                                 unique: true
                             });
                             objectStore.createIndex('ip', 'ip', {
+                                unique: false
+                            });
+                        }
+                        if (!db.objectStoreNames.contains('crypto_fiat_rates')) {
+                            var objectStore = db.createObjectStore("crypto_fiat_rates", {
+                                keyPath: 'id'
+                            });
+                            objectStore.createIndex('currency_code', 'currency_code', {
+                                unique: false
+                            });
+                            objectStore.createIndex('crypto_code', 'crypto_code', {
                                 unique: false
                             });
                         }
@@ -20758,7 +20837,6 @@
                         }
                     });
 
-
                     // Check last connected supernode, if not primary then
                     // update the user data from other su first
                     //wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
@@ -20803,8 +20881,9 @@
                         localbitcoinplusplus.master_configurations.tradableAsset1.forEach(function (
                             asset1) {
                             localbitcoinplusplus.master_configurations.tradableAsset2.forEach(
-                                function (asset2) {
-                                    RM_TRADE.resolve_current_crypto_price_in_fiat(asset1, asset2);
+                                async function (asset2) {
+                                    await RM_TRADE.update_fiat_to_crypto_exchange_rate(asset1, asset2);
+                                    await RM_TRADE.resolve_current_crypto_price_in_fiat(asset1, asset2);
                                 });
                         });
                     }
