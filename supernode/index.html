@@ -10212,7 +10212,7 @@
 
             },
 
-            get_sharable_db_data: async function (dbTableNamesArray, backup_db="") {
+            get_sharable_db_data: async function (dbTableNamesArray, backup_db="", filter_deletables=false) {
                 let arr = {};
                 let _readAllDB = readAllDB;
                 if (typeof backup_db=="string" && backup_db.length>0) {
@@ -10226,7 +10226,7 @@
                     }
                 }
                 for (const elem of dbTableNamesArray) {
-                    await _readAllDB(elem).then(e => arr[elem] = e);
+                    await _readAllDB(elem, filter_deletables).then(e => arr[elem] = e);
                 }
                 return arr;
             },
@@ -11381,24 +11381,38 @@
 
                         if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
                             request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
+                            
+                            const mySupernodeObj = await localbitcoinplusplus.kademlia
+                            .determineClosestSupernode(localbitcoinplusplus.wallets.my_local_flo_address);
 
-                            //if (typeof params[0].trader_flo_address !=="string") {
+                            request.globalParams.primarySupernode = mySupernodeObj[0].data.id;
+
+                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                              .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                                 const my_closest_su = await localbitcoinplusplus.kademlia
                                 .determineClosestSupernode('', '', supernodeKBucket, localbitcoinplusplus.wallets.my_local_flo_address);
                                 if (typeof my_closest_su=="object") {
-                                    request.globalParams.primarySupernode = my_closest_su[0].data.id;
                                     request.globalParams["receiversList"] = [];
                                     for (let j = 1; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
                                         request.globalParams.receiversList.push(my_closest_su[j].data.id);
                                     }
                                 }
-                            //}
+                            } else {
+                                request.globalParams["receiversList"] = [];
+                                request.globalParams.receiversList.push(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS);
+                            }
                         } else {
                             const resObj = await readDB('localbitcoinUser', '00-01');
                             if(typeof resObj !== "object" || typeof resObj.myLocalFLOAddress !== "string") return;
                             request.globalParams.senderFloId = resObj.myLocalFLOAddress;
 
-                            //if (typeof params[0].trader_flo_address !=="string") {
+                            const mySupernodeObj = await localbitcoinplusplus.kademlia
+                            .determineClosestSupernode(resObj.myLocalFLOAddress);
+
+                            request.globalParams.primarySupernode = mySupernodeObj[0].data.id;
+
+                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                              .includes(resObj.myLocalFLOPublicKey)) {
                                 const my_closest_su = await localbitcoinplusplus.kademlia
                                 .determineClosestSupernode('', '', supernodeKBucket, resObj.myLocalFLOAddress);
                                 
@@ -11409,7 +11423,10 @@
                                         request.globalParams.receiversList.push(my_closest_su[j].data.id);
                                     }
                                 }
-                            //}
+                            } else {
+                                request.globalParams["receiversList"] = [];
+                                request.globalParams.receiversList.push(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS);
+                            }
                         }    
 
                         if (typeof params[0].receiver_flo_address == "string") {
@@ -15821,7 +15838,9 @@
                     var res_obj = JSON.parse(res);
 
                     if (typeof res_obj.globalParams !== "object"
-                        || (typeof res_obj.globalParams.receiversList == "object" 
+                        || (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                        && typeof res_obj.globalParams.receiversList == "object" 
                         && !res_obj.globalParams.receiversList
                         .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
                     )) return;
@@ -16881,6 +16900,8 @@
                                     if (typeof localbitcoinplusplus.wallets.my_local_flo_address !== "string" ||
                                         su_db_data.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
                                     ) return false;
+                                    if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return; 
 
                                     (async function () {
                                         let i = 0;
@@ -16934,6 +16955,7 @@
                                     console.warn(`WARNING: This backup response data was not meant for you.`);
                                     return;
                                 }
+
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                  
                                     (async function () {
@@ -17097,7 +17119,9 @@
                     var res_obj = JSON.parse(res);
 
                     if (typeof res_obj.globalParams !== "object"
-                        || (typeof res_obj.globalParams.receiversList == "object" 
+                        || (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                        && typeof res_obj.globalParams.receiversList == "object" 
                         && !res_obj.globalParams.receiversList
                         .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
                     )) return;
@@ -19365,6 +19389,7 @@
                                     console.warn(`WARNING: This backup response data was not meant for you.`);
                                     return;
                                 }
+
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                    
                                     (async function () {
@@ -19508,7 +19533,7 @@
 
                                             for (var i = 0; i < mismatched_fields.length; i++) {
                                                 const mf = mismatched_fields[i];
-                                                const res_data_obj = await _readAllDB(mf);
+                                                const res_data_obj = await _readAllDB(mf, false);
                                                 let filtered_data = res_data_obj.filter(odho=>{
                                                     if (typeof odho.timestamp=="number"
                                                     && typeof response_object.higestTimestampList[`${mf}_TIME`] !=='undefined') {
@@ -21755,8 +21780,11 @@
         
                     const switchMyWS = new backupSupernodesWebSocketObject();
                     switchMyWS.updateSupernodeAvailabilityStatus(getFLOId, true);
-                    if (getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
-                        localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;    
+                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                    .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                        if (getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
+                            localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;    
+                        }                        
                     }
         
             } else {
@@ -21898,8 +21926,12 @@
                 if (params.receiver_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
                 const switchMyWS = new backupSupernodesWebSocketObject();
                 switchMyWS.updateSupernodeAvailabilityStatus(params.trader_flo_address, true);
-                if (params.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) {
-                    localbitcoinplusplus.services[`can_serve_${params.trader_flo_address}`] = false;    
+                
+                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                    if (params.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) {
+                        localbitcoinplusplus.services[`can_serve_${params.trader_flo_address}`] = false;    
+                    }   
                 }
                 
             } catch(e) {
