@@ -11430,7 +11430,7 @@
                         }    
 
                         if (typeof params[0].receiver_flo_address == "string") {
-                            request.globalParams.receiverFloId = params[0].receiver_flo_address;
+                            //request.globalParams.receiverFloId = params[0].receiver_flo_address;
                             if (typeof request.globalParams.receiversList == "object") {
                                 if (!request.globalParams.receiversList.includes(params[0].receiver_flo_address)) {
                                     request.globalParams.receiversList.push(params[0].receiver_flo_address);
@@ -17156,12 +17156,16 @@
                         if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
 
+                            const subject_user = res_obj.params[0].trader_flo_address 
+                                || res_obj.globalParams.primarySupernode;
+
                             let ifAllPrevSuAreDead = await localbitcoinplusplus.actions
-                            .checkIfAllPreviousSupernodesAreDeadForAUserNode(res_obj.params[0].trader_flo_address);
+                            .checkIfAllPreviousSupernodesAreDeadForAUserNode(subject_user);
             
                             console.log("ifAllPrevSuAreDead: ", ifAllPrevSuAreDead);
 
-                            let allowed_methods  = ['sync_backup_supernode_from_backup_supernode_response', 'yup_i_am_awake'];
+                            let allowed_methods  = ['sync_backup_supernode_from_backup_supernode_response', 
+                            'yup_i_am_awake', "updateUserBTCReservesRequest"];
 
                             if (ifAllPrevSuAreDead !== true || allowed_methods.includes(res_obj.method)) {
                                 handle_backup_server_messages(response);
@@ -19345,10 +19349,11 @@
                                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                                  .includes(res_obj.nodePubKey)) {
 
-                                    let updateUserReservesResponseObject = res_obj.params[0];
+                                    let updateUserReservesResponseObject = res_obj.params[0];;
+                                    let subjectuser = res_obj.params[0].trader_flo_address || res_obj.params[0].updatedReservesObject[0].trader_flo_address; 
                                     let backup_server_db_instance = "";
-                                    if(typeof res_obj.params[0].trader_flo_address !="string") return;
-                                    localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
+                                    if(typeof subjectuser  !="string") return;
+                                    localbitcoinplusplus.kademlia.determineClosestSupernode(subjectuser)
                                         .then(my_closest_su_list=>{
                                             const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
                                             backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
@@ -19367,7 +19372,8 @@
                                                 res_obj.nodePubKey
                                             );
                                             if (isBalanceLegit) {
-                                                backup_server_db_instance.backup_updateinDB("system_btc_reserves_private_keys", updateUserReservesResponseObject.updatedReservesObject);
+                                                backup_server_db_instance.backup_updateinDB("system_btc_reserves_private_keys", 
+                                                    updateUserReservesResponseObject.updatedReservesObject[0], true, false);
                                                 if (localbitcoinplusplus.wallets.my_local_flo_address ==
                                                 updateUserReservesResponseObject.trader_flo_address) {
                                                     displayBalances(updateUserReservesResponseObject.trader_flo_address);
@@ -19435,8 +19441,8 @@
                                                 if (obj.length > 0) {
                                                     for (var prop in obj) {
                                                         if (!obj.hasOwnProperty(prop)) continue;
-                                                        _updateinDB(resdbdata, obj[prop], obj[prop].id, true, false).then(()=>{
-                                                            showMessage(`INFO: "${resdbdata}" datastore syncing is complete.`);
+                                                        _updateinDB(tableStoreName, obj[prop], obj[prop].id, true, false).then(()=>{
+                                                            showMessage(`INFO: "${tableStoreName}" datastore syncing is complete.`);
                                                         });
                                                     }
                                                 }
@@ -19661,26 +19667,34 @@
                                     && res_obj.globalParams.receiverFloId==localbitcoinplusplus.wallets.my_local_flo_address
                                 ) {
                                     const resp_data = res_obj.params[0];
-                                    let btc_pk_obj = localbitcoinplusplus.encrypt
-                                    .decryptMessage(resp_data.data.secret, resp_data.data.senderPublicKeyString);
 
-                                    localbitcoinplusplus.kademlia.determineClosestSupernode(su).then(get_su=>{
-                                        const supernode_flo_id = get_su[0].data.id;
-                                        if (typeof supernode_flo_id !=="string") throw new Error(`ERROR: Invalid FLO key.`);
-                                        if (typeof btc_pk_obj =="object"){
+                                    try {
+                                        const btc_pk_str = localbitcoinplusplus.encrypt
+                                        .decryptMessage(resp_data.data.secret, resp_data.data.senderPublicKeyString);
 
-                                        }
-                                        if (supernode_flo_id==localbitcoinplusplus.wallets.my_local_flo_address) {
-                                            updateinDB("system_btc_reserves_private_keys", 
-                                            btc_pk_obj, btc_pk_obj.id, false, false);
-                                        } else if(typeof localbitcoinplusplus.newBackupDatabase.db[supernode_flo_id]=="object") {
-                                            localbitcoinplusplus.newBackupDatabase
-                                            .db[supernode_flo_id].backup_updateinDB("system_btc_reserves_private_keys", 
-                                            btc_pk_obj, btc_pk_obj.id, false, false);
-                                        } else {
-                                            throw new Error(`ERROR: Failed to store backup system_btc_reserves_private_keys id ${btc_pk_obj.id}`);
-                                        }
-                                    });
+                                        const btc_pk_obj = JSON.parse(btc_pk_str);
+
+                                        const subject_user = btc_pk_obj.trader_flo_address || resp_data.trader_flo_address; 
+                                        localbitcoinplusplus.kademlia.determineClosestSupernode(subject_user).then(get_su=>{
+                                            const supernode_flo_id = get_su[0].data.id;
+                                            
+                                            if (typeof supernode_flo_id !=="string") throw new Error(`ERROR: Invalid FLO key.`);
+                                            
+                                            if (supernode_flo_id==localbitcoinplusplus.wallets.my_local_flo_address) {
+                                                updateinDB("system_btc_reserves_private_keys", 
+                                                btc_pk_obj, btc_pk_obj.id, false, false);
+                                            } else if(typeof localbitcoinplusplus.newBackupDatabase.db[supernode_flo_id]=="object") {
+                                                localbitcoinplusplus.newBackupDatabase
+                                                .db[supernode_flo_id].backup_updateinDB("system_btc_reserves_private_keys", 
+                                                btc_pk_obj, btc_pk_obj.id, false, false);
+                                            } else {
+                                                throw new Error(`ERROR: Failed to store backup system_btc_reserves_private_keys id ${btc_pk_obj.id}`);
+                                            }
+                                        });
+                                    } catch(e) {
+                                        throw new Error(e);
+                                    }
+
                                 }                                
                             break;
 
@@ -20272,7 +20286,7 @@
                         async function(event) {
                             var myRecord = objectStoreRequest.result;
                             if(typeof myRecord !=="object") {
-                                Obj.vectorClock = 1;
+                                Obj.vectorClock = (typeof Obj.vectorClock=="number" ? Obj.vectorClock:0);
                                 await store.put(Obj);
                                 await request.complete;
                             } else if (myRecord.vectorClock+1 < Obj.vectorClock) {
@@ -20657,7 +20671,7 @@
                                         var myRecord = objectStoreRequest.result;
                                         var myRecord = objectStoreRequest.result;
                                         if(typeof myRecord !=="object") {
-                                            Obj.vectorClock = 1;
+                                            Obj.vectorClock = (typeof Obj.vectorClock=="number" ? Obj.vectorClock:0);
                                             await store.put(Obj);
                                             await that.request.complete;
                                         }
@@ -21693,8 +21707,8 @@
                                         const updateUserBTCReservesRequestObject = {
                                             updatedReservesObject: reserve_res,
                                             updatedBTCReservesObjectSign: reservesObjectSign,
-                                            trader_flo_address: reserve_res.trader_flo_address,
-                                            receiver_flo_address: reserve_res.trader_flo_address
+                                            trader_flo_address: reserve_res[0].trader_flo_address,
+                                            receiver_flo_address: reserve_res[0].trader_flo_address
                                         }
                                         
                                         RM_RPC
