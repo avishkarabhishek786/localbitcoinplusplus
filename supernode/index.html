@@ -12099,14 +12099,14 @@
                                             params.product)) {
                                         let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(
                                             params.withdrawing_amount, params.currency, params.product);
-                                        if (trade_margin.remaining_crypto_credit < 0 &&
+                                        if (trade_margin.remaining_crypto_credit < 0 ||
                                             trade_margin.remaining_crypto_credit < eqCrypto) {
                                             err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
                                             showMessage(err_msg);
                                             throw new Error(err_msg);
                                         }
                                     } else {
-                                        if (trade_margin.remaining_fiat_credit < 0 && trade_margin.remaining_fiat_credit <
+                                        if (trade_margin.remaining_fiat_credit < 0 || trade_margin.remaining_fiat_credit <
                                             params.withdrawing_amount) {
                                             err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
                                             showMessage(err_msg);
@@ -12579,11 +12579,11 @@
                                                                             // update deposits in db
                                                                             deposit_arr.status = 2; // UTXO ready to be used again
                                                                             updateinDB("deposit", deposit_arr,
-                                                                                deposit_arr.trader_flo_address);
+                                                                                deposit_arr.id);
 
                                                                         } else {
                                                                             // delete entry in deposits in db
-                                                                            removeinDB("deposit", deposit_arr.trader_flo_address);
+                                                                            removeinDB("deposit", deposit_arr.id);
                                                                         }
                                                                     }
                                                                 );
@@ -13319,15 +13319,15 @@
                                             params.product)) {
                                         let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(
                                             params.withdrawing_amount, params.currency, params.product);
-                                        if (trade_margin.remaining_crypto_credit < 0 &&
+                                        if (trade_margin.remaining_crypto_credit < 0 ||
                                             trade_margin.remaining_crypto_credit < eqCrypto) {
                                             err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
                                             showMessage(err_msg);
                                             throw new Error(err_msg);
                                         }
                                     } else {
-                                        if (trade_margin.remaining_fiat_credit < 0 && trade_margin.remaining_fiat_credit <
-                                            params.withdrawing_amount) {
+                                        if (trade_margin.remaining_fiat_credit < 0 
+                                        || trade_margin.remaining_fiat_credit < params.withdrawing_amount) {
                                             err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
                                             showMessage(err_msg);
                                             throw new Error(err_msg);
@@ -13827,21 +13827,14 @@
                                                                                                 .bitcoinToBePaid -=
                                                                                                 EqCryptoWd;
 
-                                                                                            if (
-                                                                                                deposit_arr
-                                                                                                .bitcoinToBePaid >
-                                                                                                0
-                                                                                            ) {
+                                                                                            if (deposit_arr.bitcoinToBePaid > 0) {
                                                                                                 // update deposits in db
-                                                                                                deposit_arr
-                                                                                                    .status =
-                                                                                                    2; // UTXO ready to be used again
+                                                                                                deposit_arr.status = 2; // UTXO ready to be used again
                                                                                                 backup_server_db_instance.backup_updateinDB
                                                                                                     (
                                                                                                         "deposit",
                                                                                                         deposit_arr,
-                                                                                                        deposit_arr
-                                                                                                        .trader_flo_address
+                                                                                                        deposit_arr.id
                                                                                                     );
 
                                                                                             } else {
@@ -13849,7 +13842,7 @@
                                                                                                 backup_server_db_instance.backup_removeinDB
                                                                                                     (
                                                                                                         "deposit",
-                                                                                                        deposit_arr.trader_flo_address
+                                                                                                        deposit_arr.id
                                                                                                     );
                                                                                             }
                                                                                         }
@@ -14575,6 +14568,7 @@
                                 btc_eq_receiving_amount = RM_TRADE.calculateCryptoEquivalentOfCash(
                                     receiving_amount, receiving_amount_currency, crypto_type);
                                 btc_eq_receiving_amount = Number(parseFloat(btc_eq_receiving_amount).toFixed(8));
+                                //btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
                             }
 
                             let trx = bitjs[crypto_type].transaction();
@@ -14585,7 +14579,7 @@
                                     var obj = utxo_list[key];
                                     sum += obj.amount;
 
-                                    if (btc_eq_receiving_amount <= (sum-miners_fee)) {
+                                    if (btc_eq_receiving_amount <= sum - miners_fee) {
                                         trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
                                         break;
                                     } else {
@@ -16159,13 +16153,13 @@
                                             // Update balances in clients DB
                                             try {
                                                 updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
-                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                    trade_balance_res.trade_infos.buyer_flo_id, true, false);
                                                 updateinDB("cash_balances", trade_balance_res.seller_cash_data,
-                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                                    trade_balance_res.trade_infos.seller_flo_id, true, false);
                                                 updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
-                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                    trade_balance_res.trade_infos.buyer_flo_id, true, false);
                                                 updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
-                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                                    trade_balance_res.trade_infos.seller_flo_id, true, false);
                                             } catch (error) {
                                                 callback(false);
                                                 throw new Error(error);
@@ -16258,7 +16252,9 @@
                                     if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
                                     if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") btc_pvt_arr[
                                         retrieve_pvtkey_req_id] = [];
-                                    btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);
+                                    if (!btc_pvt_arr[retrieve_pvtkey_req_id].includes(shamirs_shares_response)) {
+                                        btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
+                                    }
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
                                         .ShamirsMaxShares) {
                                         delete res_obj.params[0].private_key_chunk;
@@ -17483,13 +17479,13 @@
                                             // Update balances in clients DB
                                             try {
                                                 updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
-                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                    trade_balance_res.trade_infos.buyer_flo_id, true, false);
                                                 updateinDB("cash_balances", trade_balance_res.seller_cash_data,
-                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                                    trade_balance_res.trade_infos.seller_flo_id, true, false);
                                                 updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
-                                                    trade_balance_res.trade_infos.buyer_flo_id);
+                                                    trade_balance_res.trade_infos.buyer_flo_id, true, false);
                                                 updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
-                                                    trade_balance_res.trade_infos.seller_flo_id);
+                                                    trade_balance_res.trade_infos.seller_flo_id, true, false);
                                             } catch (error) {
                                                 callback(false);
                                                 throw new Error(error);
@@ -17647,7 +17643,9 @@
                                     if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
                                     if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") btc_pvt_arr[
                                         retrieve_pvtkey_req_id] = [];
-                                    btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);
+                                    if (!btc_pvt_arr[retrieve_pvtkey_req_id].includes(shamirs_shares_response)) {
+                                        btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
+                                    }
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
                                         .ShamirsMaxShares) {
                                         delete res_obj.params[0].private_key_chunk;
@@ -18888,13 +18886,13 @@
                                                 // Update balances in clients DB
                                                 try {
                                                     backup_server_db_instance.backup_updateinDB("cash_balances", trade_balance_res.buyer_cash_data,
-                                                        trade_balance_res.trade_infos.buyer_flo_id);
+                                                        trade_balance_res.trade_infos.buyer_flo_id, true, false);
                                                     backup_server_db_instance.backup_updateinDB("cash_balances", trade_balance_res.seller_cash_data,
-                                                        trade_balance_res.trade_infos.seller_flo_id);
+                                                        trade_balance_res.trade_infos.seller_flo_id, true, false);
                                                     backup_server_db_instance.backup_updateinDB("crypto_balances", trade_balance_res.buyer_btc_data,
-                                                        trade_balance_res.trade_infos.buyer_flo_id);
+                                                        trade_balance_res.trade_infos.buyer_flo_id, true, false);
                                                     backup_server_db_instance.backup_updateinDB("crypto_balances", trade_balance_res.seller_btc_data,
-                                                        trade_balance_res.trade_infos.seller_flo_id);
+                                                        trade_balance_res.trade_infos.seller_flo_id, true, false);
                                                 } catch (error) {
                                                     callback(false);
                                                     throw new Error(error);
@@ -19246,7 +19244,11 @@
                                     if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
                                     if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") btc_pvt_arr[
                                         retrieve_pvtkey_req_id] = [];
-                                    btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);
+                                    
+                                    if (!btc_pvt_arr[retrieve_pvtkey_req_id].includes(shamirs_shares_response)) {
+                                        btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
+                                    }
+                                    
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
                                         .ShamirsMaxShares) {
                                         delete res_obj.params[0].private_key_chunk;
@@ -19543,7 +19545,7 @@
                                                 let filtered_data = res_data_obj.filter(odho=>{
                                                     if (typeof odho.timestamp=="number"
                                                     && typeof response_object.higestTimestampList[`${mf}_TIME`] !=='undefined') {
-                                                        return odho.timestamp >= Number(response_object.higestTimestampList[`${mf}_TIME`]-3600);
+                                                        return odho.timestamp >= Number(response_object.higestTimestampList[`${mf}_TIME`]-3600000);
                                                     }
                                                 });
 
@@ -20289,7 +20291,7 @@
                                 Obj.vectorClock = (typeof Obj.vectorClock=="number" ? Obj.vectorClock:0);
                                 await store.put(Obj);
                                 await request.complete;
-                            } else if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                            } else if (myRecord.vectorClock < Obj.vectorClock) {
                                 await store.put(Obj);
                                 await request.complete;
                             }
@@ -20676,7 +20678,7 @@
                                             await store.put(Obj);
                                             await that.request.complete;
                                         }
-                                        else if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                        else if (myRecord.vectorClock < Obj.vectorClock) {
                                             await store.put(Obj);
                                             await that.request.complete;
                                         }
@@ -21910,7 +21912,7 @@
         
                                     if (typeof su_db_data == "object") {
                                         nonBackUpSusForDeadSu.map(nbs=>{
-                                            su_db_data.trader_flo_address = nbs.trader_flo_address;
+                                            su_db_data.trader_flo_address = getFLOId;
                                             su_db_data.receiver_flo_address = nbs.trader_flo_address;
 
                                             RM_RPC
