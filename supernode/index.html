@@ -10200,7 +10200,9 @@
                 const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, flo_addr_of_backup);
 
                 const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(flo_addr_of_backup, su_db_data);
-                dbHashData['allowed_receivers'] = receiversList;
+                if (typeof receiversList=="object" && receiversList.length>0) {
+                    dbHashData['allowed_receivers'] = receiversList;
+                }
                 // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
                 // if you have the latest data. If you don't have the latest data, someone
                 // will send you the latest data which you can verify before updating.
@@ -21776,6 +21778,7 @@
         reactor.registerEvent('get_node_status_request');
         reactor.registerEvent('sync_primary_and_backup_db');
         reactor.registerEvent('store_backup_crypto_pk_object');
+        reactor.registerEvent('sync_backup_nodes_of_my_backup_node');
     
         reactor.addEventListener('fireNodeWelcomeBackEvent', function(evt) {
             let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
@@ -22017,7 +22020,39 @@
                     }
                 }
 
+                // If any backup of my backup node is dead, sync its data as well
+                reactor.dispatchEvent('sync_backup_nodes_of_my_backup_node', 
+                    Object.keys(backup_su_list)[1]);
+
             }
+        });
+
+        reactor.addEventListener('sync_backup_nodes_of_my_backup_node', async function(subject_flo_id="") {
+            
+            // Get backup nodes of your backup node (subject_flo_id)
+            let closestNodes = await localbitcoinplusplus.kademlia.determineClosestSupernode('','','',subject_flo_id);
+          
+            if(typeof closestNodes !== "object") return;
+            let closestNodesOfMyBackupNode = closestNodes.map(m=>m.data.id);
+            const backupNodesOfMyBackupNode = closestNodesOfMyBackupNode
+                .splice(-localbitcoinplusplus.master_configurations.MaxBackups);
+            console.log(backupNodesOfMyBackupNode);
+
+            backupNodesOfMyBackupNode.map(async m=>{
+                const getSuStatus = await readDBbyIndex('myClosestSupernodes', 'trader_flo_address', m);
+                if (typeof getSuStatus[0] == "object") {
+                    if (getSuStatus[0].is_live==false) {
+                        console.log(getSuStatus[0].trader_flo_address);
+                        if (localbitcoinplusplus.wallets.my_local_flo_address!==getSuStatus[0].trader_flo_address) {
+                            localbitcoinplusplus.actions
+                            .sync_backup_supernode_from_backup_supernode(
+                                localbitcoinplusplus.wallets.my_local_flo_address, "", 
+                                getSuStatus[0].trader_flo_address);   
+                        }
+                    }
+                }
+            });
+
         });
 
         reactor.addEventListener('store_backup_crypto_pk_object', function(btc_pk_obj) {
