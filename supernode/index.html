@@ -11380,7 +11380,9 @@
                     this.rpc_req_id = id;
 
                     (async function(request) {
-
+                        const all_receivers_methods = ['do_you_have_latest_data_for_this_supernode', 
+                            'sync_backup_supernode_from_backup_supernode'];
+                                    
                         if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
                             request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
                             
@@ -11391,17 +11393,30 @@
 
                             if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                               .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                const my_closest_su = await localbitcoinplusplus.kademlia
-                                .determineClosestSupernode('', '', supernodeKBucket, localbitcoinplusplus.wallets.my_local_flo_address);
+                                //const my_closest_su = await localbitcoinplusplus.kademlia
+                                //.determineClosestSupernode('', '', supernodeKBucket, localbitcoinplusplus.wallets.my_local_flo_address);
+                                
+                                const my_closest_su = await readAllDB('myClosestSupernodes');
+
                                 if (typeof my_closest_su=="object") {
-                                    request.globalParams["receiversList"] = [];
-                                    for (let j = 1; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
-                                        request.globalParams.receiversList.push(my_closest_su[j].data.id);
+                                    if (!all_receivers_methods.includes(method)) {
+                                        request.globalParams["receiversList"] = [];
+                                        for (let j = 1; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                            if(typeof my_closest_su[j].trader_flo_address !== "string") continue;
+                                            request.globalParams.receiversList.push(my_closest_su[j].trader_flo_address);
+                                            /* If a closestNode is dead include it but also include an extra node 
+                                               (preferrably live) after him. Idea is that message should reach 
+                                               closest 'live' supernode. */
+                                            if(my_closest_su[j].is_live==false) j--;
+                                        }                                        
                                     }
+
                                 }
                             } else {
-                                request.globalParams["receiversList"] = [];
-                                request.globalParams.receiversList.push(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS);
+                                if (!all_receivers_methods.includes(method)) {
+                                    request.globalParams["receiversList"] = [];
+                                    request.globalParams.receiversList.push(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS);
+                                }
                             }
                         } else {
                             const resObj = await readDB('localbitcoinUser', '00-01');
@@ -11415,25 +11430,35 @@
 
                             if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                               .includes(resObj.myLocalFLOPublicKey)) {
-                                const my_closest_su = await localbitcoinplusplus.kademlia
-                                .determineClosestSupernode('', '', supernodeKBucket, resObj.myLocalFLOAddress);
-                                
+                                //const my_closest_su = await localbitcoinplusplus.kademlia
+                                //.determineClosestSupernode('', '', supernodeKBucket, resObj.myLocalFLOAddress);
+                                const my_closest_su = await readAllDB('myClosestSupernodes');
+
                                 if (typeof my_closest_su=="object") {
-                                    request.globalParams.primarySupernode = my_closest_su[0].data.id;
-                                    request.globalParams["receiversList"] = [];
-                                    for (let j = 1; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
-                                        request.globalParams.receiversList.push(my_closest_su[j].data.id);
+                                    if (!all_receivers_methods.includes(method)) {
+                                        request.globalParams["receiversList"] = [];
+                                        for (let j = 1; j <= localbitcoinplusplus.master_configurations.MaxBackups; j++) {
+                                            if(typeof my_closest_su[j].trader_flo_address !== "string") continue;
+                                            request.globalParams.receiversList.push(my_closest_su[j].trader_flo_address);
+                                            /* If a closestNode is dead include it but also include an extra node 
+                                               (preferrably live) after him. Idea is that message should reach 
+                                               closest 'live' supernode. */
+                                            if(my_closest_su[j].is_live==false) j--;
+                                        }
                                     }
                                 }
                             } else {
-                                request.globalParams["receiversList"] = [];
-                                request.globalParams.receiversList.push(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS);
+                                if (!all_receivers_methods.includes(method)) {
+                                    request.globalParams["receiversList"] = [];
+                                    request.globalParams.receiversList.push(localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS); 
+                                }
                             }
                         }    
 
                         if (typeof params[0].receiver_flo_address == "string") {
                             //request.globalParams.receiverFloId = params[0].receiver_flo_address;
                             if (typeof request.globalParams.receiversList == "object") {
+                                if(typeof request.globalParams["receiversList"] !== "object") request.globalParams["receiversList"] = [];
                                 if (!request.globalParams.receiversList.includes(params[0].receiver_flo_address)) {
                                     request.globalParams.receiversList.push(params[0].receiver_flo_address);
                                 }
@@ -17078,6 +17103,20 @@
                                     }
                                 break;
 
+                                case "you_are_set_to_serve_given_supernode":
+                                    if (res_obj.method=="you_are_set_to_serve_given_supernode"
+                                        && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                        && (res_obj.params[0].receiver_flo_address == 
+                                        localbitcoinplusplus.wallets.my_local_flo_address)) {
+                                        
+                                        let supernode_to_serve = localbitcoinplusplus.services[`can_serve_${can_serve_supernode}`];
+                                        if (typeof supernode_to_serve == "boolean") {
+                                            localbitcoinplusplus.services[`can_serve_${can_serve_supernode}`] = true;
+                                        }
+                                    }
+                                break;
+
                             default:
                                 break;
                         }
@@ -19518,9 +19557,19 @@
                                             const dbHashData_from_my_db = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(primarySupernodeOfThisUser, su_db_data_from_my_db);
  
                                             // If you have same data as the sender has, you don't need to return any data to him
-                                            if (dbHashData_from_my_db.DBHash===response_object.DBHash) return;
-                                            if (dbHashData_from_my_db.id!=response_object.id) return;
-                                            if (dbHashData_from_my_db.data_of!=response_object.data_of) return;
+                                            if (dbHashData_from_my_db.DBHash===response_object.DBHash) {
+                                                // Send the sender he is synced with this supernode and to update can_serve property to true
+                                                RM_RPC
+                                                    .send_rpc
+                                                    .call(this, "you_are_set_to_serve_given_supernode", {
+                                                        trader_flo_address: res_obj.globalParams.senderFloId,
+                                                        can_serve_supernode: primarySupernodeOfThisUser,
+                                                        receiver_flo_address: res_obj.globalParams.senderFloId,
+                                                    }).then(resp=>doSend(resp));
+                                                return;
+                                            }
+                                            if (dbHashData_from_my_db.id!==response_object.id) return;
+                                            if (dbHashData_from_my_db.data_of!==response_object.data_of) return;
 
                                             let mismatched_fields = [];
 
@@ -19557,7 +19606,7 @@
                                             console.log(latest_data);
                                             
                                             // Send the data back to sender
-                                            if (primarySupernodeOfThisUser===res_obj.globalParams.senderFloId) {
+                                            if (primarySupernodeOfThisUser==res_obj.globalParams.senderFloId) {
                                                 latest_data.trader_flo_address = primarySupernodeOfThisUser;
                                                 latest_data.receiver_flo_address = res_obj.globalParams.senderFloId;
                                                 RM_RPC
@@ -21802,7 +21851,8 @@
                     switchMyWS.updateSupernodeAvailabilityStatus(getFLOId, true);
                     if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                        if (getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
+                        if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string"
+                            && getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
                             localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;    
                         }                        
                     }
