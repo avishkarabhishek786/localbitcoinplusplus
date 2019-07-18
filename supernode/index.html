@@ -14603,7 +14603,6 @@
                                 btc_eq_receiving_amount = RM_TRADE.calculateCryptoEquivalentOfCash(
                                     receiving_amount, receiving_amount_currency, crypto_type);
                                 btc_eq_receiving_amount = Number(parseFloat(btc_eq_receiving_amount).toFixed(8));
-                                //btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
                             }
 
                             let trx = bitjs[crypto_type].transaction();
@@ -14646,7 +14645,6 @@
                                 let signedTxHash = trx.sign(utxo_addr_wif, 1); //SIGHASH_ALL DEFAULT 1
                                 showMessage(`Signed Transaction Hash: ${signedTxHash}`);
                                 console.log(signedTxHash);
-                                return;
                                 
                                 var http = new XMLHttpRequest();
                                 var tx_send_url = `${blockchain_explorer}/api/tx/send`;
@@ -21839,6 +21837,7 @@
         reactor.registerEvent('sync_primary_and_backup_db');
         reactor.registerEvent('store_backup_crypto_pk_object');
         reactor.registerEvent('sync_backup_nodes_of_my_backup_node');
+        reactor.registerEvent('resolve_backup_ws_connections');
     
         reactor.addEventListener('fireNodeWelcomeBackEvent', function(evt) {
             let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
@@ -22149,6 +22148,42 @@
             });
         });
     
+        reactor.addEventListener('resolve_backup_ws_connections', async function(evt) {
+            
+            if(!localbitcoinplusplus.master_configurations.supernodesPubKeys
+            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
+            
+            const myClosestSus = await readAllDB('myClosestSupernodes');
+            let number_of_live_nodes = 0;
+            const myLiveBackupNodes = myClosestSus.filter((m, i)=>{
+                if(i>0 && number_of_live_nodes<localbitcoinplusplus.master_configurations.MaxBackups) {
+                    if(m.is_live == true) {
+                        number_of_live_nodes++;
+                        return m;
+                    }
+                }
+            });
+
+            for (const backup_id in localbitcoinplusplus.backupWS) {
+                if (localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
+                    const backup_conns = localbitcoinplusplus.backupWS[backup_id];
+                    if(typeof backup_conns.ws_connection == "object") {
+                        if(backup_conns.ws_connection.readyState !== 1) {
+                            delete localbitcoinplusplus.backupWS[backup_id];
+                        }	
+                    }
+                }
+            }
+
+            myLiveBackupNodes.map(m=>{
+                const getFLOId = m.trader_flo_address;
+                const back_ws_url = `ws://${m.ip}:${m.port}`;
+                localbitcoinplusplus.backupWS[getFLOId] = null;
+                localbitcoinplusplus.backupWS[getFLOId] = new backupSupernodesWebSocketObject(back_ws_url);
+                localbitcoinplusplus.backupWS[getFLOId].connectWS();
+            });	
+        });
+
     </script>
 
 </body>
