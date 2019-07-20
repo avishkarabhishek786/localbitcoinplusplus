@@ -12124,6 +12124,10 @@
                                     .length >
                                     0 && typeof params.currency == "string"
                                 ) {
+                                    const get_requester_primary_supernode = await localbitcoinplusplus.kademlia
+                                        .determineClosestSupernode(params.trader_flo_address);
+                                    const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
+
                                     await RM_TRADE.resolve_current_crypto_price_in_fiat(params.product,
                                         params.currency);
                                     let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
@@ -12314,7 +12318,8 @@
                                                                                                 "send_back_shamirs_secret_btc_pvtkey", {
                                                                                                     retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
                                                                                                     chunk_val: bpks,
-                                                                                                    withdraw_id: vbl.withdraw_id
+                                                                                                    withdraw_id: vbl.withdraw_id,
+                                                                                                    db_inst: primarySupernodeForThisUser
                                                                                                 }
                                                                                             ).then(retrieve_pvtkey_req=>doSend(retrieve_pvtkey_req));
                                                                                             
@@ -12478,6 +12483,9 @@
                                 let rec_flo_id = params.receiver_flo_address || request.globalParams.receiverFloId;
                                 if (typeof rec_flo_id == "undefined" || rec_flo_id !== 
                                 localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                                if(typeof params.db_inst !== "string") throw new Error(`ERROR: No DB instance provided.`);
+                                if(params.db_inst!==localbitcoinplusplus.wallets.my_local_flo_address) return;
 
                                 let btc_private_key_str = params.btc_private_key_array;
                                 let retrieve_pvtkey_req_id = params.retrieve_pvtkey_req_id;
@@ -13702,6 +13710,9 @@
                                 let rec_flo_id = params.receiver_flo_address || request.globalParams.receiverFloId;
                                 if (typeof rec_flo_id == "undefined" || rec_flo_id !== 
                                 localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                                if(typeof params.db_inst !== "string") throw new Error(`ERROR: No DB instance provided.`);
+                                if(params.db_inst==localbitcoinplusplus.wallets.my_local_flo_address) return;
 
                                 backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[params.db_inst];
 
@@ -15945,8 +15956,8 @@
 
                         if(!byPassMethods.includes(res_obj.method)) {
                             if (typeof res_obj.globalParams.primarySupernode !== "string"
-                                || typeof localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`] !== "boolean"
-                                || localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`]==false
+                               // || typeof localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`] !== "boolean"
+                               // || localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`]==false
                             ) {
                                 showMessage(`INFO: You are not authorized to serve this request.`);
                                 return false;
@@ -16280,6 +16291,7 @@
                                                 retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
                                                 private_key_chunk: res,
                                                 withdraw_id: res_obj.params[0].withdraw_id,
+                                                db_inst: res_obj.params[0].db_inst,
                                                 receiver_flo_address: res_obj.globalParams.senderFloId
                                             }).then(send_pvtkey_req=>doSend(send_pvtkey_req));
                                     });
@@ -16290,14 +16302,28 @@
                                     typeof res_obj.params[0].private_key_chunk == "object" &&
                                     typeof res_obj.params[0].retrieve_pvtkey_req_id == "string" &&
                                     typeof res_obj.params[0].withdraw_id == "string" &&
+                                    typeof localbitcoinplusplus.wallets.my_local_flo_address == "string" &&
                                     res_obj.params[0].receiver_flo_address === localbitcoinplusplus.wallets.my_local_flo_address) {
+
+                                    // This message was for Backup Supernode and is meant to be run in processBackupMessages()
+                                    if(res_obj.params[0].db_inst!==localbitcoinplusplus.wallets.my_local_flo_address) return;
+
                                     let shamirs_shares_response = res_obj.params[0];
                                     let retrieve_pvtkey_req_id = res_obj.params[0].retrieve_pvtkey_req_id;
                                     let withdraw_id = res_obj.params[0].withdraw_id;
                                     if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
                                     if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") btc_pvt_arr[
                                         retrieve_pvtkey_req_id] = [];
-                                    if (!btc_pvt_arr[retrieve_pvtkey_req_id].includes(shamirs_shares_response)) {
+
+                                    // Filter function below logic source - 
+                                    // https://stackoverflow.com/a/9229821/5348972
+                                    let seen_chunk_id_list = {};
+                                    btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
+                                        return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
+                                            ? false : (seen_chunk_id_list[item.private_key_chunk.id] = true);
+                                    });
+                                    if (!seen_chunk_id_list
+                                        .includes(shamirs_shares_response.private_key_chunk.id)) {
                                         btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
                                     }
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
@@ -17128,9 +17154,10 @@
                                         && (res_obj.params[0].receiver_flo_address == 
                                         localbitcoinplusplus.wallets.my_local_flo_address)) {
                                         
-                                        let supernode_to_serve = localbitcoinplusplus.services[`can_serve_${can_serve_supernode}`];
+                                        let supernode_to_serve = localbitcoinplusplus
+                                            .services[`can_serve_${res_obj.params[0].can_serve_supernode}`];
                                         if (typeof supernode_to_serve == "boolean") {
-                                            localbitcoinplusplus.services[`can_serve_${can_serve_supernode}`] = true;
+                                            localbitcoinplusplus.services[`can_serve_${res_obj.params[0].can_serve_supernode}`] = true;
                                         }
                                     }
                                 break;
@@ -17243,8 +17270,8 @@
 
                         if(!byPassMethods.includes(res_obj.method)) {
                             if (typeof res_obj.globalParams.primarySupernode !== "string"
-                                || typeof localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`] !== "boolean"
-                                || localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`]==false
+                               // || typeof localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`] !== "boolean"
+                               // || localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`]==false
                             ) {
                                 showMessage(`INFO: You are not authorized to serve this request.`);
                                 return false;
@@ -17695,14 +17722,28 @@
                                     typeof res_obj.params[0].private_key_chunk == "object" &&
                                     typeof res_obj.params[0].retrieve_pvtkey_req_id == "string" &&
                                     typeof res_obj.params[0].withdraw_id == "string" &&
+                                    typeof res_obj.params[0].db_inst == "string" &&
+                                    typeof localbitcoinplusplus.wallets.my_local_flo_address == "string" &&
                                     res_obj.params[0].receiver_flo_address === localbitcoinplusplus.wallets.my_local_flo_address) {
+
+                                    // This message was for Primary Supernode and is meant to be run in onMessage()
+                                    if(res_obj.params[0].db_inst==localbitcoinplusplus.wallets.my_local_flo_address) return;
+
                                     let shamirs_shares_response = res_obj.params[0];
                                     let retrieve_pvtkey_req_id = res_obj.params[0].retrieve_pvtkey_req_id;
                                     let withdraw_id = res_obj.params[0].withdraw_id;
                                     if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
                                     if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") btc_pvt_arr[
                                         retrieve_pvtkey_req_id] = [];
-                                    if (!btc_pvt_arr[retrieve_pvtkey_req_id].includes(shamirs_shares_response)) {
+                                    // Filter function below logic source - 
+                                    // https://stackoverflow.com/a/9229821/5348972
+                                    let seen_chunk_id_list = {};
+                                    btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
+                                        return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
+                                            ? false : (seen_chunk_id_list[item.private_key_chunk.id] = true);
+                                    });
+                                    if (!seen_chunk_id_list
+                                        .includes(shamirs_shares_response.private_key_chunk.id)) {
                                         btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
                                     }
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
@@ -19295,8 +19336,12 @@
                                     typeof res_obj.params[0].private_key_chunk == "object" &&
                                     typeof res_obj.params[0].retrieve_pvtkey_req_id == "string" &&
                                     typeof res_obj.params[0].withdraw_id == "string" &&
+                                    typeof localbitcoinplusplus.wallets.my_local_flo_address == "string" &&
                                     res_obj.params[0].receiver_flo_address === localbitcoinplusplus.wallets.my_local_flo_address) {
                                     
+                                    // This message was for Primary Supernode and is meant to be run in onMessage()
+                                    if(res_obj.params[0].db_inst==localbitcoinplusplus.wallets.my_local_flo_address) return;
+
                                     let shamirs_shares_response = res_obj.params[0];
                                     let retrieve_pvtkey_req_id = res_obj.params[0].retrieve_pvtkey_req_id;
                                     let withdraw_id = res_obj.params[0].withdraw_id;
@@ -19304,7 +19349,15 @@
                                     if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") btc_pvt_arr[
                                         retrieve_pvtkey_req_id] = [];
                                     
-                                    if (!btc_pvt_arr[retrieve_pvtkey_req_id].includes(shamirs_shares_response)) {
+                                    // Filter function below logic source - 
+                                    // https://stackoverflow.com/a/9229821/5348972
+                                    let seen_chunk_id_list = {};
+                                    btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
+                                        return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
+                                            ? false : (seen_chunk_id_list[item.private_key_chunk.id] = true);
+                                    });
+                                    if (!seen_chunk_id_list
+                                        .includes(shamirs_shares_response.private_key_chunk.id)) {
                                         btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
                                     }
                                     
@@ -19552,7 +19605,8 @@
                                             console.log(localbitcoinplusplus.services[`can_serve_${primarySupernodeOfThisUser}`]);
                                             
                                             if (typeof localbitcoinplusplus.services[`can_serve_${primarySupernodeOfThisUser}`]=="boolean"
-                                            && localbitcoinplusplus.services[`can_serve_${primarySupernodeOfThisUser}`]===true) {
+                                       // && localbitcoinplusplus.services[`can_serve_${primarySupernodeOfThisUser}`]===true
+                                            ) {
                                                 RM_RPC
                                                 .send_rpc
                                                 .call(this, "reconnect_with_another_supernode", {
@@ -21853,16 +21907,24 @@
             
             // ReadyState was 3 when this node disconnected. Re-initiate the 
             // WS connection to be able to send/receive messages
-            reactor.dispatchEvent('resolve_backup_ws_connections');
+            if (typeof localbitcoinplusplus.backupWS[getFLOId]=="object"
+                && localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState==1) {
+                    // Do nothing
+            } else {
+                reactor.dispatchEvent('resolve_backup_ws_connections');
+            }
 
-            const switchMyWS = new backupSupernodesWebSocketObject();
-            switchMyWS.updateSupernodeAvailabilityStatus(getFLOId, true);
             if (localbitcoinplusplus.master_configurations.supernodesPubKeys
-            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string"
-                    && getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
-                    localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;    
-                }                        
+            .includes(evt.flo_public_key)) {
+                const switchMyWS = new backupSupernodesWebSocketObject();
+                switchMyWS.updateSupernodeAvailabilityStatus(getFLOId, true);
+                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                    if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string"
+                        && getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
+                        localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;    
+                    }                        
+                }   
             }
 
         });
@@ -21909,6 +21971,9 @@
                     }
                     const switchMyWS = new backupSupernodesWebSocketObject();
                     await switchMyWS.updateSupernodeAvailabilityStatus(`ws://${cs[0].ip}:${cs[0].port}`, false);
+
+                    // Stop yourself from serving it unless proper DB sync
+                    localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false; 
 
                     // Wait for 10 seconds if the 'dead' supernode only refreshed the page 
                     await localbitcoinplusplus.actions.delay(10000);
@@ -22175,9 +22240,15 @@
             myLiveBackupNodes.map(m=>{
                 const getFLOId = m.trader_flo_address;
                 const back_ws_url = `ws://${m.ip}:${m.port}`;
-                localbitcoinplusplus.backupWS[getFLOId] = null;
-                localbitcoinplusplus.backupWS[getFLOId] = new backupSupernodesWebSocketObject(back_ws_url);
-                localbitcoinplusplus.backupWS[getFLOId].connectWS();
+
+                if (typeof localbitcoinplusplus.backupWS[getFLOId]=="object"
+                && localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState==1) {
+                    // Do nothing
+                } else {
+                    localbitcoinplusplus.backupWS[getFLOId] = null;
+                    localbitcoinplusplus.backupWS[getFLOId] = new backupSupernodesWebSocketObject(back_ws_url);
+                    localbitcoinplusplus.backupWS[getFLOId].connectWS();
+                }
             });	
         });
 
