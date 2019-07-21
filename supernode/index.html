@@ -12610,10 +12610,49 @@
                                                                 ************************************************************************************************************************************/
 
                                                                 readDBbyIndex('deposit', 'btc_address', withdraw_res.utxo_addr)
-                                                                .then(function (deposit_arr_resp) {
+                                                                .then(async function (deposit_arr_resp) {
                                                                     if (typeof deposit_arr_resp == "object") {
                                                                         deposit_arr_resp.map(deposit_arr => {
+
+                                                                        let explorer;
+                                                                        let decimal = 100000000;
+                                                                        switch (deposit_arr.product) {
+                                                                            case "BTC":
+                                                                                explorer = localbitcoinplusplus.server.btc_mainnet;
+                                                                                break;
+                                                                            case "BTC_TEST":
+                                                                                explorer = localbitcoinplusplus.server.btc_testnet;
+                                                                                break;
+                                                                            case "FLO":
+                                                                                explorer = localbitcoinplusplus.server.flo_mainnet;
+                                                                                decimal = 1;
+                                                                                break;
+                                                                            case "FLO_TEST":
+                                                                                explorer = localbitcoinplusplus.server.flo_testnet;
+                                                                                decimal = 1;
+                                                                                break;
+                                                                            default:
+                                                                                break;
+                                                                        }
+
+                                                                        if(typeof explorer !== "string") {
+                                                                            throw new Error(`WARNING: Invalid product value: ${deposit_arr.product}.`);
+                                                                            return false;
+                                                                        }
+
+                                                                        const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
+                                                                        console.log(bal_url);
+
+                                                                        const current_balance = await helper_functions.ajaxGet(bal_url);
+                                                                        if (!isNaN(current_balance) && parseFloat(current_balance) > 0) {
+                                                                            current_balance = Number(parseFloat(current_balance/decimal));
+                                                                        }
+
+                                                                        if (typeof current_balance=="number") {
+                                                                            deposit_arr.bitcoinToBePaid = current_balance;
+                                                                        } else {
                                                                             deposit_arr.bitcoinToBePaid -= EqCryptoWd;
+                                                                        }
 
                                                                         if (deposit_arr.bitcoinToBePaid > 0) {
                                                                             // update deposits in db
@@ -12623,9 +12662,12 @@
                                                                         } else {
                                                                             // delete entry in deposits in db
                                                                             removeinDB("deposit", deposit_arr.id);
+                                                                            removeinDB('system_btc_reserves_private_keys', retrieve_pvtkey_req_id);
                                                                         }
                                                                     }
                                                                 );
+                                                                // Delete the withdrawal request
+                                                                removeinDB('withdraw_btc', withdraw_id);
                                                                 return true;
                                                                 }
                                                             });
@@ -12946,20 +12988,16 @@
                                 if (is_valid_request !== true) return false;
 
                                 // This code will only run for supernodes
-                                if (typeof params.product !== "undefined" &&
-                                    (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
-                                            params.product) ||
-                                        localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-                                            params.product)) &&
-                                    typeof params.depositing_amount !== "undefined" &&
-                                    localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-                                        params.currency) &&
-                                    typeof localbitcoinplusplus.master_configurations.validTradingAmount !==
-                                    'undefined' &&
-                                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(
-                                        parseFloat(params.depositing_amount)) &&
-                                    typeof params.trader_flo_address == "string" &&
-                                    params.trader_flo_address.length > 0
+                                if (typeof params.product !== "undefined" 
+                                    && (localbitcoinplusplus.master_configurations.tradableAsset1.includes(params.product) 
+                                     || localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.product)) 
+                                    && typeof params.depositing_amount !== "undefined" 
+                                    && localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.currency) 
+                                    && typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' 
+                                    && localbitcoinplusplus.master_configurations.validTradingAmount
+                                        .includes(parseFloat(params.depositing_amount)) 
+                                    && typeof params.trader_flo_address == "string" 
+                                    && params.trader_flo_address.length > 0
                                 ) {
                                     const requester_public_req = await backup_server_db_instance
                                       .backup_readDB('userPublicData', params.trader_flo_address);
@@ -13864,9 +13902,45 @@
                                                                                 deposit_arr_resp
                                                                                     .map(
                                                                                         deposit_arr => {
-                                                                                            deposit_arr
-                                                                                                .bitcoinToBePaid -=
-                                                                                                EqCryptoWd;
+                                                                                            let explorer;
+                                                                                            let decimal = 100000000;
+                                                                                            switch (deposit_arr.product) {
+                                                                                                case "BTC":
+                                                                                                    explorer = localbitcoinplusplus.server.btc_mainnet;
+                                                                                                    break;
+                                                                                                case "BTC_TEST":
+                                                                                                    explorer = localbitcoinplusplus.server.btc_testnet;
+                                                                                                    break;
+                                                                                                case "FLO":
+                                                                                                    explorer = localbitcoinplusplus.server.flo_mainnet;
+                                                                                                    decimal = 1;
+                                                                                                    break;
+                                                                                                case "FLO_TEST":
+                                                                                                    explorer = localbitcoinplusplus.server.flo_testnet;
+                                                                                                    decimal = 1;
+                                                                                                    break;
+                                                                                                default:
+                                                                                                    break;
+                                                                                            }
+
+                                                                                            if(typeof explorer !== "string") {
+                                                                                                throw new Error(`WARNING: Invalid product value: ${deposit_arr.product}.`);
+                                                                                                return false;
+                                                                                            }
+
+                                                                                            const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
+                                                                                            console.log(bal_url);
+
+                                                                                            const current_balance = await helper_functions.ajaxGet(bal_url);
+                                                                                            if (!isNaN(current_balance) && parseFloat(current_balance) > 0) {
+                                                                                                current_balance = Number(parseFloat(current_balance/decimal));
+                                                                                            }
+
+                                                                                            if (typeof current_balance=="number") {
+                                                                                                deposit_arr.bitcoinToBePaid = current_balance;
+                                                                                            } else {
+                                                                                                deposit_arr.bitcoinToBePaid -= EqCryptoWd;
+                                                                                            }
 
                                                                                             if (deposit_arr.bitcoinToBePaid > 0) {
                                                                                                 // update deposits in db
@@ -13885,9 +13959,15 @@
                                                                                                         "deposit",
                                                                                                         deposit_arr.id
                                                                                                     );
+                                                                                                
+                                                                                                backup_server_db_instance
+                                                                                                .backup_removeinDB('system_btc_reserves_private_keys', 
+                                                                                                retrieve_pvtkey_req_id);
                                                                                             }
                                                                                         }
                                                                                     );
+                                                                                // Delete the withdrawal request
+                                                                                backup_server_db_instance.backup_removeinDB('withdraw_btc', withdraw_id);
                                                                                 return true;
                                                                             }
                                                                         });
