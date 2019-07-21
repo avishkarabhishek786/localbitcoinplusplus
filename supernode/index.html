@@ -12252,9 +12252,8 @@
                                                             let valid_btc_list =
                                                                 valid_utxo_list.map(
                                                                     deposit_arr => {
-                                                                        deposit_arr
-                                                                            .status =
-                                                                            3 // Deposited Bitcoin is under process 
+                                                                        // Deposited Bitcoin is under process 
+                                                                        deposit_arr.status = 3; 
                                                                         updateinDB(
                                                                             "deposit",
                                                                             deposit_arr,
@@ -12291,8 +12290,7 @@
                                                                         );
                                                                         return {
                                                                             withdraw_id: withdraw_id,
-                                                                            deposited_btc_address: deposit_arr
-                                                                                .btc_address
+                                                                            deposited_btc_address: deposit_arr.btc_address
                                                                         };
                                                                     });
 
@@ -12302,8 +12300,7 @@
                                                                     (
                                                                         'system_btc_reserves_private_keys',
                                                                         'btc_address',
-                                                                        vbl
-                                                                        .deposited_btc_address
+                                                                        vbl.deposited_btc_address
                                                                     ).then(
                                                                         function (res) {
                                                                             let retrieve_pvtkey_req_id = res[0].id;
@@ -12477,8 +12474,8 @@
                             RM_RPC.filter_legit_requests(params.trader_flo_address, function (is_valid_request) {
                                 if (is_valid_request !== true) return false;
 
-                                if (typeof params.btc_private_key_array !== "string" || typeof params.retrieve_pvtkey_req_id !==
-                                    "string") return false;
+                                if (typeof params.btc_private_key_array !== "string" 
+                                || typeof params.retrieve_pvtkey_req_id !== "string") return false;
                                 
                                 let rec_flo_id = params.receiver_flo_address || request.globalParams.receiverFloId;
                                 if (typeof rec_flo_id == "undefined" || rec_flo_id !== 
@@ -12565,14 +12562,14 @@
                                                                                     "server_msg": msg
                                                                                 }).then(server_response=>doSend(server_response));
                                                                         } else return;
-
-                                                                        readDB('crypto_balances', withdraw_res.id)
+                                                                        const withdrawer_crypto_bal_id = `${withdraw_res.trader_flo_address}_${withdraw_res.product}`;
+                                                                        readDB('crypto_balances', withdrawer_crypto_bal_id)
                                                                             .then(res_bal => {
-                                                                                // btc_eq_receiving_amount
-                                                                                //     =
-                                                                                //     Number(parseFloat(EqCryptoWd).toFixed(8));
+                                                                                if (typeof res_bal !== "object") {
+                                                                                    throw new Error(`FATAL ERROR: Failed to subtract balance of id ${withdrawer_crypto_bal_id} by ${EqCryptoWd}. `);
+                                                                                }
                                                                                 res_bal.crypto_balance -= EqCryptoWd;
-                                                                                updateinDB('crypto_balances', res_bal, withdraw_res.id)
+                                                                                updateinDB('crypto_balances', res_bal, withdrawer_crypto_bal_id)
                                                                                     .then(res_obj => {
                                                                                         const res_obj_str = JSON.stringify(res_obj);
                                                                                         const res_obj_hash = Crypto.SHA256(res_obj_str);
@@ -12621,8 +12618,7 @@
                                                                         if (deposit_arr.bitcoinToBePaid > 0) {
                                                                             // update deposits in db
                                                                             deposit_arr.status = 2; // UTXO ready to be used again
-                                                                            updateinDB("deposit", deposit_arr,
-                                                                                deposit_arr.id);
+                                                                            updateinDB("deposit", deposit_arr, deposit_arr.id);
 
                                                                         } else {
                                                                             // delete entry in deposits in db
@@ -13476,9 +13472,8 @@
                                                             let valid_btc_list =
                                                                 valid_utxo_list.map(
                                                                     deposit_arr => {
-                                                                        deposit_arr
-                                                                            .status =
-                                                                            3 // Deposited Bitcoin is under process 
+                                                                        // Deposited Bitcoin is under process
+                                                                        deposit_arr.status = 3;  
                                                                         backup_server_db_instance.backup_updateinDB(
                                                                             "deposit",
                                                                             deposit_arr,
@@ -13812,7 +13807,7 @@
                                                                                     backup_server_db_instance.backup_updateinDB
                                                                                         ('crypto_balances',
                                                                                             res_bal,
-                                                                                            withdraw_res.id
+                                                                                            withdrawer_crypto_bal_id
                                                                                         ).then(res_obj => {
                                                                                             const res_obj_str = JSON.stringify(res_obj);
                                                                                             const res_obj_hash = Crypto.SHA256(res_obj_str);
@@ -16317,13 +16312,16 @@
 
                                     // Filter function below logic source - 
                                     // https://stackoverflow.com/a/9229821/5348972
-                                    let seen_chunk_id_list = {};
+                                    let seen_chunk_id_list = [];
+                                    
                                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
                                         return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
-                                            ? false : (seen_chunk_id_list[item.private_key_chunk.id] = true);
+                                            ? false : (seen_chunk_id_list.push(item.private_key_chunk.id));
                                     });
+
                                     if (!seen_chunk_id_list
-                                        .includes(shamirs_shares_response.private_key_chunk.id)) {
+                                        .includes(shamirs_shares_response.private_key_chunk.id)
+                                        && typeof shamirs_shares_response.private_key_chunk.id  == "string") {
                                         btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
                                     }
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
@@ -17475,8 +17473,7 @@
                                 break;
                             case "withdraw_request_method":
                                 response_from_sever = RM_RPC.backup_receive_rpc_response.call(this,
-                                    JSON.stringify(res_obj));
-                                //doSend(JSON.stringify(response_from_sever)); // send response to client
+                                    JSON.stringify(res_obj));  // send response to client
                                 break;
                             case "withdrawal_request_response":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
@@ -17677,32 +17674,8 @@
                             case "send_back_shamirs_secret_btc_pvtkey":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     
-                                     if(typeof res_obj.globalParams.primarySupernode !="string") return;
+                                    if(typeof res_obj.globalParams.primarySupernode !="string") return;
                                     
-                                    // localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.primarySupernode)
-                                    // .then(my_closest_su_list=>{
-                                    //     const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
-                                    //     const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
-
-                                    //     if(typeof backup_server_db_instance !== "object") {
-                                    //         let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                    //         showMessage(backup_db_error_msg);
-                                    //         throw new Error(backup_db_error_msg);
-                                    //     };
-
-                                    //     backup_server_db_instance.backup_readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
-                                    //     res) {
-                                    //         RM_RPC
-                                    //             .send_rpc
-                                    //             .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
-                                    //                 retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
-                                    //                 private_key_chunk: res,
-                                    //                 withdraw_id: res_obj.params[0].withdraw_id,
-                                    //                 receiver_flo_address: res_obj.globalParams.senderFloId,
-                                    //             }).then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
-                                    //     });
-                                    // });
-
                                     readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
                                     res) {
                                         RM_RPC
@@ -17737,13 +17710,16 @@
                                         retrieve_pvtkey_req_id] = [];
                                     // Filter function below logic source - 
                                     // https://stackoverflow.com/a/9229821/5348972
-                                    let seen_chunk_id_list = {};
+                                    let seen_chunk_id_list = [];
+                                    
                                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
                                         return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
-                                            ? false : (seen_chunk_id_list[item.private_key_chunk.id] = true);
+                                            ? false : (seen_chunk_id_list.push(item.private_key_chunk.id));
                                     });
+
                                     if (!seen_chunk_id_list
-                                        .includes(shamirs_shares_response.private_key_chunk.id)) {
+                                        .includes(shamirs_shares_response.private_key_chunk.id)
+                                        && typeof shamirs_shares_response.private_key_chunk.id  == "string") {
                                         btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
                                     }
                                     if (btc_pvt_arr[retrieve_pvtkey_req_id].length === localbitcoinplusplus.master_configurations
@@ -19269,30 +19245,6 @@
                                 
                                 if(typeof res_obj.globalParams.senderFloId !="string") return;
                                 
-                                // localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.globalParams.senderFloId)
-                                // .then(my_closest_su_list=>{
-                                //     const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
-                                //     const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
-
-                                //     if(typeof backup_server_db_instance !== "object") {
-                                //         let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                //         showMessage(backup_db_error_msg);
-                                //         throw new Error(backup_db_error_msg);
-                                //     };
-
-                                //     backup_server_db_instance.backup_readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
-                                //     res) {
-                                //         RM_RPC
-                                //             .send_rpc
-                                //             .call(this, "retrieve_shamirs_secret_btc_pvtkey", {
-                                //                 retrieve_pvtkey_req_id: res_obj.params[0].retrieve_pvtkey_req_id,
-                                //                 private_key_chunk: res,
-                                //                 withdraw_id: res_obj.params[0].withdraw_id,
-                                //                 receiver_flo_address: res_obj.globalParams.senderFloId,
-                                //             }).then(send_pvtkey_req=>doSend(send_pvtkey_req, res_obj.globalParams.senderFloId));
-                                //     });
-                                // });
-
                                 readDB("supernode_private_key_chunks", res_obj.params[0].chunk_val).then(function (
                                 res) {
                                     RM_RPC
@@ -19310,24 +19262,8 @@
 
                             case "store_shamirs_secret_pvtkey_shares":
                             if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-
-                                // if(typeof res_obj.params[0].trader_flo_address !="string") return;
-                                // localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
-                                // .then(my_closest_su_list=>{
-                                //     const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
-                                //     const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
-
-                                //     if(typeof backup_server_db_instance !== "object") {
-                                //         let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                //         showMessage(backup_db_error_msg);
-                                //         throw new Error(backup_db_error_msg);
-                                //     };
-                                //     delete res_obj.params[0].trader_flo_address;
-                                //     backup_server_db_instance.backup_addDB("supernode_private_key_chunks", res_obj.params[0]);
-                                // });
                                 delete res_obj.params[0].trader_flo_address;
                                 addDB("supernode_private_key_chunks", res_obj.params[0]);
-                               
                             }
                             break;
 
@@ -19351,13 +19287,16 @@
                                     
                                     // Filter function below logic source - 
                                     // https://stackoverflow.com/a/9229821/5348972
-                                    let seen_chunk_id_list = {};
+                                    let seen_chunk_id_list = [];
+                                    
                                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
                                         return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
-                                            ? false : (seen_chunk_id_list[item.private_key_chunk.id] = true);
+                                            ? false : (seen_chunk_id_list.push(item.private_key_chunk.id));
                                     });
+
                                     if (!seen_chunk_id_list
-                                        .includes(shamirs_shares_response.private_key_chunk.id)) {
+                                        .includes(shamirs_shares_response.private_key_chunk.id)
+                                        && typeof shamirs_shares_response.private_key_chunk.id  == "string") {
                                         btc_pvt_arr[retrieve_pvtkey_req_id].push(shamirs_shares_response);    
                                     }
                                     
