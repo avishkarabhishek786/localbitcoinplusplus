@@ -12610,65 +12610,98 @@
                                                                 ************************************************************************************************************************************/
 
                                                                 readDBbyIndex('deposit', 'btc_address', withdraw_res.utxo_addr)
-                                                                .then(async function (deposit_arr_resp) {
+                                                                .then(deposit_arr_resp => {
                                                                     if (typeof deposit_arr_resp == "object") {
-                                                                        deposit_arr_resp.map(deposit_arr => {
+                                                                        deposit_arr_resp.map(async deposit_arr => {
 
-                                                                        let explorer;
-                                                                        let decimal = 100000000;
-                                                                        switch (deposit_arr.product) {
-                                                                            case "BTC":
-                                                                                explorer = localbitcoinplusplus.server.btc_mainnet;
-                                                                                break;
-                                                                            case "BTC_TEST":
-                                                                                explorer = localbitcoinplusplus.server.btc_testnet;
-                                                                                break;
-                                                                            case "FLO":
-                                                                                explorer = localbitcoinplusplus.server.flo_mainnet;
-                                                                                decimal = 1;
-                                                                                break;
-                                                                            case "FLO_TEST":
-                                                                                explorer = localbitcoinplusplus.server.flo_testnet;
-                                                                                decimal = 1;
-                                                                                break;
-                                                                            default:
-                                                                                break;
-                                                                        }
+                                                                            let explorer;
+                                                                            let decimal = 100000000;
+                                                                            switch (deposit_arr.product) {
+                                                                                case "BTC":
+                                                                                    explorer = localbitcoinplusplus.server.btc_mainnet;
+                                                                                    break;
+                                                                                case "BTC_TEST":
+                                                                                    explorer = localbitcoinplusplus.server.btc_testnet;
+                                                                                    break;
+                                                                                case "FLO":
+                                                                                    explorer = localbitcoinplusplus.server.flo_mainnet;
+                                                                                    decimal = 1;
+                                                                                    break;
+                                                                                case "FLO_TEST":
+                                                                                    explorer = localbitcoinplusplus.server.flo_testnet;
+                                                                                    decimal = 1;
+                                                                                    break;
+                                                                                default:
+                                                                                    break;
+                                                                            }
 
-                                                                        if(typeof explorer !== "string") {
-                                                                            throw new Error(`WARNING: Invalid product value: ${deposit_arr.product}.`);
-                                                                            return false;
-                                                                        }
+                                                                            if(typeof explorer !== "string") {
+                                                                                throw new Error(`WARNING: Invalid product value: ${deposit_arr.product}.`);
+                                                                                return false;
+                                                                            }
 
-                                                                        const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
-                                                                        console.log(bal_url);
+                                                                            const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
+                                                                            console.log(bal_url);
 
-                                                                        const current_balance = await helper_functions.ajaxGet(bal_url);
-                                                                        if (!isNaN(current_balance) && parseFloat(current_balance) > 0) {
-                                                                            current_balance = Number(parseFloat(current_balance/decimal));
-                                                                        }
+                                                                            let current_balance = await helper_functions.ajaxGet(bal_url);
+                                                                            if (!isNaN(current_balance) && parseFloat(current_balance) > 0) {
+                                                                                current_balance = Number(parseFloat(current_balance/decimal));
+                                                                            }
 
-                                                                        if (typeof current_balance=="number") {
-                                                                            deposit_arr.bitcoinToBePaid = current_balance;
-                                                                        } else {
-                                                                            deposit_arr.bitcoinToBePaid -= EqCryptoWd;
-                                                                        }
+                                                                            if (typeof current_balance=="number") {
+                                                                                deposit_arr.bitcoinToBePaid = current_balance;
+                                                                            } else {
+                                                                                deposit_arr.bitcoinToBePaid -= EqCryptoWd;
+                                                                            }
 
-                                                                        if (deposit_arr.bitcoinToBePaid > 0) {
-                                                                            // update deposits in db
-                                                                            deposit_arr.status = 2; // UTXO ready to be used again
-                                                                            updateinDB("deposit", deposit_arr, deposit_arr.id);
+                                                                            if (deposit_arr.bitcoinToBePaid > 0) {
+                                                                                // update deposits in db
+                                                                                deposit_arr.status = 2; // UTXO ready to be used again
+                                                                                updateinDB("deposit", deposit_arr, deposit_arr.id);
+                                                                                
+                                                                                // Do not delete these data instantly as the data 
+                                                                                // may be required by a follow-up withdraw request 
+                                                                                localbitcoinplusplus.actions.delay(900000).then(()=>{
+                                                                                    removeinDB('withdraw_btc', withdraw_id);
 
-                                                                        } else {
-                                                                            // delete entry in deposits in db
-                                                                            removeinDB("deposit", deposit_arr.id);
-                                                                            removeinDB('system_btc_reserves_private_keys', retrieve_pvtkey_req_id);
-                                                                        }
-                                                                    }
-                                                                );
-                                                                // Delete the withdrawal request
-                                                                removeinDB('withdraw_btc', withdraw_id);
-                                                                return true;
+                                                                                    RM_RPC
+                                                                                    .send_rpc(
+                                                                                        "delete_deposited_crypto_instance",
+                                                                                        {
+                                                                                            withdraw_btc_id: withdraw_id,
+                                                                                            db_inst: params.db_inst,
+                                                                                            trader_flo_address: deposit_arr.trader_flo_address
+                                                                                        }
+                                                                                    ).then(delRequestObject=>
+                                                                                    doSend(delRequestObject));
+                                                                                });
+
+                                                                            } else {
+                                                                                // Do not delete these data instantly as the data 
+                                                                                // may be required by a follow-up withdraw request 
+                                                                                localbitcoinplusplus.actions.delay(900000).then(()=>{
+                                                                                    // delete entry in deposits in db
+                                                                                    removeinDB("deposit", deposit_arr.id);
+                                                                                    removeinDB('system_btc_reserves_private_keys', retrieve_pvtkey_req_id);
+                                                                                    removeinDB('withdraw_btc', withdraw_id);
+
+                                                                                    RM_RPC
+                                                                                    .send_rpc(
+                                                                                        "delete_deposited_crypto_instance",
+                                                                                        {
+                                                                                            deposit_id: deposit_arr.id,
+                                                                                            btc_reserve_id: retrieve_pvtkey_req_id,
+                                                                                            withdraw_btc_id: withdraw_id,
+                                                                                            db_inst: params.db_inst,
+                                                                                            trader_flo_address: deposit_arr.trader_flo_address
+                                                                                        }
+                                                                                    ).then(delRequestObject=>
+                                                                                    doSend(delRequestObject));
+                                                                                });
+                                                                                
+                                                                            }
+                                                                    });
+                                                                    return true;
                                                                 }
                                                             });
 
@@ -13900,8 +13933,7 @@
                                                                                 "object"
                                                                             ) {
                                                                                 deposit_arr_resp
-                                                                                    .map(
-                                                                                        deposit_arr => {
+                                                                                    .map(async deposit_arr => {
                                                                                             let explorer;
                                                                                             let decimal = 100000000;
                                                                                             switch (deposit_arr.product) {
@@ -13931,7 +13963,7 @@
                                                                                             const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
                                                                                             console.log(bal_url);
 
-                                                                                            const current_balance = await helper_functions.ajaxGet(bal_url);
+                                                                                            let current_balance = await helper_functions.ajaxGet(bal_url);
                                                                                             if (!isNaN(current_balance) && parseFloat(current_balance) > 0) {
                                                                                                 current_balance = Number(parseFloat(current_balance/decimal));
                                                                                             }
@@ -13952,22 +13984,54 @@
                                                                                                         deposit_arr.id
                                                                                                     );
 
+                                                                                                localbitcoinplusplus.actions.delay(900000).then(()=>{
+                                                                                                    backup_server_db_instance.backup_removeinDB('withdraw_btc', withdraw_id);
+
+                                                                                                    RM_RPC
+                                                                                                    .send_rpc(
+                                                                                                        "delete_deposited_crypto_instance",
+                                                                                                        {
+                                                                                                            withdraw_btc_id: withdraw_id,
+                                                                                                            db_inst: params.db_inst,
+                                                                                                            trader_flo_address: deposit_arr.trader_flo_address
+                                                                                                        }
+                                                                                                    ).then(delRequestObject=>
+                                                                                                    doSend(delRequestObject));
+                                                                                                });
+
                                                                                             } else {
-                                                                                                // delete entry in deposits in db
-                                                                                                backup_server_db_instance.backup_removeinDB
+
+                                                                                                localbitcoinplusplus.actions.delay(900000).then(()=>{
+                                                                                                    // delete entry in deposits in db
+                                                                                                    backup_server_db_instance.backup_removeinDB
                                                                                                     (
                                                                                                         "deposit",
                                                                                                         deposit_arr.id
                                                                                                     );
+                                                                                                    
+                                                                                                    backup_server_db_instance
+                                                                                                    .backup_removeinDB('system_btc_reserves_private_keys', 
+                                                                                                    retrieve_pvtkey_req_id);
+
+                                                                                                    backup_server_db_instance.backup_removeinDB('withdraw_btc', withdraw_id);
+
+                                                                                                    RM_RPC
+                                                                                                    .send_rpc(
+                                                                                                        "delete_deposited_crypto_instance",
+                                                                                                        {
+                                                                                                            deposit_id: deposit_arr.id,
+                                                                                                            btc_reserve_id: retrieve_pvtkey_req_id,
+                                                                                                            withdraw_btc_id: withdraw_id,
+                                                                                                            db_inst: params.db_inst,
+                                                                                                            trader_flo_address: deposit_arr.trader_flo_address
+                                                                                                        }
+                                                                                                    ).then(delRequestObject=>
+                                                                                                    doSend(delRequestObject));
+                                                                                                });
                                                                                                 
-                                                                                                backup_server_db_instance
-                                                                                                .backup_removeinDB('system_btc_reserves_private_keys', 
-                                                                                                retrieve_pvtkey_req_id);
                                                                                             }
                                                                                         }
                                                                                     );
-                                                                                // Delete the withdrawal request
-                                                                                backup_server_db_instance.backup_removeinDB('withdraw_btc', withdraw_id);
                                                                                 return true;
                                                                             }
                                                                         });
@@ -14706,6 +14770,11 @@
                                         trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
                                     }
                                 }
+                            }
+
+                            // Output cannot be greater than input
+                            if (sum < btc_eq_receiving_amount) {
+                                btc_eq_receiving_amount = sum;
                             }
 
                             btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
@@ -16395,8 +16464,10 @@
                                     let seen_chunk_id_list = [];
                                     
                                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
-                                        return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
-                                            ? false : (seen_chunk_id_list.push(item.private_key_chunk.id));
+                                        if (typeof item.private_key_chunk !== "undefined") {
+                                            return seen_chunk_id_list.hasOwnProperty(item.private_key_chunk.id) 
+                                            ? false : (seen_chunk_id_list.push(item.private_key_chunk.id));   
+                                        }
                                     });
 
                                     if (!seen_chunk_id_list
@@ -18674,6 +18745,29 @@
                                     })();
                                 }
                             break;
+
+                            case "delete_deposited_crypto_instance":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(res_obj.nodePubKey)) {
+                                    const res_data = res_obj.params[0];
+                                    const backup_db = res_data.db_inst;
+                                    try {
+                                        if (typeof backup_db=="string" && backup_db.length>0) {
+                                            if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                                                const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                                                const _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+
+                                                if (typeof res_data.withdraw_btc_id == "string") _removeinDB('withdraw_btc', res_data.withdraw_btc_id);
+                                                if (typeof res_data.deposit_id == "string") _removeinDB('deposit', res_data.deposit_id);
+                                                if (typeof res_data.btc_reserve_id == "string") _removeinDB('system_btc_reserves_private_keys', res_data.btc_reserve_id);
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.error(e);
+                                    }
+                                    
+                                }
+                            break;
                                 
                             default:
                                 break;
@@ -19840,6 +19934,29 @@
                                     }
 
                                 }                                
+                            break;
+
+                            case "delete_deposited_crypto_instance":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(res_obj.nodePubKey)) {
+                                    const res_data = res_obj.params[0];
+                                    const backup_db = res_data.db_inst;
+                                    try {
+                                        if (typeof backup_db=="string" && backup_db.length>0) {
+                                            if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                                                const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                                                const _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+
+                                                if (typeof res_data.withdraw_btc_id == "string") _removeinDB('withdraw_btc', res_data.withdraw_btc_id);
+                                                if (typeof res_data.deposit_id == "string") _removeinDB('deposit', res_data.deposit_id);
+                                                if (typeof res_data.btc_reserve_id == "string") _removeinDB('system_btc_reserves_private_keys', res_data.btc_reserve_id);
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.error(e);
+                                    }
+                                    
+                                }
                             break;
 
                             default: 
