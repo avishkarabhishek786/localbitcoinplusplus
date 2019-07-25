@@ -12109,15 +12109,15 @@
                                 if (is_valid_request !== true) return false;
 
                                 if (typeof params.product !== "undefined" &&
-                                    (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
+                                    ((localbitcoinplusplus.master_configurations.tradableAsset1.includes(
                                             params.product) ||
+                                    localbitcoinplusplus.master_configurations.tradableAsset2.includes(
+                                            params.product)) &&
                                         localbitcoinplusplus.master_configurations.tradableAsset2.includes(
                                             params.currency)) &&
                                     typeof params.withdrawing_amount !== "undefined" &&
                                     typeof localbitcoinplusplus.master_configurations.validTradingAmount !==
                                     'undefined' &&
-                                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(
-                                        parseFloat(params.withdrawing_amount)) &&
                                     typeof params.trader_flo_address == "string" && params.trader_flo_address
                                     .length > 0 &&
                                     typeof params.receivinAddress == "string" && params.receivinAddress
@@ -12136,17 +12136,17 @@
 
                                     if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
                                             params.product)) {
-                                        let eqCrypto = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                            params.withdrawing_amount, params.currency, params.product);
-                                        if (trade_margin.remaining_crypto_credit < 0 ||
-                                            trade_margin.remaining_crypto_credit < eqCrypto) {
+                                        if (trade_margin.remaining_crypto_credit < 0 
+                                            || params.withdrawing_amount <= 0
+                                            || trade_margin.remaining_crypto_credit < params.withdrawing_amount) {
                                             err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`
                                             showMessage(err_msg);
                                             throw new Error(err_msg);
                                         }
                                     } else {
-                                        if (trade_margin.remaining_fiat_credit < 0 || trade_margin.remaining_fiat_credit <
-                                            params.withdrawing_amount) {
+                                        if (trade_margin.remaining_fiat_credit < 0 
+                                            || params.withdrawing_amount <= 0
+                                            || trade_margin.remaining_fiat_credit < params.withdrawing_amount) {
                                             err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
                                             showMessage(err_msg);
                                             throw new Error(err_msg);
@@ -12166,26 +12166,13 @@
                                                 typeof btc_balance_res
                                                 .trader_flo_address == "string" &&
                                                 btc_balance_res.crypto_balance > 0) {
-                                                let withdrawer_btc_balance = parseFloat(
-                                                    btc_balance_res.crypto_balance);
-                                                let withdrawing_btc_amount_in_cash =
-                                                    parseFloat(params.withdrawing_amount);
-                                                if (!localbitcoinplusplus.master_configurations
-                                                    .tradableAsset2.includes(params.currency)
-                                                ) {
-                                                    err_msg = "Invalid or unsupported currency.";
-                                                    showMessage(err_msg);
-                                                    throw new Error(err_msg);
-                                                }
-                                                let eqBTC = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                                    withdrawing_btc_amount_in_cash,
-                                                    params.currency, params.product);
-                                                eqBTC = Number(parseFloat(eqBTC).toFixed(8));
+                                                let withdrawer_btc_balance = Number(
+                                                    btc_balance_res.crypto_balance).toFixed(8);
+                                                const eqBTC = Number(parseFloat(params.withdrawing_amount).toFixed(8));
                                                 let withdrawer_new_btc_balance =
                                                     withdrawer_btc_balance - eqBTC;
                                                 if (withdrawer_new_btc_balance >= 0 &&
                                                     withdrawer_btc_balance > 0 &&
-                                                    withdrawing_btc_amount_in_cash > 0 &&
                                                     eqBTC > 0 && eqBTC <=
                                                     withdrawer_btc_balance) {
 
@@ -12197,8 +12184,7 @@
                                                     ****************************************************************************/
                                                     let sum_total_btc = 0;
                                                     let valid_utxo_list = [];
-                                                    let receiverBTCAddress = params.receivinAddress
-                                                        .trim();
+                                                    let receiverBTCAddress = params.receivinAddress.trim();
 
                                                     readAllDB("deposit").then(function (
                                                         deposit_list) {
@@ -12275,13 +12261,10 @@
                                                                                     .btc_address,
                                                                                 receiverBTCAddress: params
                                                                                     .receivinAddress,
-                                                                                receiverBTCEquivalentInCash: withdrawing_btc_amount_in_cash,
-                                                                                currency: params
-                                                                                    .currency,
-                                                                                product: params
-                                                                                    .product,
-                                                                                change_adress: deposit_arr
-                                                                                    .btc_address,
+                                                                                receivingBTC: eqBTC,
+                                                                                currency: params.currency,
+                                                                                product: params.product,
+                                                                                change_adress: deposit_arr.btc_address,
                                                                                 timestamp: + new Date()
                                                                             }
                                                                         addDB(
@@ -12355,8 +12338,15 @@
                                                 };
                                             }
                                         });
-                                    } else if (!localbitcoinplusplus.master_configurations.tradableAsset1
+                                    } else if (localbitcoinplusplus.master_configurations.tradableAsset2
                                         .includes(params.product)) {
+
+                                        if (!localbitcoinplusplus.master_configurations.validTradingAmount
+                                        .includes(parseFloat(params.withdrawing_amount))) {
+                                            err_msg = `Withdrawal request failed: Please enter valid fiat amount.`;
+                                            showMessage(err_msg);
+                                            throw new Error(err_msg);
+                                        }
                                         // Check if there's no already a withdraw cash order of this user
                                         /*ONLY DELETE A WITHDRAW ORDER WHEN A DEPOSITOR HAS CONFIRMED DEPOSIT
                                         AND RECEIVER HAS CONFIRMED WITHDRAW*/
@@ -12512,10 +12502,7 @@
                                                     await RM_TRADE.resolve_current_crypto_price_in_fiat(
                                                         withdraw_res.product,
                                                         withdraw_res.currency);
-                                                    const EqCryptoWd = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                                        withdraw_res.receiverBTCEquivalentInCash,
-                                                        withdraw_res.currency,
-                                                        withdraw_res.product);
+                                                    const EqCryptoWd = withdraw_res.receivingBTC;
 
                                                     let transaction_key =
                                                         btc_reserves.supernode_transaction_key;
@@ -12531,8 +12518,7 @@
                                                             withdraw_res.utxo_addr,
                                                             btc_private_key,
                                                             withdraw_res.receiverBTCAddress,
-                                                            withdraw_res.receiverBTCEquivalentInCash,
-                                                            withdraw_res.currency,
+                                                            withdraw_res.receivingBTC,
                                                             withdraw_res.change_adress,
                                                             async function (res) {
                                                                 console.log(res);
@@ -13566,7 +13552,7 @@
                                                                                     .btc_address,
                                                                                 receiverBTCAddress: params
                                                                                     .receivinAddress,
-                                                                                receiverBTCEquivalentInCash: withdrawing_btc_amount_in_cash,
+                                                                                receivingBTC: eqBTC,
                                                                                 currency: params
                                                                                     .currency,
                                                                                 product: params
@@ -13812,11 +13798,7 @@
                                                     await RM_TRADE.resolve_current_crypto_price_in_fiat(
                                                         withdraw_res.product,
                                                         withdraw_res.currency);
-                                                    let EqCryptoWd = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                                        withdraw_res.receiverBTCEquivalentInCash,
-                                                        withdraw_res.currency,
-                                                        withdraw_res.product);
-                                                    EqCryptoWd = parseFloat(EqCryptoWd);
+                                                    let EqCryptoWd = Number(withdraw_res.receivingBTC);
 
                                                     let transaction_key =
                                                         btc_reserves.supernode_transaction_key;
@@ -13831,8 +13813,7 @@
                                                             withdraw_res.utxo_addr,
                                                             btc_private_key,
                                                             withdraw_res.receiverBTCAddress,
-                                                            withdraw_res.receiverBTCEquivalentInCash,
-                                                            withdraw_res.currency,
+                                                            withdraw_res.receivingBTC,
                                                             withdraw_res.change_adress,
                                                             async function (res) {
                                                                 console.log(res);
@@ -14709,7 +14690,7 @@
                 return localbitcoinplusplus.trade[`current_${crypto_code}_price_in_${currency_code}`];
             },
             sendTransaction(crypto_type, utxo_addr, utxo_addr_wif, receiver_address, receiving_amount,
-                receiving_amount_currency = null, change_adress, callback) {
+                change_adress, callback) {
                 let blockchain_explorer;
                 let miners_fee = 0.0003;
                 const miner_fee_obj=JSON.parse(localbitcoinplusplus.master_configurations.miners_fee);
@@ -14740,20 +14721,8 @@
 
                     if (utxo_list.length > 0) {
                         try {
-                            let btc_eq_receiving_amount = receiving_amount;
-
-                            if (typeof receiving_amount_currency == "string") {
-                                if (!localbitcoinplusplus.master_configurations.validTradingAmount.includes(
-                                        receiving_amount)) {
-                                    err_msg = `ERROR: Amount value is invalid.`;
-                                    showMessage(err_msg);
-                                    throw new Error(err_msg);
-                                }
-                                const RM_TRADE = new localbitcoinplusplus.trade;
-                                btc_eq_receiving_amount = RM_TRADE.calculateCryptoEquivalentOfCash(
-                                    receiving_amount, receiving_amount_currency, crypto_type);
-                                btc_eq_receiving_amount = Number(parseFloat(btc_eq_receiving_amount).toFixed(8));
-                            }
+                            let btc_eq_receiving_amount = Number(receiving_amount);
+                            btc_eq_receiving_amount = Number(receiving_amount.toFixed(8));
 
                             let trx = bitjs[crypto_type].transaction();
                             let sum = 0;
@@ -14770,6 +14739,11 @@
                                         trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
                                     }
                                 }
+                            }
+
+                            if (sum <=0) {
+                                console.log(utxo_list);
+                                throw new Error('ERROR: No amount found in UTXO.');
                             }
 
                             // Output cannot be greater than input
@@ -15286,8 +15260,7 @@
 
                     let withdraw_crypto_equivalent = 0;
                     user_crypto_withdraw_request.map(req => {
-                        withdraw_crypto_eq = RM_TRADE.calculateCryptoEquivalentOfCash(req.receiverBTCEquivalentInCash,
-                            req.currency, req.product);
+                        withdraw_crypto_eq = req.receivingBTC;
                         withdraw_crypto_equivalent += Number(withdraw_crypto_eq);
                     });
 
@@ -20198,7 +20171,7 @@
             trader_flo_address: null,
             utxo_addr: null,
             receiverBTCAddress: null,
-            receiverBTCEquivalentInCash: null,
+            receivingBTC: null,
             currency: null,
             product: null,
             change_adress: null,
@@ -21599,12 +21572,10 @@
                     showMessage(err_msg);
                     throw new Error(err_msg);
                 }
-                if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
-                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
-                    (typeof localbitcoinplusplus.master_configurations.tradableAsset1 !== 'undefined' &&
-                        localbitcoinplusplus.master_configurations.tradableAsset1.includes(asset_type) ||
-                        typeof localbitcoinplusplus.master_configurations.tradableAsset2 !== 'undefined' &&
-                        localbitcoinplusplus.master_configurations.tradableAsset2.includes(asset_type))
+                if (typeof localbitcoinplusplus.master_configurations.tradableAsset1 !== 'undefined' &&
+                    localbitcoinplusplus.master_configurations.tradableAsset1.includes(asset_type) ||
+                    typeof localbitcoinplusplus.master_configurations.tradableAsset2 !== 'undefined' &&
+                    localbitcoinplusplus.master_configurations.tradableAsset2.includes(asset_type)
                 ) {
                     RM_TRADE.depositAsset(asset_type, tradeAmount, fiatCurrency, userFLOaddress);
                 } else {
@@ -21631,9 +21602,15 @@
                     showMessage(err_msg);
                     throw new Error(err_msg);
                 }
-                if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
-                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount) &&
-                    typeof localbitcoinplusplus.master_configurations.tradableAsset1 !== 'undefined' &&
+                if (localbitcoinplusplus.master_configurations.tradableAsset2.includes(asset_type)) {
+                    if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
+                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(tradeAmount)) {
+                        err_msg = "Invalid Fiat Value.";
+                        showMessage(err_msg);
+                        throw new Error(err_msg);                        
+                    }
+                }
+                if (typeof localbitcoinplusplus.master_configurations.tradableAsset1 !== 'undefined' &&
                     typeof localbitcoinplusplus.master_configurations.tradableAsset2 !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.tradableAsset1
                     .concat(localbitcoinplusplus.master_configurations.tradableAsset2).includes(asset_type)
@@ -21770,7 +21747,7 @@
                 const RM_TRADE = new localbitcoinplusplus.trade;
                 RM_TRADE.sendTransaction(send_crypto_type.value, utxo_addr_input.value, utxo_addr_wif_input.value,
                     receiver_address_input.value,
-                    receiving_crypto_amount_input.value, null, change_adress_input.value,
+                    receiving_crypto_amount_input.value, change_adress_input.value,
                     async function (res) {
                         console.log(res);
                         if (typeof res == "object") {
