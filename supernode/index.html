@@ -11736,20 +11736,16 @@
                                 if (is_valid_request !== true) return false;
 
                                 // This code will only run for supernodes
-                                if (typeof params.product !== "undefined" &&
-                                    (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
-                                            params.product) ||
-                                        localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-                                            params.product)) &&
-                                    typeof params.depositing_amount !== "undefined" &&
-                                    localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-                                        params.currency) &&
-                                    typeof localbitcoinplusplus.master_configurations.validTradingAmount !==
-                                    'undefined' &&
-                                    localbitcoinplusplus.master_configurations.validTradingAmount.includes(
-                                        parseFloat(params.depositing_amount)) &&
-                                    typeof params.trader_flo_address == "string" &&
-                                    params.trader_flo_address.length > 0
+                                if (typeof params.product !== "undefined" 
+                                    && (localbitcoinplusplus.master_configurations.tradableAsset1.includes(params.product) 
+                                        || localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.product)) 
+                                    && typeof params.depositing_amount !== "undefined" 
+                                    && localbitcoinplusplus.master_configurations.tradableAsset2.includes(params.currency) 
+                                    && typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' 
+                                    && localbitcoinplusplus.master_configurations.validTradingAmount
+                                        .includes(parseFloat(params.depositing_amount)) 
+                                    && typeof params.trader_flo_address == "string" 
+                                    && params.trader_flo_address.length > 0
                                 ) {
                                     RM_WALLET.getUserPublicKey(params.trader_flo_address,
                                         async function (requester_public_key) {
@@ -11790,7 +11786,7 @@
                                                 }
 
                                                 readDB("localbitcoinUser", "00-01").then(
-                                                    function (su_data) {
+                                                    async function (su_data) {
                                                         if (typeof su_data == "object" &&
                                                             typeof su_data.myLocalFLOPublicKey ==
                                                             "string" &&
@@ -11818,16 +11814,15 @@
                                                                 if (typeof this_btc_pvt_key_shamirs_secret == "object" 
                                                                     && this_btc_pvt_key_shamirs_secret.length > 0) {
 
-                                                                    addDB("deposit", receivedTradeInfo);
+                                                                    const deposit_res = await addDB("deposit", receivedTradeInfo);
 
                                                                     // Send the address to the requester
-                                                                    let
-                                                                        deposit_response_object = {
-                                                                            error: false,
-                                                                            method: "deposit_asset_request_response",
-                                                                            msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
-                                                                            data: receivedTradeInfo
-                                                                        };
+                                                                    let deposit_response_object = {
+                                                                        error: false,
+                                                                        method: "deposit_asset_request_response",
+                                                                        msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
+                                                                        data: deposit_res
+                                                                    };
                                                                     deposit_response_object.receiver_flo_address = params.trader_flo_address;
                                                                     deposit_response_object.trader_flo_address = params.trader_flo_address;
                                                                     RM_RPC
@@ -11932,21 +11927,21 @@
                                                             }
 
                                                             // Send the address to the requester
-                                                            let deposit_response_object = {
-                                                                error: false,
-                                                                method: "deposit_asset_request_response",
-                                                                msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
-                                                                data: receivedTradeInfo,
-                                                                receiver_flo_address: params.trader_flo_address,
-                                                                trader_flo_address: params.trader_flo_address,
-                                                            };
+                                                            // let deposit_response_object = {
+                                                            //     error: false,
+                                                            //     method: "deposit_asset_request_response",
+                                                            //     msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
+                                                            //     data: receivedTradeInfo,
+                                                            //     receiver_flo_address: params.trader_flo_address,
+                                                            //     trader_flo_address: params.trader_flo_address,
+                                                            // };
 
-                                                            RM_RPC.send_rpc
-                                                                .call(this,
-                                                                    "deposit_asset_request_response",
-                                                                    deposit_response_object
-                                                                ).then(deposit_request_response=>
-                                                                doSend(deposit_request_response));
+                                                            // RM_RPC.send_rpc
+                                                            //     .call(this,
+                                                            //         "deposit_asset_request_response",
+                                                            //         deposit_response_object
+                                                            //     ).then(deposit_request_response=>
+                                                            //     doSend(deposit_request_response));
                                                             return true;
                                                         }
                                                     });
@@ -11976,11 +11971,9 @@
                                                                 Crypto.SHA256(JSON.stringify(
                                                                     receivedTradeInfo));
 
-                                                            receivedTradeInfo[
-                                                                    "depositDataHash"] =
+                                                            receivedTradeInfo["depositDataHash"] =
                                                                 receivedTradeInfoHash;
-                                                            receivedTradeInfo[
-                                                                    "order_validator_sign"] =
+                                                            receivedTradeInfo["order_validator_sign"] =
                                                                 RM_WALLET.sign(
                                                                     receivedTradeInfoHash,
                                                                     localbitcoinplusplus.wallets
@@ -11992,12 +11985,11 @@
 
                                                             // YOU NEED TO DETERMINE A BANK ACCOUNT HERE IF NO ONE IS WITHDRAWING
                                                             try {
-                                                                addDB("deposit",
-                                                                    receivedTradeInfo);
+                                                                addDB("deposit", receivedTradeInfo);
                                                                 readDBbyIndex(
                                                                     "withdraw_cash",
                                                                     "status", 1).then(
-                                                                    function (
+                                                                    async function (
                                                                         withdrawers_list
                                                                     ) {
                                                                         if (typeof withdrawers_list ==
@@ -12007,7 +11999,7 @@
                                                                                 withdrawers_list.filter(
                                                                                         wd => wd.currency ==
                                                                                         params.currency).map(
-                                                                                        function (withdrawer) {
+                                                                                        async function (withdrawer) {
                                                                                             if (
                                                                                                 withdrawer.withdraw_amount ==
                                                                                                 params.depositing_amount &&
@@ -12017,10 +12009,10 @@
                                                                                                 withdrawer.status = 2; // A depositor has been asked to deposit money
                                                                                                 withdrawer.depositor_found_at = + new Date();
                                                                                                 withdrawer.depositor_flo_id = receivedTradeInfo.trader_flo_address;
-                                                                                                updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
+                                                                                                const withdraw_resp = await updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
 
                                                                                                 receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
-                                                                                                updateinDB(
+                                                                                                const receivedTradeInfo_resp = await updateinDB(
                                                                                                     "deposit",
                                                                                                     receivedTradeInfo,
                                                                                                     receivedTradeInfo.trader_flo_address
@@ -12031,9 +12023,9 @@
                                                                                                 let deposit_response_object = {
                                                                                                     error: false,
                                                                                                     method: "deposit_asset_request_response",
-                                                                                                    msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
-                                                                                                    data: receivedTradeInfo,
-                                                                                                    withdrawer_data: withdrawer,
+                                                                                                    msg: `Please send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                                                    data: receivedTradeInfo_resp,
+                                                                                                    withdrawer_data: withdraw_resp,
                                                                                                     receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                                     trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                                 };
@@ -12054,24 +12046,24 @@
                                                                                     );
                                                                             } else {
                                                                                 //No one is withdrawing so provide your bank details
-                                                                                let
-                                                                                    deposit_response_object = {
-                                                                                        error: false,
-                                                                                        method: "deposit_asset_request_response",
-                                                                                        msg: `Plese send the money to following bank address: "System determined bank".`,
-                                                                                        data: receivedTradeInfo,
-                                                                                        receiver_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                        trader_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                    };
-
+                                                                                
                                                                                 receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
-                                                                                updateinDB
+                                                                                const receivedTradeInfo_resp = await updateinDB
                                                                                     (
                                                                                         "deposit",
                                                                                         receivedTradeInfo,
                                                                                         receivedTradeInfo
                                                                                         .trader_flo_address
                                                                                     );
+
+                                                                                let deposit_response_object = {
+                                                                                    error: false,
+                                                                                    method: "deposit_asset_request_response",
+                                                                                    msg: `Please send the money to following bank address: "System determined bank".`,
+                                                                                    data: receivedTradeInfo_resp,
+                                                                                    receiver_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                    trader_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                };
 
                                                                                 RM_RPC
                                                                                     .send_rpc
@@ -12130,8 +12122,7 @@
                                         params.trader_flo_address, params.product, params.currency
                                     );
 
-                                    if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(
-                                            params.product)) {
+                                    if (localbitcoinplusplus.master_configurations.tradableAsset1.includes(params.product)) {
                                         if (trade_margin.remaining_crypto_credit < 0 
                                             || params.withdrawing_amount <= 0
                                             || trade_margin.remaining_crypto_credit < params.withdrawing_amount) {
@@ -12421,17 +12412,20 @@
                                                                     addDB(
                                                                         "withdraw_cash",
                                                                         withdraw_request_db_object
-                                                                    );
-                                                                    // return back the response to client 
-                                                                    withdraw_request_db_object.receiver_flo_address = 
-                                                                    params.trader_flo_address; 
-                                                                    withdraw_request_db_object.trader_flo_address = 
-                                                                    params.trader_flo_address; 
-                                                                    RM_RPC.send_rpc
+                                                                    ).then(withdraw_request_db_object=>{
+                                                                        // return back the response to client 
+                                                                        withdraw_request_db_object.receiver_flo_address = 
+                                                                        params.trader_flo_address; 
+                                                                        withdraw_request_db_object.trader_flo_address = 
+                                                                        params.trader_flo_address; 
+                                                                        RM_RPC.send_rpc
                                                                         .call(this,
                                                                             "withdrawal_request_response",
                                                                             withdraw_request_db_object
-                                                                        ).then(withdrawal_request_response=>doSend(withdrawal_request_response));
+                                                                        ).then(withdrawal_request_response=>
+                                                                            doSend(withdrawal_request_response));
+                                                                    });
+
                                                                     return true;
                                                                 } catch (error) {
                                                                     console.log(error);
@@ -12563,7 +12557,7 @@
                                                                                         );
 
                                                                                         const updateUserCryptoBalanceObject = {
-                                                                                            updatedBTCBalanceObject: res_bal,
+                                                                                            updatedBTCBalanceObject: res_obj,
                                                                                             updatedBTCBalanceObjectSign: res_obj_sign,
                                                                                             trader_flo_address: withdraw_res.trader_flo_address,
                                                                                             receiver_flo_address: withdraw_res.trader_flo_address,
@@ -12632,15 +12626,33 @@
 
                                                                             if (typeof current_balance=="number") {
                                                                                 deposit_arr.bitcoinToBePaid = current_balance;
+                                                                                btc_reserves.balance = current_balance;
                                                                             } else {
                                                                                 deposit_arr.bitcoinToBePaid -= EqCryptoWd;
+                                                                                btc_reserves.balance -= EqCryptoWd;
                                                                             }
 
                                                                             if (deposit_arr.bitcoinToBePaid > 0) {
                                                                                 // update deposits in db
                                                                                 deposit_arr.status = 2; // UTXO ready to be used again
-                                                                                updateinDB("deposit", deposit_arr, deposit_arr.id);
-                                                                                
+                                                                                const deposit_resp = await updateinDB("deposit", deposit_arr, deposit_arr.id)
+                                                                                // Update new balance in system_btc_reserves
+                                                                                const reserves_resp = await updateinDB("system_btc_reserves_private_keys", 
+                                                                                    btc_reserves, btc_reserves.id);
+
+                                                                                // Send the resp to backups
+                                                                                RM_RPC
+                                                                                    .send_rpc(
+                                                                                        "update_deposited_crypto_instance",
+                                                                                        {
+                                                                                            deposit_data: deposit_resp,
+                                                                                            btc_reserve_data: reserves_resp,
+                                                                                            db_inst: params.db_inst,
+                                                                                            trader_flo_address: deposit_arr.trader_flo_address
+                                                                                        }
+                                                                                    ).then(delRequestObject=>
+                                                                                    doSend(delRequestObject));
+
                                                                                 // Do not delete these data instantly as the data 
                                                                                 // may be required by a follow-up withdraw request 
                                                                                 localbitcoinplusplus.actions.delay(900000).then(()=>{
@@ -12657,6 +12669,10 @@
                                                                                     ).then(delRequestObject=>
                                                                                     doSend(delRequestObject));
                                                                                 });
+
+                                                                                // AND DO THE SAME ABOVE 2 IN BACKUP RECEIVE RPC 
+                                                                                
+                                                                                
 
                                                                             } else {
                                                                                 // Do not delete these data instantly as the data 
@@ -13057,7 +13073,7 @@
                                             }
 
                                             readDB("localbitcoinUser", "00-01").then(
-                                                function (su_data) {
+                                                async function (su_data) {
                                                     if (typeof su_data == "object" &&
                                                         typeof su_data.myLocalFLOPublicKey ==
                                                         "string" &&
@@ -13090,16 +13106,16 @@
                                                                 "object" &&
                                                                 this_btc_pvt_key_shamirs_secret
                                                                 .length > 0) {
-                                                                backup_server_db_instance.backup_addDB("deposit", receivedTradeInfo);
+                                                                
+                                                                const deposit_res = await backup_server_db_instance.backup_addDB("deposit", receivedTradeInfo);
 
                                                                 // Send the address to the requester
-                                                                let
-                                                                    deposit_response_object = {
-                                                                        error: false,
-                                                                        method: "deposit_asset_request_response",
-                                                                        msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
-                                                                        data: receivedTradeInfo
-                                                                    };
+                                                                let deposit_response_object = {
+                                                                    error: false,
+                                                                    method: "deposit_asset_request_response",
+                                                                    msg: `Please send ${params.product} ${params.bitcoinToBePaid} to the following addres: ${generate_btc_keys_for_requester.address}.`,
+                                                                    data: deposit_res
+                                                                };
                                                                 deposit_response_object.receiver_flo_address = params.trader_flo_address;
                                                                 deposit_response_object.trader_flo_address = params.trader_flo_address;
                                                                 
@@ -13206,21 +13222,21 @@
                                                         }
 
                                                         // Send the address to the requester
-                                                        let deposit_response_object = {
-                                                            error: false,
-                                                            method: "deposit_asset_request_response",
-                                                            msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
-                                                            data: receivedTradeInfo,
-                                                            receiver_flo_address: params.trader_flo_address,
-                                                            trader_flo_address: params.trader_flo_address,
-                                                        };
+                                                        // let deposit_response_object = {
+                                                        //     error: false,
+                                                        //     method: "deposit_asset_request_response",
+                                                        //     msg: `Please send the ${params.product} to ${generate_btc_keys_for_requester.address}.`,
+                                                        //     data: deposit_res,
+                                                        //     receiver_flo_address: params.trader_flo_address,
+                                                        //     trader_flo_address: params.trader_flo_address,
+                                                        // };
 
-                                                        RM_RPC.send_rpc
-                                                            .call(this,
-                                                                "deposit_asset_request_response",
-                                                                deposit_response_object
-                                                            ).then(deposit_request_response=>
-                                                            doSend(deposit_request_response));
+                                                        // RM_RPC.send_rpc
+                                                        //     .call(this,
+                                                        //         "deposit_asset_request_response",
+                                                        //         deposit_response_object
+                                                        //     ).then(deposit_request_response=>
+                                                        //     doSend(deposit_request_response));
                                                         return true;
                                                     }
                                                 });
@@ -13269,11 +13285,8 @@
                                                             backup_server_db_instance.backup_addDB("deposit",
                                                                 receivedTradeInfo);
                                                             backup_server_db_instance.backup_readDBbyIndex(
-                                                                "withdraw_cash",
-                                                                "status", 1).then(
-                                                                function (
-                                                                    withdrawers_list
-                                                                ) {
+                                                                "withdraw_cash", "status", 1)
+                                                                .then(async function (withdrawers_list) {
                                                                     if (typeof withdrawers_list ==
                                                                         "object") {
                                                                         if (
@@ -13281,7 +13294,7 @@
                                                                             withdrawers_list.filter(
                                                                                     wd => wd.currency ==
                                                                                     params.currency).map(
-                                                                                    function (withdrawer) {
+                                                                                      async function (withdrawer) {
                                                                                         if (
                                                                                             withdrawer.withdraw_amount ==
                                                                                             params.depositing_amount &&
@@ -13291,10 +13304,11 @@
                                                                                             withdrawer.status = 2; // A depositor has been asked to deposit money
                                                                                             withdrawer.depositor_found_at = + new Date();
                                                                                             withdrawer.depositor_flo_id = receivedTradeInfo.trader_flo_address;
-                                                                                            backup_server_db_instance.backup_updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
+                                                                                            const withdraw_resp = await backup_server_db_instance
+                                                                                                .backup_updateinDB ("withdraw_cash", withdrawer, withdrawer.trader_flo_address);
 
                                                                                             receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
-                                                                                            backup_server_db_instance.backup_updateinDB(
+                                                                                            const receivedTradeInfo_resp = await backup_server_db_instance.backup_updateinDB(
                                                                                                 "deposit",
                                                                                                 receivedTradeInfo,
                                                                                                 receivedTradeInfo.trader_flo_address
@@ -13305,9 +13319,9 @@
                                                                                             let deposit_response_object = {
                                                                                                 error: false,
                                                                                                 method: "deposit_asset_request_response",
-                                                                                                msg: `Plese send the money to following bank address: "${withdrawer_bank_account}"`,
-                                                                                                data: receivedTradeInfo,
-                                                                                                withdrawer_data: withdrawer,
+                                                                                                msg: `Please send the money to following bank address: "${withdrawer_bank_account}"`,
+                                                                                                data: receivedTradeInfo_resp,
+                                                                                                withdrawer_data: withdraw_resp,
                                                                                                 receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                                 trader_flo_address: receivedTradeInfo.trader_flo_address,
                                                                                             };
@@ -13328,24 +13342,24 @@
                                                                                 );
                                                                         } else {
                                                                             //No one is withdrawing so provide your bank details
-                                                                            let
-                                                                                deposit_response_object = {
-                                                                                    error: false,
-                                                                                    method: "deposit_asset_request_response",
-                                                                                    msg: `Plese send the money to following bank address: "System determined bank".`,
-                                                                                    data: receivedTradeInfo,
-                                                                                    receiver_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                    trader_flo_address: receivedTradeInfo.trader_flo_address,
-                                                                                };
-
+                                                                            
                                                                             receivedTradeInfo.status = 2; // withdrawer found. Now deposit money to his account
-                                                                            updateinDB
+                                                                            const receivedTradeInfo_resp = await updateinDB
                                                                                 (
                                                                                     "deposit",
                                                                                     receivedTradeInfo,
                                                                                     receivedTradeInfo
                                                                                     .trader_flo_address
                                                                                 );
+
+                                                                            let deposit_response_object = {
+                                                                                error: false,
+                                                                                method: "deposit_asset_request_response",
+                                                                                msg: `Please send the money to following bank address: "System determined bank".`,
+                                                                                data: receivedTradeInfo_resp,
+                                                                                receiver_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                                trader_flo_address: receivedTradeInfo.trader_flo_address,
+                                                                            };
                                                                             
                                                                             RM_RPC
                                                                                 .send_rpc
@@ -13647,18 +13661,20 @@
                                                             backup_server_db_instance.backup_addDB(
                                                                 "withdraw_cash",
                                                                 withdraw_request_db_object
-                                                            );
-                                                            // return back the response to client 
-                                                            withdraw_request_db_object.receiver_flo_address = 
-                                                            params.trader_flo_address; 
-                                                            withdraw_request_db_object.trader_flo_address = 
-                                                            params.trader_flo_address; 
-                                                            RM_RPC.send_rpc
-                                                                .call(this,
-                                                                    "withdrawal_request_response",
-                                                                    withdraw_request_db_object
-                                                                ).then(withdrawal_request_response
-                                                                    =>doSend(withdrawal_request_response));
+                                                            ).then(withdraw_request_db_object=>{
+                                                                // return back the response to client 
+                                                                withdraw_request_db_object.receiver_flo_address = 
+                                                                params.trader_flo_address; 
+                                                                withdraw_request_db_object.trader_flo_address = 
+                                                                params.trader_flo_address; 
+                                                                RM_RPC.send_rpc
+                                                                    .call(this,
+                                                                        "withdrawal_request_response",
+                                                                        withdraw_request_db_object
+                                                                    ).then(withdrawal_request_response=>
+                                                                    doSend(withdrawal_request_response));
+                                                            });
+                                                            
                                                             return true;
                                                         } catch (error) {
                                                             console.log(error);
@@ -13798,7 +13814,7 @@
                                                                                                         localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
 
                                                                                             const updateUserCryptoBalanceObject = {
-                                                                                                updatedBTCBalanceObject: res_bal,
+                                                                                                updatedBTCBalanceObject: res_obj,
                                                                                                 updatedBTCBalanceObjectSign: res_obj_sign,
                                                                                                 trader_flo_address: withdraw_res.trader_flo_address,
                                                                                                 receiver_flo_address: withdraw_res.trader_flo_address,
@@ -13888,12 +13904,30 @@
                                                                                             if (deposit_arr.bitcoinToBePaid > 0) {
                                                                                                 // update deposits in db
                                                                                                 deposit_arr.status = 2; // UTXO ready to be used again
-                                                                                                backup_server_db_instance.backup_updateinDB
+                                                                                                const deposit_resp = await backup_server_db_instance.backup_updateinDB
                                                                                                     (
                                                                                                         "deposit",
                                                                                                         deposit_arr,
                                                                                                         deposit_arr.id
                                                                                                     );
+
+                                                                                                // Update new balance in system_btc_reserves
+                                                                                                const reserves_resp = await backup_server_db_instance
+                                                                                                    .backup_updateinDB("system_btc_reserves_private_keys", 
+                                                                                                     btc_reserves, btc_reserves.id);
+
+                                                                                                // Send the resp to backups
+                                                                                                RM_RPC
+                                                                                                    .send_rpc(
+                                                                                                        "update_deposited_crypto_instance",
+                                                                                                        {
+                                                                                                            deposit_data: deposit_resp,
+                                                                                                            btc_reserve_data: reserves_resp,
+                                                                                                            db_inst: params.db_inst,
+                                                                                                            trader_flo_address: deposit_arr.trader_flo_address
+                                                                                                        }
+                                                                                                    ).then(delRequestObject=>
+                                                                                                    doSend(delRequestObject));
 
                                                                                                 localbitcoinplusplus.actions.delay(900000).then(()=>{
                                                                                                     backup_server_db_instance.backup_removeinDB('withdraw_btc', withdraw_id);
@@ -14186,11 +14220,10 @@
 
                             // supernode data query
                             readDB('localbitcoinUser', '00-01').then(function (user_data) {
-                                if (typeof user_data == "object" && typeof localbitcoinplusplus.wallets
-                                    .MY_SUPERNODE_PRIVATE_KEY ==
-                                    "string" && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                    .length >
-                                    0) {
+                                if (typeof user_data == "object" 
+                                    && typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY == "string" 
+                                    && localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length > 0
+                                ) {
                                     try {
                                         // Add buy oder
                                         params['id'] = helper_functions.unique_id();
@@ -14205,10 +14238,9 @@
                                         params["supernodePubKey"] = user_data.myLocalFLOPublicKey;
                                         params["status"] = 1;
 
-                                        _addDB("buyOrders", params);
+                                        _addDB("buyOrders", params)
+                                            .then(resp=>callback(resp));
 
-                                        // Send data for further action
-                                        callback(params);
                                     } catch (error) {
                                         console.error(error);
                                         callback(false);
@@ -14304,9 +14336,8 @@
                                     params["supernodePubKey"] = user_data.myLocalFLOPublicKey;
                                     params["status"] = 1;
 
-                                    _addDB("sellOrders", params);
-
-                                    callback(params);
+                                    _addDB("sellOrders", params)
+                                        .then(resp=>callback(resp));
                                 }
                             });
                             callback(false);
@@ -14652,7 +14683,7 @@
                     if (utxo_list.length > 0) {
                         try {
                             let btc_eq_receiving_amount = Number(receiving_amount);
-                            btc_eq_receiving_amount = Number(receiving_amount.toFixed(8));
+                            btc_eq_receiving_amount = Number(btc_eq_receiving_amount.toFixed(8));
 
                             let trx = bitjs[crypto_type].transaction();
                             let sum = 0;
@@ -18649,26 +18680,53 @@
                                 }
                             break;
 
+                            case "update_deposited_crypto_instance":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(res_obj.nodePubKey)) {
+                                    const res_data = res_obj.params[0];
+                                    const backup_db = res_data.db_inst;
+                                    let _updateinDB = updateinDB;
+                                    try {
+                                        if (typeof backup_db=="string" && backup_db.length>0) {
+                                            if (localbitcoinplusplus.wallets.my_local_flo_address!==backup_db
+                                                && typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                                                const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                                                _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                                            }
+
+                                            if (typeof res_data.deposit_data == "object") 
+                                                    _updateinDB('deposit', res_data.deposit_data, res_data.deposit_data.id, true, false);
+                                            if (typeof res_data.btc_reserve_data == "object") 
+                                                _updateinDB('system_btc_reserves_private_keys', res_data.btc_reserve_data, 
+                                                        res_data.btc_reserve_data.id.id, true, false);
+
+                                        }
+                                    } catch (e) {
+                                        console.error(e);
+                                    }
+                                }
+                            break;
+
                             case "delete_deposited_crypto_instance":
                                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                                     .includes(res_obj.nodePubKey)) {
                                     const res_data = res_obj.params[0];
                                     const backup_db = res_data.db_inst;
+                                    let _removeinDB = removeinDB;
                                     try {
                                         if (typeof backup_db=="string" && backup_db.length>0) {
-                                            if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                                            if (localbitcoinplusplus.wallets.my_local_flo_address!==backup_db
+                                                && typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
                                                 const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
-                                                const _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
-
-                                                if (typeof res_data.withdraw_btc_id == "string") _removeinDB('withdraw_btc', res_data.withdraw_btc_id);
-                                                if (typeof res_data.deposit_id == "string") _removeinDB('deposit', res_data.deposit_id);
-                                                if (typeof res_data.btc_reserve_id == "string") _removeinDB('system_btc_reserves_private_keys', res_data.btc_reserve_id);
+                                                _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
                                             }
+                                            if (typeof res_data.withdraw_btc_id == "string") _removeinDB('withdraw_btc', res_data.withdraw_btc_id);
+                                            if (typeof res_data.deposit_id == "string") _removeinDB('deposit', res_data.deposit_id);
+                                            if (typeof res_data.btc_reserve_id == "string") _removeinDB('system_btc_reserves_private_keys', res_data.btc_reserve_id);
                                         }
                                     } catch (e) {
                                         console.error(e);
                                     }
-                                    
                                 }
                             break;
                                 
@@ -19839,26 +19897,53 @@
                                 }                                
                             break;
 
+                            case "update_deposited_crypto_instance":
+                                if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                    .includes(res_obj.nodePubKey)) {
+                                    const res_data = res_obj.params[0];
+                                    const backup_db = res_data.db_inst;
+                                    let _updateinDB = updateinDB;
+                                    try {
+                                        if (typeof backup_db=="string" && backup_db.length>0) {
+                                            if (localbitcoinplusplus.wallets.my_local_flo_address!==backup_db
+                                                && typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                                                const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                                                _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                                            }
+
+                                            if (typeof res_data.deposit_data == "object") 
+                                                    _updateinDB('deposit', res_data.deposit_data, res_data.deposit_data.id, true, false);
+                                            if (typeof res_data.btc_reserve_data == "object") 
+                                                _updateinDB('system_btc_reserves_private_keys', res_data.btc_reserve_data, 
+                                                        res_data.btc_reserve_data.id.id, true, false);
+
+                                        }
+                                    } catch (e) {
+                                        console.error(e);
+                                    }
+                                }
+                            break;
+
                             case "delete_deposited_crypto_instance":
                                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                                     .includes(res_obj.nodePubKey)) {
                                     const res_data = res_obj.params[0];
                                     const backup_db = res_data.db_inst;
+                                    let _removeinDB = removeinDB;
                                     try {
                                         if (typeof backup_db=="string" && backup_db.length>0) {
-                                            if (typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
+                                            if (localbitcoinplusplus.wallets.my_local_flo_address!==backup_db
+                                                && typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] == "object") {
                                                 const foreign_db = localbitcoinplusplus.newBackupDatabase.db[backup_db];
-                                                const _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
-
-                                                if (typeof res_data.withdraw_btc_id == "string") _removeinDB('withdraw_btc', res_data.withdraw_btc_id);
-                                                if (typeof res_data.deposit_id == "string") _removeinDB('deposit', res_data.deposit_id);
-                                                if (typeof res_data.btc_reserve_id == "string") _removeinDB('system_btc_reserves_private_keys', res_data.btc_reserve_id);
+                                                _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
                                             }
+                                            if (typeof res_data.withdraw_btc_id == "string") _removeinDB('withdraw_btc', res_data.withdraw_btc_id);
+                                            if (typeof res_data.deposit_id == "string") _removeinDB('deposit', res_data.deposit_id);
+                                            if (typeof res_data.btc_reserve_id == "string") _removeinDB('system_btc_reserves_private_keys', res_data.btc_reserve_id);
                                         }
                                     } catch (e) {
                                         console.error(e);
                                     }
-                                    
                                 }
                             break;
 
@@ -20413,7 +20498,7 @@
         async function addDB(tablename, dbObject) {
             try {
                 if(typeof dbObject.vectorClock == "undefined") dbObject.vectorClock = 0; 
-                dbObject.timestamp = + new Date();
+                if(typeof dbObject.timestamp == "undefined") dbObject.timestamp = + new Date(); 
                 let request = db.transaction([tablename], "readwrite")
                 let store = request.objectStore(tablename)
                 await store.add(dbObject);
@@ -20797,7 +20882,7 @@
                 async backup_addDB(tablename, dbObject) {
                     try {
                         if(typeof dbObject.vectorClock == "undefined") dbObject.vectorClock = 0;
-                        dbObject.timestamp = + new Date();
+                        if(typeof dbObject.timestamp == "undefined") dbObject.timestamp = + new Date();
                         this.request = this.db.transaction([tablename], "readwrite")
                         let store = this.request.objectStore(tablename)
                         await store.add(dbObject);
@@ -21449,21 +21534,28 @@
             }
 
             // Create a select input for trade amount
-            let tradeAmountSelect = document.createElement('select');
+            // let tradeAmountSelect = document.createElement('select');
+            // tradeAmountSelect.id = "trade_amount_select";
+            // asset_box.appendChild(tradeAmountSelect);
+            // if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
+            //     localbitcoinplusplus.master_configurations.validTradingAmount.length > 0) {
+            //     let tradeAmountSelectArray = JSON.parse(JSON.stringify(localbitcoinplusplus.master_configurations.validTradingAmount));
+            //     tradeAmountSelectArray.unshift("Select Asset Amount");
+            //     for (var i = 0; i < tradeAmountSelectArray.length; i++) {
+            //         var option = document.createElement("option");
+            //         option.value = tradeAmountSelectArray[i];
+            //         option.text = tradeAmountSelectArray[i];
+            //         tradeAmountSelect.appendChild(option);
+            //     }
+            // }
+            
+
+            let tradeAmountSelect = document.createElement('input');
+            tradeAmountSelect.setAttribute("type", "text");
+            tradeAmountSelect.setAttribute("placeholder", "Specify Asset Amount");
             tradeAmountSelect.id = "trade_amount_select";
             asset_box.appendChild(tradeAmountSelect);
-            if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
-                localbitcoinplusplus.master_configurations.validTradingAmount.length > 0) {
-                let tradeAmountSelectArray = JSON.parse(JSON.stringify(localbitcoinplusplus.master_configurations.validTradingAmount));
-                tradeAmountSelectArray.unshift("Select Asset Amount");
-                for (var i = 0; i < tradeAmountSelectArray.length; i++) {
-                    var option = document.createElement("option");
-                    option.value = tradeAmountSelectArray[i];
-                    option.text = tradeAmountSelectArray[i];
-                    tradeAmountSelect.appendChild(option);
-                }
-            }
-
+            
             let currencySelect = document.createElement('select');
             currencySelect.id = `withdraw_fiat_currency`;
             asset_box.appendChild(currencySelect);
@@ -22108,11 +22200,13 @@
                 && res_obj.params[0].JOB !== "I_AM_ALIVE") return;
                 const params=res_obj.params[0];
                 if (params.receiver_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
-                const switchMyWS = new backupSupernodesWebSocketObject();
-                switchMyWS.updateSupernodeAvailabilityStatus(params.trader_flo_address, true);
                 
                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                 .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+
+                    const switchMyWS = new backupSupernodesWebSocketObject();
+                    switchMyWS.updateSupernodeAvailabilityStatus(params.trader_flo_address, true);
+
                     if (params.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) {
                         localbitcoinplusplus.services[`can_serve_${params.trader_flo_address}`] = false;    
                     }   
