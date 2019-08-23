@@ -10918,9 +10918,38 @@
         reactor.registerEvent('sync_backup_nodes_of_my_backup_node');
         reactor.registerEvent('resolve_backup_ws_connections');
         reactor.registerEvent('shift_ws_connection');
+        reactor.registerEvent('switchToBackupWSForSuperNodesOperations');
         reactor.registerEvent('user_flo_keys_active');
         reactor.registerEvent('clean_dead_ws_conections');
     
+        reactor.addEventListener('switchToBackupWSForSuperNodesOperations', async function(disconnected_url='') {
+            const user_data = await readDB('localbitcoinUser', '00-01');
+            const user_flo_pubKey = user_data.myLocalFLOPublicKey;
+            disconnected_url = disconnected_url.replace(/\/$/, '');
+            
+            if(typeof user_flo_pubKey !== "string"
+            || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+            .includes(user_flo_pubKey)) return false;
+
+            let ideal_supernode = '';
+
+            const myClosestSupernodesArray = await readAllDB(`myClosestSupernodes`);
+
+            let nextClosestSupernodeElem = myClosestSupernodesArray
+                .filter((wew, index)=>{
+                    let ww = `ws://${wew.ip}:${wew.port}`;
+                    if(typeof z =='boolean' && z) {
+                        z = false;
+                        localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS = wew.trader_flo_address;
+                        return ww;	
+                    }
+                    if(ww==disconnected_url) z = true;
+                });
+
+            reactor.dispatchEvent('shift_ws_connection', nextClosestSupernodeElem[0]); 
+
+        });
+
         reactor.addEventListener('fireNodeWelcomeBackEvent', function(evt) {
             let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
             
@@ -11239,21 +11268,30 @@
             if (getFLOId===localbitcoinplusplus.wallets.my_local_flo_address) return;
             const back_ws_url = `ws://${wsSupsObj.ip}:${wsSupsObj.port}`;
 
+            let currenctBackupWsList = Object.keys(localbitcoinplusplus.backupWS)
+                .filter(m=>localbitcoinplusplus.backupWS[m].ws_connection.readyState<2);
+            
+            if (currenctBackupWsList.length
+            === localbitcoinplusplus.master_configurations.MaxBackups) return;
+
             if (typeof localbitcoinplusplus.backupWS[getFLOId]==="object"
             && localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState==1) {
-                // This will check if more ws conns are required or not
-                reactor.dispatchEvent('resolve_backup_ws_connections');
+                // Connect to next backup
+                reactor.dispatchEvent('switchToBackupWSForSuperNodesOperations', back_ws_url);
             } else {
                 try {
-                    localbitcoinplusplus.backupWS[getFLOId] = null;
-                    localbitcoinplusplus.backupWS[getFLOId] = new backupSupernodesWebSocketObject(back_ws_url);
-                    localbitcoinplusplus.backupWS[getFLOId].connectWS();
-                    /* Now in connectWS if connection fails call switchToBackupWSForSuperNodesOperations() in onClose() 
-                    for next su node, if its success check for max baxkup connection conditon, if required
-                    execute 'resolve_backup_ws_connections' in onOpen() or exit */
+                    if (typeof localbitcoinplusplus.backupWS[getFLOId]!=="object"
+                    || localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState>2) {
+                        localbitcoinplusplus.backupWS[getFLOId] = null;
+                        localbitcoinplusplus.backupWS[getFLOId] = new backupSupernodesWebSocketObject(back_ws_url);
+                        localbitcoinplusplus.backupWS[getFLOId].connectWS();
+                        /* Now in connectWS if connection fails call switchToBackupWSForSuperNodesOperations() in onClose() 
+                        for next su node, if its success check for max baxkup connection conditon, if required
+                        execute 'resolve_backup_ws_connections' in onOpen() or exit */
+                    }
                 } catch (error) {
                     console.error(error);
-                    switchToBackupWSForSuperNodesOperations(back_ws_url);
+                    reactor.dispatchEvent('switchToBackupWSForSuperNodesOperations', back_ws_url);
                 } 
             }
         });
@@ -11266,44 +11304,34 @@
             if(!localbitcoinplusplus.master_configurations.supernodesPubKeys
             .includes(usrPubKey)) return;
 
-            reactor.dispatchEvent('clean_dead_ws_conections');
-            
             try {
                 // Get list of neighbour supernodes
                 const myClosestSups = await readAllDB('myClosestSupernodes');
 
                 // Get list of backup ws connection current status
-                const currenctBackupWsList = Object.keys(localbitcoinplusplus.backupWS)
-                        .filter(m=>localbitcoinplusplus.backupWS[m].ws_connection.readyState===1);
+                let currenctBackupWsList = Object.keys(localbitcoinplusplus.backupWS)
+                        .filter(m=>localbitcoinplusplus.backupWS[m].ws_connection.readyState<2);
                 
                 for (let z = 1; z <= myClosestSups.length-1; z++) {
 
                     const supsObj = myClosestSups[z];
+
+                    // Get latest ws connection status (again)
+                    currenctBackupWsList = Object.keys(localbitcoinplusplus.backupWS)
+                        .filter(m=>localbitcoinplusplus.backupWS[m].ws_connection.readyState<2);
                    
                     // ws conn already present
                     if (supsObj.trader_flo_address===currenctBackupWsList[z]) continue;
                 
                     if (currenctBackupWsList.length
-                    == localbitcoinplusplus.master_configurations.MaxBackups) {
-                        
-
-                        // Perhaps its better that a connection is switched off only 
-                        // when backup sync has been done successfully.
-
-
-                        // Stop any further (and far) ws backup conns
-                        // for (let y = z; y <= myClosestSups.length-1; y++) {
-                        //     const extra_conns_flo_id = myClosestSups[y];
-                        //     const backup_conns = localbitcoinplusplus.backupWS[extra_conns_flo_id];
-                        //     if(typeof backup_conns.ws_connection == "object") {
-                        //         localbitcoinplusplus.backupWS[extra_conns_flo_id].ws_connection.close();
-                        //         //delete localbitcoinplusplus.backupWS[backup_id];	
-                        //     }
-                        // }
-                        break;
-                    }
-
+                    === localbitcoinplusplus.master_configurations.MaxBackups) break;
+                    
+                    /* Break the loop as soon as this line runs
+                       as any further ws conn releated event will be 
+                       taken care in shift_ws_connection event itself. */
                     reactor.dispatchEvent('shift_ws_connection', supsObj);
+                    break;
+                     
                 }
                              
             } catch (error) {
@@ -11314,17 +11342,53 @@
 
         /* Remove WS connections which are not active currently */ 
         reactor.addEventListener('clean_dead_ws_conections', function() {
-            for (const backup_id in localbitcoinplusplus.backupWS) {
-                if (localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
-                    const backup_conns = localbitcoinplusplus.backupWS[backup_id];
-                    if(typeof backup_conns.ws_connection == "object") {
-                        if(backup_conns.ws_connection.readyState > 1) {
-                            localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
-                            //delete localbitcoinplusplus.backupWS[backup_id];
-                        }	
+            // for (const backup_id in localbitcoinplusplus.backupWS) {
+            //     if (localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
+            //         const backup_conns = localbitcoinplusplus.backupWS[backup_id];
+            //         if(typeof backup_conns.ws_connection == "object") {
+            //             let max_conns = 0;
+            //             if(backup_conns.ws_connection.readyState < 2) {
+            //                 max_conns++;
+            //                 if(max_conns<=localbitcoinplusplus.master_configurations.MaxBackups) continue;
+            //                 localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
+            //                 delete localbitcoinplusplus.backupWS[backup_id];
+            //             }	else {
+            //                 localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
+            //                 delete localbitcoinplusplus.backupWS[backup_id];
+            //             }
+            //         }
+            //     }
+            // }
+
+            // remove above lines with these
+            readAllDB(`myClosestSupernodes`).then(sups=>{
+				sups
+				.filter(f=>{
+					const supWSConn = localbitcoinplusplus.backupWS[f.trader_flo_address];
+					if(typeof supWSConn=="object" && supWSConn.ws_connection.readyState<2) {
+						return f;
+					}
+				})
+				.map(backup_id=>{
+					if (localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
+                        const backup_conns = localbitcoinplusplus.backupWS[backup_id];
+                        if(typeof backup_conns.ws_connection == "object") {
+                            let max_conns = 0;
+                            if(backup_conns.ws_connection.readyState < 2) {
+                                max_conns++;
+                                if(max_conns>localbitcoinplusplus.master_configurations.MaxBackups) {
+                                    localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
+                                    delete localbitcoinplusplus.backupWS[backup_id];
+                                }
+                            }	else {
+                                localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
+                                delete localbitcoinplusplus.backupWS[backup_id];
+                            }
+                        }
                     }
-                }
-            }
+				});
+            });
+            
         });
 
         /*This function denotes that a user is probably live and is using the system*/
@@ -15966,6 +16030,9 @@
                             if(localbitcoinplusplus.master_configurations.supernodesPubKeys
                                 .includes(idbData.myLocalFLOPublicKey)) {
 
+                                // Invoke functions 
+                                reactor.dispatchEvent('user_flo_keys_active', idbData);
+
                                 wsUri.map((uri, index)=>{
                             
                                     // Do not serve to any requests unless data is fully synced.
@@ -16066,6 +16133,9 @@
                             }
                         });
 
+                        // Connect to nearest live backup nodes
+                        reactor.dispatchEvent('resolve_backup_ws_connections'); 
+
                     }
 
                     resolve(true);
@@ -16079,11 +16149,14 @@
             this.ws_connection = null;
         }
         backupSupernodesWebSocketObject.prototype = {
-
+            
             connectWS() {
+                
                 this.ws_connection = new WebSocket(this.ws_url);
                 const switchMyWS = new backupSupernodesWebSocketObject();
                 this.ws_connection.onopen = function (evt) {
+                    console.info('lalalala '+evt.srcElement.url);
+                    
                     reactor.addEventListener('backup_supernode_up', async function() {
                         showMessage(`Connected to backup Supernode sever: ${evt.srcElement.url}.`);
                         switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, true);
@@ -16106,13 +16179,20 @@
                                         trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
                                         receiver_flo_address: conn_su_flo_id,
                                         db_inst: localbitcoinplusplus.wallets.my_local_flo_address
-                                    }).then(req=>doSend(req));
+                                    })
+                                    //.then(req=>doSend(req));
                                 }
 
-                                // Check if the supernode is backup ws connections satisfy max baxkup master 
+                                // Check if the number of backup ws connections satisfy max baxkup master 
                                 // config condition. If false, request ws connection to next backup supernode.
-                                // Simply execute 'resolve_backup_ws_connections' event.
-                                reactor.dispatchEvent('resolve_backup_ws_connections');
+                                const currenctBackupWsList = Object.keys(localbitcoinplusplus.backupWS)
+                                .filter(m=>localbitcoinplusplus.backupWS[m].ws_connection.readyState<2);
+
+                                if (currenctBackupWsList.length
+                                    < localbitcoinplusplus.master_configurations.MaxBackups) {
+                                    // Request next backup to connect
+                                    reactor.dispatchEvent('switchToBackupWSForSuperNodesOperations', evt.srcElement.url);
+                                }
 
                             } else {
                                 if (typeof conn_su_flo_id == "string") {
@@ -16128,15 +16208,15 @@
                         }
                     });
                     reactor.dispatchEvent('backup_supernode_up');
-                    reactor.dispatchEvent('clean_dead_ws_conections');
+                    //reactor.dispatchEvent('clean_dead_ws_conections');
                 }.bind(this);
                 this.ws_connection.onclose = function (evt) {
                     reactor.addEventListener('backup_supernode_down', async function() {
                         showMessage(`Disconnected to backup Supernode sever: ${evt.srcElement.url}.`);
                         switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
                         // Invoke next backup server to connect
-                        await switchToBackupWSForSuperNodesOperations(evt.srcElement.url);
-                        reactor.dispatchEvent('clean_dead_ws_conections');
+                        await reactor.dispatchEvent('switchToBackupWSForSuperNodesOperations', evt.srcElement.url);
+                        //reactor.dispatchEvent('clean_dead_ws_conections');
                     });
                     reactor.dispatchEvent('backup_supernode_down');
                 }.bind(this);
@@ -16325,34 +16405,7 @@
                 
             },
             
-            async switchToBackupWSForSuperNodesOperations(disconnected_url='') {
             
-                const user_data = await readDB('localbitcoinUser', '00-01');
-                const user_flo_address = user_data.myLocalFLOAddress;
-                disconnected_url = disconnected_url.replace(/\/$/, '');
-                
-                if(typeof user_flo_address !== "string"
-                || !localbitcoinplusplus.master_configurations.supernodesPubKeys
-                .includes(user_flo_address)) return false;
-
-                let ideal_supernode = '';
-
-                const myClosestSupernodesArray = await readAllDB(`myClosestSupernodes`);
-
-                let nextClosestSupernodeElem = myClosestSupernodesArray
-                    .filter((wew, index)=>{
-                        let ww = `ws://${wew.ip}:${wew.port}`;
-                        if(typeof z =='boolean' && z) {
-                            z = false;
-                            localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS = wew.trader_flo_address;
-                            return ww;	
-                        }
-                        if(ww==disconnected_url) z = true;
-                    });
-
-                reactor.dispatchEvent('shift_ws_connection', nextClosestSupernodeElem[0]); 
-                    
-            },
         }
 
         function startWebSocket(wsUri) {
