@@ -11307,13 +11307,26 @@
                         // ws conn already present
                         if (supsObj.trader_flo_address===currenctBackupWsList[z-1]) continue;
 
-                        if (myClosestSupsFloList.indexOf(supsObj.trader_flo_address) 
-                        <= myClosestSupsFloList.indexOf(currenctBackupWsList[z-1])) {
+                        // Get the highest index of connected supernodes
+                        const highestIndexOfConnectedSupernode = Object.keys(localbitcoinplusplus.backupWS)
+		                .reduce((acc, val) =>
+                        (acc === undefined || myClosestSupsFloList.indexOf(val) > myClosestSupsFloList.indexOf(acc)) 
+                        ? myClosestSupsFloList.indexOf(val) : myClosestSupsFloList.indexOf(acc));
+
+                        if (myClosestSupsFloList.indexOf(supsObj.trader_flo_address) < highestIndexOfConnectedSupernode) {
                             /* Break the loop as soon as this line runs
                             as any further ws conn releated event will be 
                             taken care in shift_ws_connection event itself. */
                             reactor.dispatchEvent('shift_ws_connection', supsObj);
                             break;   
+                        } else {
+                            if (currenctBackupWsList.length 
+                                < localbitcoinplusplus.master_configurations.MaxBackups) {
+                                
+                                reactor.dispatchEvent('shift_ws_connection', supsObj);
+                                break;
+                            }
+                            break;
                         }
                     } else {
                         reactor.dispatchEvent('shift_ws_connection', supsObj);
