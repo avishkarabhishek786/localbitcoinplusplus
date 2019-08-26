@@ -10201,7 +10201,7 @@
                 return arr;
             },
 
-            get_sharable_db_data_for_single_user: async function (dbTableNamesArray, backup_db="") {
+            get_sharable_db_data_for_single_user: async function (userId="", dbTableNamesArray, backup_db="") {
                 let arr = {};
                 let _readDBbyIndex = readDBbyIndex;
                 if (typeof backup_db=="string" && backup_db.length>0) {
@@ -10215,7 +10215,7 @@
                     }
                 }
                 for (const elem of dbTableNamesArray) {
-                    await _readDBbyIndex(elem).then(e => arr[elem] = e);
+                    await _readDBbyIndex(elem, 'trader_flo_address', userId).then(e => arr[elem] = e);
                 }
                 return arr;
             },
@@ -10454,7 +10454,61 @@
                     }).catch(e=>reject(e));
                 });
                     
-            }
+            },
+
+            exportUserDataFromOneSupernodeToAnother: async function(userFloId="", receipient_su="") {
+                let immigrantsList = [];
+                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                    "crypto_balances", "cash_balances", "userPublicData", 
+                    "buyOrders", "sellOrders"
+                ];
+                const RM_RPC = new localbitcoinplusplus.rpc();
+                if (userFloId.length>0) {
+                    
+                    let closestSu = await localbitcoinplusplus.kademlia
+                        .determineClosestSupernode(userFloId);
+                    
+                    const immigrants_data = await localbitcoinplusplus.actions
+                        .get_sharable_db_data_for_single_user(userFloId, tableArray);
+                
+                    if (typeof immigrants_data === "object") {
+                        immigrants_data.trader_flo_address = closestSu[0].data.id;
+                        immigrants_data.receiver_flo_address = closestSu[0].data.id;
+                        RM_RPC
+                        .send_rpc
+                        .call(this, "sync_primary_supernode_from_backup_supernode_response", immigrants_data)
+                        .then(server_sync_response=>doSend(server_sync_response));                    
+                    }
+                } else {
+                    
+                    const allUsersData = await readAllDB('userPublicData');
+
+                    const supernodesFloList = localbitcoinplusplus.master_configurations
+                        .supernodesPubKeys.map(s=>bitjs.FLO_TEST.pubkey2address(s));
+
+                    for(let f=0; f<allUsersData.length; f++) {
+                        let closestSu = await localbitcoinplusplus.kademlia
+                            .determineClosestSupernode(allUsersData[f].trader_flo_address);
+                        
+                        if(closestSu[0].data.id!==localbitcoinplusplus.wallets.my_local_flo_address
+                            && !supernodesFloList.includes(allUsersData[f].trader_flo_address)
+                        ) {
+                            const immigrants_data = await localbitcoinplusplus.actions
+                                .get_sharable_db_data_for_single_user(allUsersData[f].trader_flo_address, tableArray);
+                        
+                            if (typeof immigrants_data === "object") {
+                                immigrants_data.trader_flo_address = closestSu[0].data.id;
+                                immigrants_data.receiver_flo_address = closestSu[0].data.id;
+                                RM_RPC
+                                .send_rpc
+                                .call(this, "sync_primary_supernode_from_backup_supernode_response", immigrants_data)
+                                .then(server_sync_response=>doSend(server_sync_response));                    
+                            }
+                        }
+                    }
+
+                }
+            },
 
         }
 
