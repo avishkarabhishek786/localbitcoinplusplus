@@ -10920,7 +10920,7 @@
         reactor.registerEvent('shift_ws_connection');
         reactor.registerEvent('switchToBackupWSForSuperNodesOperations');
         reactor.registerEvent('user_flo_keys_active');
-        reactor.registerEvent('clean_dead_ws_conections');
+        reactor.registerEvent('remove_extra_backup_connections');
             
         reactor.addEventListener('fireNodeWelcomeBackEvent', function(evt) {
             let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
@@ -11376,29 +11376,11 @@
         });
 
         /* Remove WS connections which are not active currently */ 
-        reactor.addEventListener('clean_dead_ws_conections', function() {
-            // for (const backup_id in localbitcoinplusplus.backupWS) {
-            //     if (localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
-            //         const backup_conns = localbitcoinplusplus.backupWS[backup_id];
-            //         if(typeof backup_conns.ws_connection == "object") {
-            //             let max_conns = 0;
-            //             if(backup_conns.ws_connection.readyState < 2) {
-            //                 max_conns++;
-            //                 if(max_conns<=localbitcoinplusplus.master_configurations.MaxBackups) continue;
-            //                 localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
-            //                 delete localbitcoinplusplus.backupWS[backup_id];
-            //             }	else {
-            //                 localbitcoinplusplus.backupWS[backup_id].ws_connection.close();
-            //                 delete localbitcoinplusplus.backupWS[backup_id];
-            //             }
-            //         }
-            //     }
-            // }
+        reactor.addEventListener('remove_extra_backup_connections', function() {
 
             // remove above lines with these
             readAllDB(`myClosestSupernodes`).then(sups=>{
-				sups
-				.filter(f=>{
+				sups.filter(f=>{
 					const supWSConn = localbitcoinplusplus.backupWS[f.trader_flo_address];
 					if(typeof supWSConn=="object" && supWSConn.ws_connection.readyState<2) {
 						return f;
@@ -17688,6 +17670,8 @@
                                             i++;
                                             if (i==Object.keys(su_db_data).length-2) {
                                                 localbitcoinplusplus.services[`can_serve_${su_db_data[`trader_flo_address`]}`] = true;
+                                                // Close unnecessary connections now
+                                                reactor.dispatchEvent('remove_extra_backup_connections');
                                             }
                                             // skip loop if the property is from prototype
                                             if (tableStoreName == 'trader_flo_address' 
@@ -20197,6 +20181,8 @@
                                             i++;
                                             if (i==Object.keys(su_db_data).length-2) {
                                                 localbitcoinplusplus.services[`can_serve_${su_db_data.trader_flo_address}`] = true;
+                                                 // Close unnecessary connections now
+                                                 reactor.dispatchEvent('remove_extra_backup_connections');
                                             }
                                             // skip loop if the property is from prototype
                                             if (tableStoreName == 'trader_flo_address' 
@@ -21860,7 +21846,8 @@
                                 reactor.dispatchEvent('sync_primary_and_backup_db');
                                 showMessage(`INFO: You need to update serve to true to start serving as Primary Supernode.`);
                             } else {
-                                localbitcoinplusplus.services[`can_serve_${localbitcoinplusplus.wallets.my_local_flo_address}`] = true;    
+                                localbitcoinplusplus.services[`can_serve_${localbitcoinplusplus.wallets.my_local_flo_address}`] = true;  
+                                reactor.dispatchEvent('remove_extra_backup_connections');  
                             }
                     }
 
