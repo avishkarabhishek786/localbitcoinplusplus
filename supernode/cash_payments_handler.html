@@ -109,6 +109,171 @@
 
             }
 
+            function readDB(tablename, id) {
+                return new Promise((resolve, reject) => {
+                    var transaction = db.transaction([tablename]);
+                    var objectStore = transaction.objectStore(tablename);
+                    var request = objectStore.get(id);
+
+                    request.onerror = function (event) {
+                        reject("Unable to retrieve data from database!");
+                    };
+
+                    request.onsuccess = function (event) {
+                        if (request.result) {
+                            resolve(request.result);
+                        } else {
+                            resolve();
+                        }
+                    };
+                });
+            }
+
+            function readDBbyIndex(tablename, index, indexValue) {
+                return new Promise((resolve, reject) => {
+                    var transaction = db.transaction([tablename]);
+                    var objectStore = transaction.objectStore(tablename);
+                    let response = [];
+                    objectStore.openCursor().onerror = function (event) {
+                        console.error("Error fetching data");
+                        reject(event);
+                    };
+                    objectStore.openCursor().onsuccess = function (event) {
+                        let cursor = event.target.result;
+                        if (cursor) {
+                            if (cursor.value[index] == indexValue) {
+                                response.push(cursor.value);
+                            }
+                            cursor.continue();
+                        } else {
+                            resolve(response);
+                        }
+                    };
+                });
+            }
+
+            function readAllDB(tablename, limit=0) {
+                return new Promise((resolve, reject) => {
+                    let response = [];
+                    var objectStore = db.transaction(tablename).objectStore(tablename);
+                    objectStore.openCursor().onsuccess = function (event) {
+                        let cursor = event.target.result;
+                        if (cursor) {
+                            response.push(cursor.value);
+                            cursor.continue();
+                        } else {
+                            resolve(response);
+                        }
+                    };
+                });
+            }
+
+            async function addDB(tablename, dbObject) {
+                try {
+                    if(typeof dbObject.vectorClock == "undefined") dbObject.vectorClock = 0; 
+                    dbObject.timestamp = + new Date();
+                    let request = db.transaction([tablename], "readwrite")
+                    let store = request.objectStore(tablename)
+                    await store.add(dbObject);
+                    await request.complete;
+                    console.info("Data added in " + tablename);
+                    return dbObject;
+                } catch (error) {
+                    return new Error(error);
+                }
+            }
+
+            async function updateinDB(tablename, Obj, key, updateByVectorClock=false, increaseVectorClock=true) {
+                // updateByVectorClock==true will not return Obj back. 
+                // Return value will be undefined
+                try {
+                    if(typeof Obj.vectorClock == "undefined") {
+                        Obj.vectorClock = 0;
+                    } else if(increaseVectorClock === false) {
+                        // leave the vector clock field unchanged
+                    } else {
+                        Obj.vectorClock += 1;
+                    }
+                    if (typeof Obj.timestamp !== "number") {
+                        Obj.timestamp = + new Date();
+                    }
+                    var request = db.transaction([tablename], "readwrite")
+                    let store = request.objectStore(tablename)
+                    if (updateByVectorClock===true) {
+                        if (typeof key=="undefined") {
+                            key = Obj[store.keyPath];
+                        }
+                        let objectStoreRequest = store.get(key);
+                        objectStoreRequest.onsuccess = 
+                            async function(event) {
+                                var myRecord = objectStoreRequest.result;
+                                if(typeof myRecord !=="object") {
+                                    Obj.vectorClock = 1;
+                                    await store.put(Obj);
+                                    await request.complete;
+                                } else if (myRecord.vectorClock+1 < Obj.vectorClock) {
+                                    await store.put(Obj);
+                                    await request.complete;
+                                }
+                            }
+
+                    } else {
+                        await store.put(Obj);
+                        await request.complete;
+                    }
+                    return Obj;
+                    
+                } catch (error) {
+                    return new Error(error);
+                }
+            }
+
+            async function removeinDB(tablename, id) {
+                try {
+                    var request = db.transaction([tablename], "readwrite")
+                    let store = request.objectStore(tablename)
+                    await store.delete(id);
+                    await request.complete;
+                    return id;
+                } catch (error) {
+                    return new Error(error);
+                }
+            }
+
+            function removeByIndex(tablename, indexName, indexValue) {
+                return new Promise((resolve, reject) => {
+                    var request = db.transaction([tablename], "readwrite")
+                        .objectStore(tablename);
+                    var index = request.index(indexName);
+                    var request = index.openCursor(IDBKeyRange.only(indexValue));
+                    request.onsuccess = function () {
+                        var cursor = request.result;
+                        if (cursor) {
+                            cursor.delete();
+                            cursor.continue();
+                        } else {
+                            resolve(true);
+                        }
+                    };
+                    request.onerror = function (e) {
+                        reject(e);
+                    }
+                })
+            }
+
+            async function removeAllinDB(tablename) {
+                try {
+                    var request = db.transaction([tablename], "readwrite")
+                    var objectStore = request.objectStore(tablename);
+                    var objectStoreRequest = await objectStore.clear();
+                    await request.complete;
+                    console.info("All the data entry has been removed from your database " + tablename);
+                    return tablename;
+                } catch (error) {
+                    return new Error(error);
+                }
+            }
+
             /* CODE_JUNCTION: Websockets */    
     
             function startWebSocket(wsUri) {
@@ -153,6 +318,9 @@
             }
 
         })();
+
+
+
     </script>
 
 </body>
