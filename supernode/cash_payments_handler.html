@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Handling Cash Payments For Localbitcoinplusplus</title>
+</head>
+<body>
+    
+    <script>
+        
+        (function payments_handler() {
+
+
+            /* CODE_JUNCTION: Indexed DB */
+        
+            //prefixes of implementation that we want to test
+            const indexedDB = window.indexedDB || window.mozIndexedDB ||
+                window.webkitIndexedDB || window.msIndexedDB;
+
+            //prefixes of window.IDB objects
+            const IDBTransaction = window.IDBTransaction ||
+                window.webkitIDBTransaction || window.msIDBTransaction;
+            
+            const IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange ||
+                window.msIDBKeyRange
+
+            if (!indexedDB) {
+                alert("Your browser doesn't support a stable version of IndexedDB.")
+            }
+
+            let db;
+            const DBName = "paymentsHandlerDB";
+            const request = window.indexedDB.open(DBName, 1);
+
+            request.onerror = function (event) {
+                //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
+                event.preventDefault();
+                var error = event.target.error;
+                console.log("IndexedDB database open error:", error.name, error.message);
+            };
+
+            request.onsuccess = function (event) {
+                db = request.result;
+            };
+
+            request.onupgradeneeded = function (event) {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('paymentsHandlerDetails')) {
+                    var objectStore = db.createObjectStore("paymentsHandlerDetails", {
+                        keyPath: "id"
+                    });
+                    objectStore.createIndex('myLocalFLOAddress', 'myLocalFLOAddress', {
+                        unique: true
+                    });
+                    objectStore.put({
+                        myLocalFLOPublicKey: "",
+                        upiID: "",
+                        last_tx_time: "",
+                        last_active_time: ""
+                    });
+                }
+                if (!db.objectStoreNames.contains('cash_deposits')) {
+                    var objectStore = db.createObjectStore("deposits", {
+                        keyPath: 'id'
+                    });
+                    objectStore.createIndex('trader_supernode', 'trader_supernode', {
+                        unique: false
+                    });
+                    objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                        unique: false
+                    });
+                    objectStore.createIndex('currency', 'currency', {
+                        unique: false
+                    });
+                    objectStore.createIndex('amount', 'amount', {
+                        unique: false
+                    });
+                }
+                if (!db.objectStoreNames.contains('cash_withdraws')) {
+                    var objectStore = db.createObjectStore("withdraws", {
+                        keyPath: 'id'
+                    });
+                    objectStore.createIndex('trader_supernode', 'trader_supernode', {
+                        unique: false
+                    });
+                    objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                        unique: false
+                    });
+                    objectStore.createIndex('currency', 'currency', {
+                        unique: false
+                    });
+                    objectStore.createIndex('amount', 'amount', {
+                        unique: false
+                    });
+                }
+
+            }
+
+            /* CODE_JUNCTION: Websockets */    
+    
+            function startWebSocket(wsUri) {
+                
+                return new Promise((resolve, reject) => {
+                    websocket = new WebSocket(wsUri);
+                    websocket.onopen = function (evt) {
+                        resolve(onOpen(evt))
+                    };
+                    websocket.onclose = function (evt) {
+                        reject(onClose(evt))
+                    };
+                    websocket.onmessage = function (evt) {
+                        resolve(onMessage(evt))
+                    };
+                    websocket.onerror = function (evt) {
+                        reject(onError(evt))
+                    };
+                })
+            }
+
+            function onOpen(evt) {
+                console.info(`INFO: Connected succesfully to ${evt.srcElement.url}.`)
+            }
+
+            function onClose(event) {
+                if (event.wasClean) {
+                    console.info(`[close] Connection to ${event.srcElement.url} closed cleanly, code=${event.code} reason=${event.reason}`);
+                } else {
+                    // e.g. server process killed or network down
+                    // event.code is usually 1006 in this case
+                    console.warn(`[close] Connection to ${event.srcElement.url} died unexpectedly, code=${event.code} reason=${event.reason}`);
+                }
+            }
+
+            function onMessage(evt) {
+                console.log(evt);
+            }
+
+            function onError(evt) {
+                console.error(`ERROR: Websocket Connection to ${evt.srcElement.url} returned error.`);
+            }
+
+        })();
+    </script>
+
+</body>
+</html>
