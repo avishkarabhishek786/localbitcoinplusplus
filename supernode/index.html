@@ -10543,7 +10543,7 @@
 
                         const master_flo_pubKey = localbitcoinplusplus.master_configurations.masterFLOPubKey;
                         const master_flo_addr = bitjs.FLO_TEST.pubkey2address(master_flo_pubKey);
-                        if(typeof master_flo_pubKey !== "string") return reject(false);
+                        if(typeof master_flo_addr !== "string") return reject(false);
                         const SuKBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', master_flo_addr);
                         const SukbOptions = { localNodeId: SuKBucketId }
                         window.supernodeKBucket = new BuildKBucket(SukbOptions);
@@ -10769,7 +10769,6 @@
                     }
                 })
             }, 
-            
             addClosestSupernodeInDB: function(flo_addr, KB=supernodeKBucket) {
                 return new Promise(async (resolve, reject)=>{
                     const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
@@ -12496,6 +12495,8 @@
                                         .includes(parseFloat(params.depositing_amount)) 
                                     && typeof params.trader_flo_address == "string" 
                                     && params.trader_flo_address.length > 0
+                                    && typeof params.user_upi == "string"
+                                    && params.user_upi.length > 0
                                 ) {
 
                                     params.id = helper_functions.unique_id();
@@ -13677,6 +13678,8 @@
                                         .includes(parseFloat(params.depositing_amount)) 
                                     && typeof params.trader_flo_address == "string" 
                                     && params.trader_flo_address.length > 0
+                                    && typeof params.user_upi == "string"
+                                    && params.user_upi.length > 0
                                 ) {
 
                                     params.id = helper_functions.unique_id();
@@ -14729,7 +14732,7 @@
                     "deposit_asset_request", deposit_request_object)
                     .then(deposit_request=>doSend(deposit_request));
             },
-            depositCash(amount, currency, userFLOaddress) {
+            depositCash(amount, currency, userFLOaddress, user_upi) {
                 if (typeof localbitcoinplusplus.master_configurations.tradableAsset2 == 'undefined' ||
                     (!localbitcoinplusplus.master_configurations.tradableAsset2
                     .includes(currency))) {
@@ -14749,11 +14752,16 @@
                     err_msg = "Error: Invalid deposit amount.";
                     showMessage(err_msg);
                     throw new Error(err_msg);
+                } else if (typeof user_upi!=="string" || user_upi.length<1) {
+                    err_msg = "Error: Invalid UPI id.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 let deposit_request_object = {
                     trader_flo_address: userFLOaddress,
                     depositing_amount: amount,
                     currency: currency,
+                    user_upi: user_upi,
                     operation_type: "deposit_cash",
                     receiver_flo_address:localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
                 }
@@ -16360,9 +16368,15 @@
             // If the message is about leaving of a node determine its FLO Id
             // and fire respective events
             let isItANodeLeavingMessage = response.search(`\\-- left`);
-            
             if(isItANodeLeavingMessage >= 0) {
                 reactor.dispatchEvent('fireNodeGoodByeEvent', response);
+                return;
+            }
+
+            const isMsgFromCashier = response.search('__FOR__CASHIER__');
+            if (isMsgFromCashier>=0) {
+                handleCashierMessages(response);
+                return;   
             }
             
             var res_pos = response.indexOf('{');
@@ -16648,8 +16662,8 @@
                                                 let counterTraderAccountAddress =
                                                     `Please pay the amount to following UPI ID: 
                                                     ${resp.msg}`;
-                                                    showMessage(counterTraderAccountAddress);
-                                                    modalWindow(counterTraderAccountAddress);
+                                                showMessage(counterTraderAccountAddress);
+                                                modalWindow(counterTraderAccountAddress);
                                             }
                                         });
                                     }
@@ -19470,6 +19484,35 @@
                                 });
                                 break;
 
+                                case "deposit_cash_request_response":
+                                    if (typeof res_obj.params !== "object" 
+                                            || typeof res_obj.params[0] !== "object") return;
+                                    let deposit_res_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(deposit_res_data.trader_flo_address, 
+                                        async function (is_valid_request) {
+                                            if(!is_valid_request) return false;
+                                            if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" 
+                                            && typeof res_obj.params[0].data == "object") {
+                                            let resp = res_obj.params[0];
+                                            if (RM_WALLET
+                                                .verify(resp.data.depositDataHash, resp.data.order_validator_sign, resp.data.order_validator_public_key)
+                                            ) {
+                                                let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(resp.data.trader_flo_address);
+                                                const primarySupernode = getPrimarySuObj[0].data.id;
+                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
+                                                if(typeof backup_server_db_instance !== "object") {
+                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                                    showMessage(backup_db_error_msg);
+                                                    throw new Error(backup_db_error_msg);
+                                                };
+
+                                                backup_server_db_instance.backup_addDB('cash_deposits', resp.data);
+                                                
+                                            }
+                                        }
+                                    });
+                                break;
+
                             case "withdrawal_request_response":
                                 if (typeof res_obj.params !== "object" 
                                         || typeof res_obj.params[0] !== "object") return;
@@ -20465,6 +20508,10 @@
                     console.warn(e);
                 }
             }
+        }
+
+        async function handleCashierMessages(response) {
+            console.log(response);
         }
 
         function onError(evt) {
@@ -22294,6 +22341,12 @@
             // asset_button_box.appendChild(withdrawAssetButton);
 
             depositAssetButton.addEventListener('click', function () {
+                const user_upi = prompt('Please provide the UPI id you are paying from!');
+                if (typeof user_upi!=="string" || user_upi.length<1) {
+                    err_msg = "Invalid or empty UPI id.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                }
                 let asset_type = assetTypeInput.value;
                 let tradeAmount = Number(tradeAmountSelect.value);
                 let fiatCurrency = currencySelect.value;
@@ -22305,7 +22358,7 @@
                 if (typeof localbitcoinplusplus.master_configurations.tradableAsset2 !== 'undefined' &&
                     localbitcoinplusplus.master_configurations.tradableAsset2.includes(asset_type)
                 ) {
-                    RM_TRADE.depositCash(tradeAmount, fiatCurrency, userFLOaddress);
+                    RM_TRADE.depositCash(tradeAmount, fiatCurrency, userFLOaddress, user_upi);
                 } else {
                     err_msg = "Error while depositing your address.";
                     showMessage(err_msg);

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Handling Cash Payments For Localbitcoinplusplus</title>
     <!-- Latest compiled and minified CSS -->
@@ -10,8 +10,50 @@
 
     <!-- Optional theme -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+    <style>
+        .sidenav {
+            position: fixed;
+            z-index: 1;
+            top: 20px;
+            left: 10px;
+            background: #eee;
+            overflow-x: hidden;
+        }
+
+        .sidebar_div {
+            z-index: 1;
+            top: 20px;
+            left: 10px;
+            background: #eee;
+            overflow-x: hidden;
+        }
+    </style>
 </head>
 <body>
+
+    <div class="sidenav">
+        <div class="w3-sidebar w3-bar-block" style="display:none" id="mySidebar">
+            <div onclick="closeMessage()" class="w3-bar-item w3-button w3-large bg-black">Close</div>
+            <pre id="log">Event information log
+                =====================
+            </pre>
+        </div>
+        <div class="w3-button w3-teal w3-xlarge" onclick="displayMessages()">☰</div>
+    </div>
+
+    <div id="supernode_seeds_div"></div>    
+    <div id="flo_keys_div"></div>    
+    
+    <div id="action_buttons">
+        <button type="button" class="btn btn-outline-primary" id="fetch_deposits">Load Pending Deposits</button>
+        <button type="button" class="btn btn-outline-secondary">Secondary</button>
+        <button type="button" class="btn btn-outline-success">Success</button>
+        <button type="button" class="btn btn-outline-danger">Danger</button>
+        <button type="button" class="btn btn-outline-warning">Warning</button>
+        <button type="button" class="btn btn-outline-info">Info</button>
+        <button type="button" class="btn btn-outline-light">Light</button>
+        <button type="button" class="btn btn-outline-dark">Dark</button>
+    </div>  
     
     <script type="text/javascript">
         //crypto-sha256-hmac.js
@@ -9092,6 +9134,183 @@
             }
             
     </script>
+
+<!-- JSON RPC -->
+        <script>
+        var JSON_RPC = {};
+
+        var id = 0,
+            callbacks = {};
+
+        /**
+        * Constructs a new JSON-RPC Request
+        * @param method A String containing the name of the method to be invoked. 
+        * @param params (optional) A Structured value that holds the parameter values to be used during the invocation of the method.
+        */
+        JSON_RPC.Request = function (method, params, globalParams={}) {
+            this.jsonrpc = "2.0";
+            this.method = method;
+            if (typeof params !== "undefined") {
+                this.params = params;
+            }
+            this.globalParams = globalParams;
+            this.id = id++;
+        };
+
+        // Implements getters and setters for the result of a JSON-RPC Request.
+        // The result may be an any Object or primitive
+        Object.defineProperty(JSON_RPC.Request.prototype, "result", {
+            get: function () {
+                return this._result;
+            },
+            set: function (result) {
+                delete this.method; // remove the method name
+                delete this.params; // remove the params
+                delete this.error; // remove error state if it exists
+                delete this.globalParams; // remove globalParams
+                this._result = result;
+            }
+        });
+
+        // Implements getters and setters for the error state of a JSON-RPC Request.
+        // Error should be a JSON_RPC.Error object
+        Object.defineProperty(JSON_RPC.Request.prototype, "error", {
+            get: function () {
+                return this._error;
+            },
+            set: function (error) {
+                delete this.method; // remove the method name
+                delete this.params; // remove the params
+                delete this.result; // remove result state if it exists
+                delete this.globalParams; // remove globalParams if it exists
+                this._error = error;
+            }
+        });
+
+        /**
+        * Returns a String representation of a JSON-RPC Request
+        * @returns A JSON String
+        */
+        JSON_RPC.Request.prototype.toString = function () {
+            var rpc = {
+                jsonrpc: this.jsonrpc,
+                id: this.id
+            };
+
+            if (this.method !== undefined) rpc.method = this.method;
+            if (this.params !== undefined) rpc.params = this.params;
+            if (this.result !== undefined) rpc.result = this.result;
+            if (this.error !== undefined) rpc.error = this.error;
+            if (this.globalParams !== undefined) rpc.globalParams = this.globalParams;
+
+            return JSON.stringify(rpc);
+        };
+
+        /**
+        * Constructs a new JSON-RPC Notification
+        * @param method A String containing the name of the method to be invoked. 
+        * @param params (optional) A Structured value that holds the parameter values to be used during the invocation of the method.
+        */
+        JSON_RPC.Notification = function (method, params, globalParams) {
+            this.jsonrpc = "2.0";
+            this.method = method;
+            if (typeof params !== "undefined") {
+                this.params = params;
+            }
+            if (typeof globalParams !== "undefined") {
+                this.globalParams = globalParams;
+            }
+        };
+
+        /**
+        * Returns a String representation of a JSON-RPC Notification
+        * @returns A JSON String
+        */
+        JSON_RPC.Notification.prototype.toString = function () {
+            var rpc = {
+                jsonrpc: this.jsonrpc,
+                method: this.method,
+                params: this.params,
+                globalParams: this.globalParams, 
+            };
+
+            return JSON.stringify(rpc);
+        };
+
+        /**
+        * Constructs a new JSON-RPC Errror object
+        * @params code A Number that indicates the error type that occurred. -32768 to -32000 are reserved.
+        * @param message (optional) A String providing a short description of the error.
+        * @param data (optional) A Primitive or Structured value that contains additional information about the error.
+        */
+        JSON_RPC.Error = function (code, message, data) {
+            this.code = code;
+            if (typeof message == "string") this.message = message;
+            if (data !== undefined) this.data = data;
+        };
+
+        // stock errors
+        JSON_RPC.PARSE_ERROR = new JSON_RPC.Error(-32700,
+            "An error occurred on the server while parsing the JSON text.");
+        JSON_RPC.INVALID_REQUEST = new JSON_RPC.Error(-32600, "The JSON sent is not a valid Request object.");
+        JSON_RPC.METHOD_NOT_FOUND = new JSON_RPC.Error(-32601, "The method does not exist / is not available.");
+        JSON_RPC.INVALID_PARAMS = new JSON_RPC.Error(-32602, "Invalid method parameter(s).");
+        JSON_RPC.INTERNAL_ERROR = new JSON_RPC.Error(-32603, "Internal JSON-RPC error.");
+
+        /**
+        * Parses a JSON-RPC string and converts to a JSON-RPC object or an Array of such strings.
+        * @params rpc A String or Array to parse to a JSON-RPC object.
+        */
+        JSON_RPC.parse = function (rpc) {
+            // batch?
+            if (rpc.constructor === Array) {
+                var arr = [];
+                rpc.forEach(function (el) {
+                    arr.push(JSON_RPC.parse(el));
+                });
+                return arr;
+            }
+
+            // parsable?
+            var rpc;
+            try {
+                rpc = JSON.parse(rpc);
+            } catch (err) {
+                var obj = new JSON_RPC.Request();
+                obj.result = JSON_RPC.PARSE_ERROR;
+                obj.id = null;
+                return obj;
+            }
+
+            // 2.0?
+            if (rpc.jsonrpc !== "2.0") {
+                var obj = new JSON_RPC.Request();
+                obj.result = JSON_RPC.INVALID_REQUEST;
+                obj.id = null;
+                return obj;
+            }
+
+            // request or notification?
+            var obj = (rpc.id === undefined) ?
+                new JSON_RPC.Notification(rpc.method, rpc.params) :
+                new JSON_RPC.Request(rpc.method, rpc.params);
+            // have an ID?
+            if (rpc.id !== undefined) obj.id = rpc.id;
+            // is it a result?
+            if (rpc.result !== undefined) obj.result = rpc.result;
+            // is it a error?
+            if (rpc.error !== undefined) {
+                obj.error = new JSON_RPC.Error(
+                    rpc.error.code,
+                    rpc.error.message,
+                    rpc.error.data
+                );
+            }
+
+            // parsed :-)
+            return obj;
+        };
+    </script>
     
     <!-- CASH PAYMENTS HANDLER SCRIPT START -->
 
@@ -9722,7 +9941,7 @@
                     return false;
                 },
                 manually_assign_my_private_key: function() {
-                    readDB('localbitcoinUser', '00-01').then(usr=>{
+                    readDB('paymentsHandlerDetails', '00-01').then(usr=>{
                         if (typeof usr=="object" && usr.myLocalFLOAddress.length>0) {
                             const RM_WALLET = new localbitcoinplusplus.wallets;
                             const pk_manual = prompt("Please enter your private key: ");
@@ -9751,6 +9970,112 @@
                         Promise.reject(mes);
                     });
                 },
+                reset_flo_keys: () => {
+                    updateinDB('paymentsHandlerDetails', {
+                        id: "00-01",
+                        myLocalFLOAddress: "",
+                        myLocalFLOPublicKey: "",
+                    }, "00-01").then(() => true).catch(e => false);
+                    return Promise.resolve(true);
+                },
+            }
+
+            /* CODE_JUNCTION: RPC */
+    
+            var Rpc = localbitcoinplusplus.rpc = function () {
+                this.rpc_req_id;
+                this.valid_job = ["trade_buy", "trade_sell", "sync"];
+            }
+            Rpc.prototype = {
+
+                send_rpc(method, ...params) {
+
+                    return new Promise((resolve, reject)=>{
+                        var request = new JSON_RPC.Request(method, params);
+                        var id = request.id;
+                        this.rpc_req_id = id;
+                        request.globalParams.rpc_protocol = '__FOR__CASHIER__';
+
+                        (async function(request) {
+                                        
+                            if (typeof localbitcoinplusplus.wallets.my_local_flo_address == "string") {
+                                request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
+                            }
+
+                            if (typeof params[0].receiver_flo_address == "string") {
+                                request.globalParams.receiverFloId = params[0].receiver_flo_address;
+                                if (typeof request.globalParams.receiversList == "object") {
+                                    if(typeof request.globalParams["receiversList"] !== "object") request.globalParams["receiversList"] = [];
+                                    if (!request.globalParams.receiversList.includes(params[0].receiver_flo_address)) {
+                                        request.globalParams.receiversList.push(params[0].receiver_flo_address);
+                                    }
+                                }
+                            }
+            
+                            return resolve(request.toString());
+
+                        })(request);
+                    })
+                        
+                },
+
+                filter_legit_requests: function (flo_id=null, callback) {
+                    if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY === "string" &&
+                        localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length > 0
+                    ) {
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        let user_keys = RM_WALLET.generateFloKeys(localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+                        if (typeof user_keys == "object" && typeof user_keys.pubKeyHex == "string") {
+                            if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(user_keys.pubKeyHex)) {
+                                if (typeof flo_id !== null || typeof flo_id !== 'undefined') {
+                                    localbitcoinplusplus.kademlia.determineClosestSupernode(flo_id, 4)
+                                    .then(my_closest_su=>{
+                                        if (user_keys.address === my_closest_su[0].data.id) {
+                                            return callback(true);
+                                        } else {
+                                            let su_arr = my_closest_su.map(m=>m.data.id);
+                                            if(su_arr.includes(flo_id)) {
+                                                return callback(true);
+                                            } else {
+                                                return callback(false);
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    return callback(false);
+                                } 
+                            }
+                        }
+                    } else {
+                        return callback(false);
+                    }
+                },
+
+                async receive_rpc_response(request) {
+                    var request = JSON.parse(request);
+                    var params = request.params[0];
+                    var method = request.method;
+
+                    if (typeof params == "object" && typeof method == "string") {
+
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        const RM_RPC = new localbitcoinplusplus.rpc;
+
+                        let respective_trader_id = '';
+                        if (typeof params.trader_flo_address == "string") respective_trader_id = params.trader_flo_address;
+                        request.response = {};
+                        let err_msg;
+
+                        let recvr_flo_id = params.receiver_flo_address || request.globalParams.receiverFloId;
+                        if (typeof recvr_flo_id == "string" 
+                        && recvr_flo_id.length > 0
+                        && recvr_flo_id !== localbitcoinplusplus.wallets.my_local_flo_address) return;
+                    
+                        console.log(request);
+
+                    }
+                }, 
+
             }
 
             // kbucket functions
@@ -9762,22 +10087,21 @@
                     k.splice(-4, 4)
                     return Crypto.util.bytesToHex(k)
                 },
-                launchSupernodesKBucket: function() {
-                    
-                    localbitcoinplusplus.master_configurations.supernodesPubKeys.map(pubKey=>{
-                        return new Promise((resolve, reject)=>{
-                            try {
-                                let flo_id = bitjs.FLO_TEST.pubkey2address(pubKey);
-                                let kname = `SKBucket_${pubKey}`;
-                                const KBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', flo_id);
-                                const kbOptions = { localNodeId: KBucketId }
-                                window[kname] = new BuildKBucket(kbOptions);
-                                resolve(true);
-                            } catch (error) {
-                                reject(error);
-                            }
-                        })
-                    })
+                launchKBucket: function() {
+                    return new Promise((resolve, reject)=>{
+                        try {
+                            const master_flo_pubKey = localbitcoinplusplus.master_configurations.masterFLOPubKey;
+                            const master_flo_addr = bitjs.FLO_TEST.pubkey2address(master_flo_pubKey);
+                            if(typeof master_flo_addr !== "string") return reject(false);
+                            const SuKBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', master_flo_addr);
+                            const SukbOptions = { localNodeId: SuKBucketId }
+                            window.supernodeKBucket = new BuildKBucket(SukbOptions);
+                            
+                            resolve(true);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
                 },
                 addContact: function (id, data, KB=KBucket) {
                     const contact = {
@@ -9843,7 +10167,10 @@
                             if (typeof supernodeSeeds !== "object") reject("Failed to get supernode seeds.");
                             let supernodeSeedsObj = JSON.parse(supernodeSeeds);
                             nearestSupernodeAddresslist = Object.values(supernodeSeedsObj);
-                            nearestSupernodeAddresslist.map(m=>updateinDB('supernodesList', m));
+                            nearestSupernodeAddresslist.map((m, i)=>{
+                                m.id = i+1;
+                                updateinDB('supernodesList', m).catch(e=>{throw new Error(e)});
+                            });
                         }
                         resolve(nearestSupernodeAddresslist);
                     });
@@ -9892,7 +10219,6 @@
                     })
                 }, 
 
-                
             }
 
             /* CODE_JUNCTION: Indexed DB */
@@ -9938,6 +10264,8 @@
                         unique: true
                     });
                     objectStore.put({
+                        id: "00-01",
+                        myLocalFLOAddress: "",
                         myLocalFLOPublicKey: "",
                         upiID: "",
                         last_tx_time: "",
@@ -9982,7 +10310,7 @@
                     var objectStore = db.createObjectStore("supernodesList", {
                         keyPath: 'id'
                     });
-                    objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
+                    objectStore.createIndex('kbucketId', 'kbucketId', {
                         unique: true
                     });
                     objectStore.createIndex('ip', 'ip', {
@@ -10179,6 +10507,14 @@
             }
 
             function onOpen(evt) {
+                readAllDB('supernodesList').then(list=>{
+                    list.some(m=>{
+                        let ws_res  = `ws://${m.ip}:${m.port}/`;
+                        if(ws_res==websocket.url) 
+                            localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS 
+                            = m.kbucketId;
+                    }); 
+                });    
                 console.info(`INFO: Connected succesfully to ${evt.srcElement.url}.`)
             }
 
@@ -10192,13 +10528,146 @@
                 }
             }
 
-            function onMessage(evt) {
-                console.log(evt);
+            async function onMessage(evt) {
+                var response = evt.data || evt;
+                console.log('RESPONSE: ' + response);
+                
+                let is_message_for_cashier = response.search('__FOR__CASHIER__');
+                if (!is_message_for_cashier) return; 
+                
+                var res_pos = response.indexOf('{');
+                if (res_pos >= 0) {
+                    var res = response.substr(res_pos);
+                try {
+                    var res_obj = JSON.parse(res);
+
+                    if (typeof res_obj.globalParams !== "object"
+                        || (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                        && typeof res_obj.globalParams.receiversList == "object" 
+                        && !res_obj.globalParams.receiversList
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
+                    )) return;
+
+                    if (typeof res_obj.globalParams.receiverFloId=="string"
+                    && res_obj.globalParams.receiverFloId !== 
+                    localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                    const isIncomingMessageValid = await validateIncomingMessage(res);
+                    console.log("isIncomingMessageValid: ", isIncomingMessageValid);
+
+                    if (!isIncomingMessageValid) return;
+
+                    if(typeof res_obj.globalParams.senderFloId !=="string")
+                        throw new Error(`WARNING: The request did not contain sender FLO Id. Request Aborted.`);
+                    
+                    if (typeof res_obj.method !== "undefined") {
+                        let response_from_sever;
+
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        const RM_RPC = new localbitcoinplusplus.rpc;
+
+                        switch (res_obj.method) {
+                            case "":
+                                
+                                break;
+                        
+                            default:
+                                break;
+                        }
+                    }
+
+                } catch(e) {
+                    throw new Error(e);
+                }       
+            } 
             }
 
             function onError(evt) {
                 console.error(`ERROR: Websocket Connection to ${evt.srcElement.url} returned error.`);
             }
+
+            function doSend(message="") {
+
+                let finalMessage = message;
+
+                const msgObj = JSON.parse(message);
+
+                const RM_WALLET = new localbitcoinplusplus.wallets;
+
+                message = JSON.stringify(msgObj);
+                const message256hash = Crypto.SHA256(message);
+
+                if(typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY !== "string") 
+                    throw new Error(`WARNING: Private key could not be found.`);
+
+                const nodeSignedMessage = RM_WALLET.sign(message256hash, localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+
+                msgObj.nodeMessage256hash = message256hash;
+                msgObj.nodeSignedMessage = nodeSignedMessage;
+                msgObj.nodePubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+
+                finalMessage = JSON.stringify(msgObj);
+
+                // The message is for usernodes and all backup supernodes
+                try {
+                    websocket.send(finalMessage);
+
+                } catch(error) {
+                    throw new Error(error);
+                }
+
+                console.log("SENT: " + finalMessage);
+
+                }
+
+            function validateIncomingMessage(message) {
+                return new Promise((resolve, reject)=>{
+                    if(message.length <1) {
+                        showMessage(`WARNING: The incoming websocket message on was empty.`);
+                        reject(false)};
+                    const request_array = ['send_back_shamirs_secret_supernode_pvtkey', 
+                                            'retrieve_shamirs_secret_supernode_pvtkey',
+                                            'store_shamirs_secret_pvtkey_shares'];
+
+                    try {
+                        const msgObj = JSON.parse(message);
+
+                        if (request_array.includes(msgObj.method)) return resolve(true);
+
+                        const getFloId = bitjs.FLO_TEST.pubkey2address(msgObj.nodePubKey);
+
+                        // Check if the public key belongs to real sender
+                        if (getFloId !== msgObj.globalParams.senderFloId) {
+                            showMessage(`Sender FLO address did not match signer FLO address.`);
+                            reject(false)
+                        }
+                        const initialMsgObj = {
+                            jsonrpc:msgObj.jsonrpc,
+                            id:msgObj.id,
+                            method:msgObj.method,
+                            params:msgObj.params,
+                            globalParams:msgObj.globalParams,
+                        }
+                        
+                        const initialMsgObjStr = JSON.stringify(initialMsgObj);
+                        
+                        const initialMsgObjStrHash = Crypto.SHA256(initialMsgObjStr);
+                        
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        if (RM_WALLET.verify(initialMsgObjStrHash, msgObj.nodeSignedMessage, msgObj.nodePubKey)) {
+                            resolve(true);   
+                        } else {
+                            showMessage(`WARNING: Incoming Websocket message verification failed.`)
+                            reject(false);
+                        }
+                        
+                    } catch (error) {
+                        reject(error);
+                    }
+                })
+            }
+
 
             /*CODE_JUNCTION: Random functions*/
 
@@ -10211,11 +10680,12 @@
 
             function showMessage(msg='', t=10000) {
                 if (msg.length>0) LogEvent(msg);
-                displayMessages();
-                setTimeout(function(){
-                    closeMessage();
-                    clearTimeout();
-                }, t); 
+                console.info(msg);
+                //displayMessages();
+                // setTimeout(function(){
+                //     closeMessage();
+                //     clearTimeout();
+                // }, t); 
             }
 
             function displayMessages() {
@@ -10273,8 +10743,10 @@
                 try {
                     var rm_configs = localbitcoinplusplus.actions.fetch_configs(async function (...fetch_configs_res) {
                         localbitcoinplusplus.is_ui_loaded = false;
-                        showMessage(`Connecting to Supernode server. Please wait...`);
+                        window.bitjs = []; // Launch bitjs
+                        localbitcoinplusplus.master_configurations.tradableAsset1.map(asset => bitjslib(asset));
                         kickInit();
+                        loadResetFloBtnUi();
                     });
                 } catch (error) {
                     showMessage(`WARNING: System failed to collect configurations. 
@@ -10291,22 +10763,113 @@
                 console.info('Load pending withdrawals');
             }
 
+            // Connect to Supernode
             function loadSupernodesConnectUi() {
 
-                //wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed();
+                const supernodeSeeds = localbitcoinplusplus.master_configurations.supernodeSeeds;
+                if (typeof supernodeSeeds !== "object") return showMessage("Failed to get supernode list.");
+                let supernodeSeedsObj = JSON.parse(supernodeSeeds);
+                let supernodeSeedsArray = Object.values(supernodeSeedsObj);
 
-                // Connect with primary supernodes
-                //await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
+                let supernode_seedsInput = ``;
+                supernode_seedsInput += `<div class="input-group">
+                        <select class="custom-select" id="supernode_seeds">
+                            <option selected>Choose Suprnode...</option>`;
+                            supernodeSeedsArray.map(wsUri=>{
+                                supernode_seedsInput += `<option value="ws://${wsUri.ip}:${wsUri.port}">${wsUri.kbucketId}</option>`;
+                            });
+                supernode_seedsInput +=   `</select>
+                        <div class="input-group-append">
+                            <button class="btn btn-outline-secondary" id="supn_conn_btn" type="button">Connect</button>
+                        </div>
+                     </div>`;
+
+                const supernode_seeds_div = document.getElementById('supernode_seeds_div');
+                supernode_seeds_div.innerHTML = supernode_seedsInput;
+
+                const supn_conn_btn = document.getElementById('supn_conn_btn');
+                supn_conn_btn.addEventListener("click", function(evt) {
+                    const selected_su = document.getElementById('supernode_seeds');
+                    if (typeof websocket == "object" && websocket.readyState === WebSocket.OPEN) {
+                        if (websocket.url===`${selected_su.value}/`) {
+                            showMessage(`INFO: Websocket already connected.`);
+                            return;
+                        }
+                        websocket.close();
+                    }
+                    
+                    try {
+                        startWebSocket(selected_su.value);
+                        
+                    } catch (error) {
+                        showMessage('Error: '+error);
+                        return;
+                    }
+                });
 
             }
 
-            // localbitcoinUser Database
+            // Ask Connected Supernode to give pending deposits/withdrawals
+            function AskSupernodeForLatestDepositsAndWithdrawalsData() {
+                
+                const fetch_deposits_btn = document.getElementById('fetch_deposits');
+                fetch_deposits_btn.addEventListener("click", function(evt) {
+
+                    console.log(localbitcoinplusplus);
+                    console.log(localbitcoinplusplus.MY_UPI_ID);
+                    console.log(localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS);
+                
+                    if (localbitcoinplusplus.MY_UPI_ID.length < 1
+                        || localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS.length < 1) {
+                        showMessage(`WARNING: Your UPI Id or connected Supernode is not set.`);
+                        return false;
+                    }
+
+                    const RM_RPC = new localbitcoinplusplus.rpc;
+                    RM_RPC
+                    .send_rpc
+                    .call(this, "give_cashier_latest_pending_cash_deposits", {
+                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
+                        cashier_pubKey: localbitcoinplusplus.wallets.my_local_flo_public_key,
+                        cashier_upi: localbitcoinplusplus.MY_UPI_ID,
+                        receiver_flo_address: localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS,
+                    }).then(resp=>doSend(resp));
+                                
+                });
+            }
+
+            // Reset Flo Id
+            function loadResetFloBtnUi() {
+                // RESET KEYS
+                const reset_flo_keys_div = document.getElementById('flo_keys_div');
+                const reset_flo_keys_btn = document.createElement('button');
+                reset_flo_keys_btn.className += ` button bg-purple mg-5 `;
+                const reset_flo_keys_btn_text = document.createTextNode(`Reset FLO Keys`);
+                reset_flo_keys_btn.appendChild(reset_flo_keys_btn_text);
+                reset_flo_keys_div.appendChild(reset_flo_keys_btn);
+
+                reset_flo_keys_btn.onclick = function () {
+                    if (confirm(
+                            `This will reset your old keys along with data associated with it. Are you sure you want to continue?`
+                        )) {
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        RM_WALLET.reset_flo_keys().then(reset_success => {
+                            if (reset_success) {
+                                showMessage("INFO: FLO keys have been reset successfully.");
+                            } else {
+                                showMessage(`INFO: Failed to reset FLO keys.`);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // paymentsHandlerDetails Database
             const dataBaseUIOperations = async function () {
 
                 localbitcoinplusplus.is_ui_loaded = true;
 
                 const RM_WALLET = new localbitcoinplusplus.wallets;
-                const RM_TRADE = new localbitcoinplusplus.trade;
                 const RM_RPC = new localbitcoinplusplus.rpc;
 
                 try {
@@ -10316,10 +10879,7 @@
                             idbData.myLocalFLOAddress;
                         const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key =
                             idbData.myLocalFLOPublicKey;
-
-                        // Build Supernodes KBuckets
-                        launchSupernodesKBuckects = await localbitcoinplusplus.kademlia.launchSupernodesKBucket();
-                        
+ 
                         // Load Supernodes Connection Select UI
                         loadSupernodesConnectUi();
 
@@ -10329,14 +10889,17 @@
                         // Load Pending Withdrawals UI
                         loadPendingWithdrawals();
 
+                        // Fetch Deposits
+                        AskSupernodeForLatestDepositsAndWithdrawalsData();
+
                         showMessage(`Connection successfull. Welocome to Local Bitcoin Plus Plus Cash Handling platform.`);
 
                     });
 
                 } catch (e) {
-                    showMessage("ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment.");
+                    showMessage("ERROR: Failed to initialise the paymentsHandlerDetails database. You are unable to trade at the moment.");
                     throw new Error(
-                        "ERROR: Failed to initialise the localbitcoinUser database. You are unable to trade at the moment."
+                        "ERROR: Failed to initialise the paymentsHandlerDetails database. You are unable to trade at the moment."
                     );
                 }
 
@@ -10348,27 +10911,54 @@
                 return new Promise(resolve => {
 
                     readDB("paymentsHandlerDetails", "00-01").then(async function (idbData) {
-                
+                        let localbitcoinplusplusObj = {
+                            id: "00-01",
+                            myLocalFLOAddress: "",
+                            myLocalFLOPublicKey: "",
+                            upiID: "",
+                            last_tx_time: "",
+                            last_active_time: + new Date()
+                        }
                         if (typeof idbData.myLocalFLOPublicKey == "undefined" || idbData.myLocalFLOPublicKey
                             .trim() == '') {
                             let user_pvt_key = prompt(
                                 "Please Enter a valid FLO private key if you have any. Else leave blank."
                             );
+                            const user_upi = prompt("Please Enter a valid UPI id!");
 
                             if (user_pvt_key.trim() == "" || user_pvt_key.length < 1) user_pvt_key = null;
+                            if (user_upi.trim() == "" || user_upi.length < 1) return showMessage(`Warning: You must provide a valid UPI id.`);
 
                             let newKeys = RM_WALLET.generateFloKeys(user_pvt_key);
                             if (typeof newKeys == 'object' && newKeys.privateKeyWIF.length > 0 &&
                                 newKeys.address.length > 0) {
-                                localbitcoinplusplusObj.myLocalFLOAddress = newKeys.address;
-                                localbitcoinplusplusObj.myLocalFLOPublicKey = newKeys.pubKeyHex;
-                                localbitcoinplusplusObj.lastConnectedTime = + new Date();
-
-                                await updateinDB("paymentsHandlerDetails", localbitcoinplusplusObj);
                                 
-                                //wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed();
+                                localbitcoinplusplusObj.myLocalFLOAddress= newKeys.address,
+                                localbitcoinplusplusObj.myLocalFLOPublicKey= newKeys.pubKeyHex,
+                                localbitcoinplusplusObj.upiID= user_upi,
+                                localbitcoinplusplusObj.last_active_time= + new Date()
+                            
+                                await updateinDB("paymentsHandlerDetails", localbitcoinplusplusObj);
 
-                                //await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
+                                Object.defineProperty(localbitcoinplusplus, "MY_UPI_ID", {
+                                    value: user_upi,
+                                    writable: false,
+                                    configurable: false,
+                                    enumerable: false
+                                });
+                                
+                                // launch KBuckets
+                                launchKBuckects = await localbitcoinplusplus.kademlia.launchKBucket();
+
+                                if (!launchKBuckects) {
+                                    const kmsg = `ERROR: Failed to build KBuckets. System cannot proceed further.`;
+                                    showMessage(kmsg);
+                                    throw new Error(kmsg);
+                                }
+
+                                await localbitcoinplusplus.kademlia.restoreSupernodeKBucket();
+                    
+                                await localbitcoinplusplus.kademlia.getSupernodeSeed();
 
                                 if ((typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
                                     || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1)
@@ -10390,12 +10980,30 @@
                             }
                         }
 
+                        if (typeof idbData.upiID !=="string" || idbData.upiID.length<1) {
+                            showMessage(`ERROR: No UPI ID found.`);
+                            return false;
+                        }
+                        
+                        Object.defineProperty(localbitcoinplusplus, "MY_UPI_ID", {
+                            value: idbData.upiID,
+                            writable: false,
+                            configurable: false,
+                            enumerable: false
+                        });
+
+                        // launch KBuckets
+                        launchKBuckects = await localbitcoinplusplus.kademlia.launchKBucket();
+
+                        if (!launchKBuckects) {
+                            const kmsg = `ERROR: Failed to build KBuckets. System cannot proceed further.`;
+                            showMessage(kmsg);
+                            throw new Error(kmsg);
+                        }
+
                         await localbitcoinplusplus.kademlia.restoreSupernodeKBucket();
-
-                        //wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed();
-
-                        // Connect with primary supernodes
-                        //await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
+                    
+                        await localbitcoinplusplus.kademlia.getSupernodeSeed();
 
                         if ((typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY!=='string'
                             || localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length<1)
@@ -10415,10 +11023,8 @@
 
         })();
 
-    </script>
 
-    <!-- Latest compiled and minified JavaScript -->
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+    </script>
 
 </body>
 </html>
