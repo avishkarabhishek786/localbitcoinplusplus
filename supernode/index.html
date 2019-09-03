@@ -10091,9 +10091,8 @@
                         #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
                         03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
                         03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB
-                        #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"},
-                        #!#cashiers={"0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53":"johnDoe@upi",
-                        "03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742":"janeDoe@upi"},
+                        #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
+                        #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi"}
                         #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1","port":"9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
                         "ranchimall2":{"ip":"127.0.0.1","port":"9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
                         "ranchimall3":{"ip":"127.0.0.1","port":"9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
@@ -11950,6 +11949,19 @@
                     this.rpc_req_id = id;
 
                     (async function(request) {
+
+                        /***************************FOR CASHIERS OPERATIONS****************************************/
+                        if (typeof params[0].cashier_pubKey=="string"
+                        && Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers))
+                            .includes(params[0].cashier_pubKey)) {
+                            
+                            request.globalParams.senderFloId = localbitcoinplusplus.wallets.my_local_flo_address;
+                            request.globalParams.receiverFloId = params[0].receiver_flo_address;
+                            request.globalParams.rpc_protocol = '__FOR__CASHIER__';
+                            return resolve(request.toString());
+                        }
+                        /********************************************************************************************/
+
                         const all_receivers_methods = ['do_you_have_latest_data_for_this_supernode', 
                             'sync_backup_supernode_from_backup_supernode'];
                                     
@@ -12525,14 +12537,22 @@
                                         receivedTradeInfo["order_validator_public_key"]= su_data.myLocalFLOPublicKey;
 
                                         try {
-                                            const receivedTradeInfoResp = await addDB("cash_deposits", receivedTradeInfo);
+
                                             const cashiersList = JSON.parse(localbitcoinplusplus.master_configurations.cashiers);
                                             const getAPaymentHandler = randomNoRepeats(Object.keys(cashiersList))();
+
+                                            if(!Object.keys(cashiersList).includes(getAPaymentHandler)) {
+                                                throw new Error(`ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`);
+                                            }
+
+                                            receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler];
+                                            receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
+                                            const receivedTradeInfoResp = await addDB("cash_deposits", receivedTradeInfo);
                                             
                                             let deposit_response_object = {
                                                 error: false,
                                                 method: "deposit_cash_request_response",
-                                                msg: cashiersList[getAPaymentHandler],
+                                                msg: receivedTradeInfo.cashier_upi,
                                                 data: receivedTradeInfoResp,
                                                 receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                 trader_flo_address: receivedTradeInfo.trader_flo_address,
@@ -13708,14 +13728,21 @@
                                         receivedTradeInfo["order_validator_public_key"]= su_data.myLocalFLOPublicKey;
 
                                         try {
-                                            const receivedTradeInfoResp = await addDB("cash_deposits", receivedTradeInfo);
                                             const cashiersList = JSON.parse(localbitcoinplusplus.master_configurations.cashiers);
                                             const getAPaymentHandler = randomNoRepeats(Object.keys(cashiersList))();
+
+                                            if(!Object.keys(cashiersList).includes(getAPaymentHandler)) {
+                                                throw new Error(`ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`);
+                                            }
+
+                                            receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler];
+                                            receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
+                                            const receivedTradeInfoResp = await addDB("cash_deposits", receivedTradeInfo);
                                             
                                             let deposit_response_object = {
                                                 error: false,
                                                 method: "deposit_cash_request_response",
-                                                msg: cashiersList[getAPaymentHandler],
+                                                msg: receivedTradeInfo.cashier_upi,
                                                 data: receivedTradeInfoResp,
                                                 receiver_flo_address: receivedTradeInfo.trader_flo_address,
                                                 trader_flo_address: receivedTradeInfo.trader_flo_address,
@@ -14397,6 +14424,78 @@
                     }
                 }
                 return request.toString(); // return to client
+            },
+
+            async receive_cashiers_rpc_response(request) {
+                const isMsgFromCashier = request.search('__FOR__CASHIER__');
+                if (isMsgFromCashier<0) return;
+                
+                request = JSON.parse(request);
+                const params = request.params[0];
+                const method = request.method;
+
+                if (typeof params == "object" && typeof method == "string") {
+
+                    if (typeof request.globalParams !== "object"
+                        || !Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers))
+                            .includes(request.nodePubKey)
+                        || (typeof request.globalParams.receiversList == "object" 
+                        && !request.globalParams.receiversList
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
+                    )) return;
+
+                    /************************************
+                        #todo: VALIDATE CASHIER'S SIGNATURE HERE
+                    *************************************/
+
+                    const RM_WALLET = new localbitcoinplusplus.wallets;
+                    const RM_RPC = new localbitcoinplusplus.rpc;
+
+                    let respective_trader_id = '';
+                    if (typeof params.trader_flo_address == "string") 
+                        respective_trader_id = params.trader_flo_address;
+                    request.response = {};
+                    let err_msg;
+
+                    let recvr_flo_id = params.receiver_flo_address 
+                        || request.globalParams.receiverFloId;
+                    
+                    if (typeof recvr_flo_id == "string" 
+                    && recvr_flo_id.length > 0
+                    && recvr_flo_id !== 
+                    localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                    switch (method) {
+                        case "give_cashier_latest_pending_cash_deposits":
+                            const get_all_deposit_reqs_for_this_cashier = 
+                                await readDBbyIndex('cash_deposits', 'cashier_pubKey', params.cashier_pubKey);
+
+                            if (get_all_deposit_reqs_for_this_cashier.length) {
+                                
+                                RM_RPC
+                                .send_rpc
+                                .call(this, "list_of_cashier_latest_pending_cash_deposits", {
+                                    cashier_pubKey: request.nodePubKey,
+                                    receiver_flo_address: request.globalParams.senderFloId,
+                                    data: get_all_deposit_reqs_for_this_cashier,
+                                }).then(resp=>doSend(resp));
+                            } else {
+                                RM_RPC
+                                .send_rpc
+                                .call(this, "list_of_cashier_latest_pending_cash_deposits", {
+                                    cashier_pubKey: request.nodePubKey,
+                                    receiver_flo_address: request.globalParams.senderFloId,
+                                    data: get_all_deposit_reqs_for_this_cashier,
+                                }).then(resp=>doSend(resp));
+                            }
+
+                            break;
+                    
+                        default:
+                            break;
+                    }
+
+                }
             },
 
             parse_server_rpc_response(request) {
@@ -19487,8 +19586,8 @@
                                 case "deposit_cash_request_response":
                                     if (typeof res_obj.params !== "object" 
                                             || typeof res_obj.params[0] !== "object") return;
-                                    let deposit_res_data = res_obj.params[0];
-                                    RM_RPC.filter_legit_backup_requests(deposit_res_data.trader_flo_address, 
+                                    let deposit_cash_data = res_obj.params[0];
+                                    RM_RPC.filter_legit_backup_requests(deposit_cash_data.trader_flo_address, 
                                         async function (is_valid_request) {
                                             if(!is_valid_request) return false;
                                             if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object" 
@@ -20510,8 +20609,62 @@
             }
         }
 
-        async function handleCashierMessages(response) {
-            console.log(response);
+        async function handleCashierMessages(evt) {
+            var response = evt.data || evt;
+            console.log('RESPONSE: ' + response);
+
+            const isMsgFromCashier = response.search('__FOR__CASHIER__');
+            if (isMsgFromCashier<0) return;   
+            
+            var res_pos = response.indexOf('{');
+            if (res_pos >= 0) {
+                                
+                var res = response.substr(res_pos);
+                try {
+                    var res_obj = JSON.parse(res);
+
+                    if (typeof res_obj.globalParams !== "object"
+                        || !Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers))
+                            .includes(res_obj.nodePubKey)
+                        || (typeof res_obj.globalParams.receiversList == "object" 
+                        && !res_obj.globalParams.receiversList
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_address) 
+                    )) return;
+
+                    if (typeof res_obj.globalParams.receiverFloId=="string"
+                    && res_obj.globalParams.receiverFloId !== 
+                    localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                    const isIncomingMessageValid = await validateIncomingMessage(res);
+                    console.log("isIncomingMessageValid: ", isIncomingMessageValid);
+
+                    if (!isIncomingMessageValid) return;
+
+                    if(typeof res_obj.globalParams.senderFloId !=="string")
+                        throw new Error(`WARNING: The request did not contain sender FLO Id. Request Aborted.`);
+                    
+                    if (typeof res_obj.method !== "undefined") {
+                        let response_from_sever;
+
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        const RM_RPC = new localbitcoinplusplus.rpc;
+
+                        switch (res_obj.method) {
+                            case "give_cashier_latest_pending_cash_deposits":
+                                response_from_sever = RM_RPC.receive_cashiers_rpc_response
+                                .call(this, JSON.stringify(res_obj));
+                                break;
+                        
+                            default:
+                                break;
+                        }
+
+                    }
+
+                } catch(e) {
+                    throw new Error(e);
+                }
+            }
         }
 
         function onError(evt) {
@@ -20780,7 +20933,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 3);
+        const request = window.indexedDB.open(DBName, 4);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -20967,6 +21120,12 @@
                     unique: false
                 });
                 objectStore.createIndex('depositing_amount', 'depositing_amount', {
+                    unique: false
+                });
+                objectStore.createIndex('cashier_pubKey', 'cashier_pubKey', {
+                    unique: false
+                });
+                objectStore.createIndex('cashier_upi', 'cashier_upi', {
                     unique: false
                 });
             }
