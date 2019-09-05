@@ -10149,7 +10149,7 @@
                 // If not, either get the data or don't serve the users of
                 // that dead supernode.
 
-                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc", "cash_balances",
                 "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
                 const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray);
@@ -10174,7 +10174,7 @@
                 // If not, either get the data or don't serve the users of
                 // that dead supernode.
 
-                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc", "cash_balances",
                 "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
                 const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, flo_addr_of_backup);
@@ -10286,7 +10286,7 @@
 
                 if (actual_db_data==false) {
                     if (typeof tableArray!=="object") {
-                        tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances",
+                        tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc", "cash_balances", "crypto_balances",
                         "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];    
                     }
                     dbDataOfSupernode = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, subjectDB);                    
@@ -10331,79 +10331,6 @@
                             showMessage(`INFO: Request sent to check latest DB hash for ${su}.`);
                         }
                     });
-                }
-            },
-
-            claim_deposit_withdraw: function (claim_id) {
-                if (typeof claim_id == "string" && claim_id.length > 0) {
-                    try {
-                        let deposit_withdraw_user_claim_obj = {
-                            claim_id: claim_id
-                        }
-
-                        const RM_WALLET = new localbitcoinplusplus.wallets;
-                        const RM_RPC = new localbitcoinplusplus.rpc;
-
-                        let deposit_withdraw_user_claim_str = JSON.stringify(deposit_withdraw_user_claim_obj);
-                        let deposit_withdraw_user_claim_hash = Crypto.SHA256(deposit_withdraw_user_claim_str);
-                        let deposit_withdraw_user_claim_sign = RM_WALLET.sign(deposit_withdraw_user_claim_hash,
-                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
-
-                        deposit_withdraw_user_claim_obj.userPubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
-                        deposit_withdraw_user_claim_obj.trader_flo_address = localbitcoinplusplus.wallets.my_;
-                        deposit_withdraw_user_claim_obj.hash = deposit_withdraw_user_claim_hash;
-                        deposit_withdraw_user_claim_obj.sign = deposit_withdraw_user_claim_sign;
-
-                        deposit_withdraw_user_claim_obj.receiver_flo_address = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
-
-                        RM_RPC
-                        .send_rpc
-                        .call(
-                            this,
-                                "deposit_withdraw_user_claim",
-                                deposit_withdraw_user_claim_obj
-                            ).then(deposit_withdraw_claim=>doSend(deposit_withdraw_claim));
-
-                    } catch (error) {
-                        console.log(error);
-                    }
-                }
-            },
-
-            build_deposit_withdraw_table: function(withdraw_data) {
-                if (typeof withdraw_data == "object" && withdraw_data.length>0) {
-                    let action_req = ``;
-                    let t = `<table>
-                                <tr>
-                                    <th>Withdrawer Flo Id</th>
-                                    <th>Depositor Flo Id</th>
-                                    <th>Amount</th>
-                                    <th>Action required</th>
-                                </tr>`;
-                    withdraw_data.filter(wdf=>(wdf.status==2 || wdf.status==3)).map(wd=>{
-                        if(typeof localbitcoinplusplus.wallets.my_local_flo_address=="string") {
-                            let claim_id = `${wd.id}!!${localbitcoinplusplus.wallets.my_local_flo_address}`;
-                            if (localbitcoinplusplus.wallets.my_local_flo_address==wd.trader_flo_address) {
-                                action_req += `<p>Please click the button below only if you received the cash.</p>`;
-                                action_req += `<button onclick="localbitcoinplusplus.actions.claim_deposit_withdraw('${claim_id}')">I received the money.</button>`;
-                            } else if(localbitcoinplusplus.wallets.my_local_flo_address==wd.depositor_flo_id
-                                   && wdf.status!==3) {
-                                action_req += `<p>Please click the button below only if you actually deposited the money. 
-                                                    Any fake claim can cause a heavy penalty.</p>`;
-                                action_req += `<button onclick="localbitcoinplusplus.actions.claim_deposit_withdraw('${claim_id}')" >I deposited the money.</button>`;
-                            } 
-                        }
-                        t += `<tr>
-                                <td>${wd.trader_flo_address}</td>
-                                <td>${wd.depositor_flo_id}</td>
-                                <td>${wd.withdraw_amount}</td>
-                                <td>${action_req}</td>`;
-                        t += `</tr>`;
-                    });
-                                    
-                        t += `</table>`;
-
-                    modalWindow(t);
                 }
             },
 
@@ -10470,7 +10397,7 @@
 
             exportUserDataFromOneSupernodeToAnother: async function(userFloId="", receipient_su="") {
                 let immigrantsList = [];
-                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                     "crypto_balances", "cash_balances", "userPublicData", 
                     "buyOrders", "sellOrders"
                 ];
@@ -11106,7 +11033,7 @@
                             // If not, either get the data or don't serve the users of
                             // that dead supernode.
 
-                            const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                            const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc", "cash_balances",
                             "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
                             const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(tableArray, getFLOId);
@@ -12139,7 +12066,7 @@
                             if (is_valid_request === true && params.job ==
                                 "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
-                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                                const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                                     "crypto_balances", "cash_balances", "userPublicData", 
                                     "buyOrders", "sellOrders"
                                 ];
@@ -12609,7 +12536,7 @@
                                             throw new Error(err_msg);
                                         }
                                     } else {
-                                        if (trade_margin.remaining_fiat_credit < 0 
+                                        if (trade_margin.remaining_fiat_credit <= 0 
                                             || params.withdrawing_amount <= 0
                                             || trade_margin.remaining_fiat_credit < params.withdrawing_amount) {
                                             err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
@@ -12817,99 +12744,163 @@
                                         AND RECEIVER HAS CONFIRMED WITHDRAW*/
 
                                         // Check how much Cash user can withdraw
-                                        const trader_cash_id =
-                                            `${params.trader_flo_address}_${params.currency}`;
-                                        readDB("cash_balances", trader_cash_id).then(function (
-                                            cash_balances_res) {
-                                            if (typeof cash_balances_res == "object" &&
-                                                typeof cash_balances_res
-                                                .trader_flo_address == "string" &&
-                                                typeof cash_balances_res.cash_balance ==
-                                                "number" &&
-                                                cash_balances_res.cash_balance > 0) {
-                                                let withdrawer_cash_balance = parseFloat(
-                                                    cash_balances_res.cash_balance);
-                                                let withdrawing_cash_amount = parseFloat(
-                                                    params.withdrawing_amount);
-                                                let bank_details = params.receivinAddress.trim();
+                                        const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
+                                        readDB("cash_balances", trader_cash_id).then(function (cash_balances_res) {
+                                            if (typeof cash_balances_res == "object" 
+                                                && typeof cash_balances_res.trader_flo_address == "string" 
+                                                && typeof cash_balances_res.cash_balance == "number" 
+                                                && cash_balances_res.cash_balance > 0) {
+                                                let withdrawer_cash_balance = parseFloat(cash_balances_res.cash_balance);
+                                                let withdrawing_cash_amount = parseFloat(params.withdrawing_amount);
+                                                let bank_details = params.receivinAddress.trim(); // user UPI
 
                                                 if (withdrawer_cash_balance > 0 &&
                                                     withdrawing_cash_amount > 0 &&
-                                                    withdrawer_cash_balance >=
-                                                    withdrawing_cash_amount) {
+                                                    withdrawer_cash_balance >= withdrawing_cash_amount) {
+
+                                                    // Get a cashier
+                                                    const cashiersList = JSON.parse(localbitcoinplusplus.master_configurations.cashiers);
+                                                    const getAPaymentHandler = randomNoRepeats(Object.keys(cashiersList))();
+                                                    const cashierFloAddr = bitjs.FLO_TEST.pubkey2address(getAPaymentHandler);
+
+                                                    if(!Object.keys(cashiersList).includes(getAPaymentHandler)) {
+                                                        throw new Error(`ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`);
+                                                    }
+
+                                                    const encoded_bank_details = localbitcoinplusplus.encrypt.encryptMessage(bank_details, getAPaymentHandler);
+
+                                                    let token_transfer_currency = '';
+                                                    if (params.currency=='INR') {
+                                                        token_transfer_currency = 'rupee'
+                                                    }
+
+                                                    const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${params.trader_flo_address}.`;
+
                                                     // Add it to cash withdrawal table
                                                     let withdraw_request_db_object = {
                                                         id: helper_functions.unique_id(),
                                                         trader_flo_address: params.trader_flo_address,
                                                         withdraw_amount: withdrawing_cash_amount,
                                                         currency: params.currency,
-                                                        receivinAddress: bank_details,
+                                                        receivinAddress: encoded_bank_details,
+                                                        cashier_pubKey: getAPaymentHandler,
                                                         status: 1, // withdraw request called
                                                     }
 
-                                                    readDB("localbitcoinUser", "00-01").then(
-                                                        function (
-                                                            su_data) {
-                                                            if (typeof su_data ==
-                                                                "object" &&
-                                                                typeof su_data.myLocalFLOPublicKey ==
-                                                                "string" &&
-                                                                su_data.myLocalFLOPublicKey
-                                                                .length >
-                                                                0 &&
-                                                                localbitcoinplusplus.master_configurations
-                                                                .supernodesPubKeys.includes(
-                                                                    su_data.myLocalFLOPublicKey
-                                                                )) {
+                                                    readDB("localbitcoinUser", "00-01").then(function (su_data) {
+                                                        if (typeof su_data == "object" 
+                                                        && typeof su_data.myLocalFLOPublicKey ==  "string" 
+                                                        && su_data.myLocalFLOPublicKey.length > 0 
+                                                        && localbitcoinplusplus.master_configurations
+                                                        .supernodesPubKeys.includes(su_data.myLocalFLOPublicKey)) {
 
-                                                                let
-                                                                    withdraw_request_db_object_hash =
-                                                                    Crypto.SHA256(JSON.stringify(
-                                                                        withdraw_request_db_object
-                                                                    ));
-                                                                withdraw_request_db_object
-                                                                    ["withdrawDataHash"] =
-                                                                    withdraw_request_db_object_hash;
-                                                                withdraw_request_db_object
-                                                                    [
-                                                                        "order_validator_sign"
-                                                                    ] =
-                                                                    RM_WALLET
-                                                                    .sign(
-                                                                        withdraw_request_db_object_hash,
-                                                                        localbitcoinplusplus
-                                                                        .wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                    );
-                                                                withdraw_request_db_object
-                                                                    [
-                                                                        "order_validator_public_key"
-                                                                    ] = su_data.myLocalFLOPublicKey;
+                                                            let withdraw_request_db_object_hash =
+                                                                Crypto.SHA256(JSON.stringify(
+                                                                    withdraw_request_db_object
+                                                                ));
+                                                            withdraw_request_db_object["withdrawDataHash"] =
+                                                                withdraw_request_db_object_hash;
+                                                            withdraw_request_db_object["order_validator_sign"] =
+                                                                RM_WALLET
+                                                                .sign(
+                                                                    withdraw_request_db_object_hash,
+                                                                    localbitcoinplusplus
+                                                                    .wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                                );
+                                                            withdraw_request_db_object["order_validator_public_key"] 
+                                                                = su_data.myLocalFLOPublicKey;
 
-                                                                try {
-                                                                    // add the request to supernode db
-                                                                    addDB(
-                                                                        "withdraw_cash",
-                                                                        withdraw_request_db_object
-                                                                    ).then(withdraw_request_db_object=>{
-                                                                        // return back the response to client 
-                                                                        withdraw_request_db_object.receiver_flo_address = 
-                                                                        params.trader_flo_address; 
-                                                                        withdraw_request_db_object.trader_flo_address = 
-                                                                        params.trader_flo_address; 
-                                                                        RM_RPC.send_rpc
-                                                                        .call(this,
-                                                                            "withdrawal_request_response",
-                                                                            withdraw_request_db_object
-                                                                        ).then(withdrawal_request_response=>
-                                                                            doSend(withdrawal_request_response));
-                                                                    });
+                                                            try {
+                                                                // Transfer Token
+                                                                RM_TRADE.sendTransaction(
+                                                                    "FLO_TEST",
+                                                                    localbitcoinplusplus.wallets.my_local_flo_address,
+                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY,
+                                                                    cashierFloAddr,
+                                                                    0.001,
+                                                                    localbitcoinplusplus.wallets.my_local_flo_address,
+                                                                    async function (res) {
+                                                                        console.log(res);
+                                                                        if (typeof res == "object") {
+                                                                            try {
+                                                                                let msg = '';
+                                                                                let resp_txid = '';
+                                                                                if (typeof res.txid=="string" && res.txid.length>0) {
+                                                                                    resp_obj = JSON.parse(res.txid);
+                                                                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                                    msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;                                                                            
+                                                                                } else if (res.signedTxHash.length>0) {
+                                                                                    msg = `INFO: We could not broadcast your transaction. Please broadcast 
+                                                                                    this Signed Raw Tx manually yourself: ${res.signedTxHash}`;   
+                                                                                } else {
+                                                                                    console.log(res);
+                                                                                    throw new Errror(`ERROR: Failed to make transaction.`);
+                                                                                    return false;
+                                                                                }
 
-                                                                    return true;
-                                                                } catch (error) {
-                                                                    console.log(error);
-                                                                }
+                                                                                if (msg.length>0) {
+
+                                                                                    // Deduct balance of withdrawer 
+                                                                                    cash_balances_res.cash_balance -= parseFloat(withdrawing_cash_amount);
+                                                                                    await updateinDB('cash_balances', cash_balances_res);   
+
+                                                                                    const update_cash_balance_obj = { withdrawer_cash_data: withdrawer_cash_data }
+                                                                                    const update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
+                                                                                    const update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
+                                                                                    const update_cash_balance_sign =
+                                                                                        RM_WALLET
+                                                                                        .sign(update_cash_balance_hash,
+                                                                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                                                        );
+
+                                                                                    update_cash_balance_obj.publicKey =
+                                                                                        localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                                                    update_cash_balance_obj.sign = update_cash_balance_sign;
+                                                                                    update_cash_balance_obj.hash = update_cash_balance_hash;
+                                                                                    update_cash_balance_obj.withdraw_id = withdraw_data.id;
+
+                                                                                    update_cash_balance_obj.receiver_flo_address = user_id;
+                                                                                    update_cash_balance_obj.trader_flo_address = user_id;
+
+                                                                                    RM_RPC
+                                                                                        .send_rpc
+                                                                                        .call(this,
+                                                                                            "update_all_new_cash_withdraw_recorded_in_db",
+                                                                                            update_cash_balance_obj)
+                                                                                        .then(update_cash_balance_req=>
+                                                                                        doSend(update_cash_balance_req));
+
+                                                                                    //add the request to supernode db
+                                                                                    withdraw_request_db_object.token_transfer_txid = resp_txid || res.signedTxHash;
+                                                                                    
+                                                                                    // Add record in Db
+                                                                                    const withdraw_request_db_object_res = await addDB("withdraw_cash", withdraw_request_db_object);
+                                                                                
+                                                                                    // return back the response to client 
+                                                                                    withdraw_request_db_object_res.receiver_flo_address = params.trader_flo_address; 
+                                                                                    withdraw_request_db_object_res.trader_flo_address =  params.trader_flo_address; 
+                                                                                    RM_RPC.send_rpc
+                                                                                    .call(this,
+                                                                                        "withdrawal_request_response",
+                                                                                        withdraw_request_db_object_res
+                                                                                    ).then(withdrawal_request_response=>
+                                                                                        doSend(withdrawal_request_response));
+                                                                                    
+                                                                                } else {
+                                                                                    throw new Errror(`ERROR: Failed to make transaction. Message length is 0: ${msg}`);
+                                                                                    return false;
+                                                                                }
+                                                                            } catch(e) {
+                                                                                throw new Error(e);
+                                                                            }
+                                                                        }
+                                                                    }, flo_withdraw_comment);
+
+                                                            } catch (error) {
+                                                                console.log(error);
                                                             }
-                                                        });
+                                                        }
+                                                    });
 
                                                 } else {
                                                     // Return error to the requester
@@ -13291,7 +13282,7 @@
                             if (is_valid_request === true && params.job ==
                                 "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" && params.trader_flo_address.length >
                                 0) {
-                                const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                                const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                                     "crypto_balances", "cash_balances", "userPublicData",
                                     "buyOrders", "sellOrders"
                                 ];
@@ -13980,79 +13971,159 @@
                                             if (typeof cash_balances_res == "object" 
                                                 && typeof cash_balances_res.trader_flo_address == "string" 
                                                 && typeof cash_balances_res.cash_balance == "number" 
-                                                && cash_balances_res.cash_balance > 0
-                                            ) {
+                                                && cash_balances_res.cash_balance > 0) {
                                                 let withdrawer_cash_balance = parseFloat(cash_balances_res.cash_balance);
                                                 let withdrawing_cash_amount = parseFloat(params.withdrawing_amount);
-                                                let bank_details = params.receivinAddress.trim();
+                                                let bank_details = params.receivinAddress.trim(); // user UPI
 
                                                 if (withdrawer_cash_balance > 0 &&
                                                     withdrawing_cash_amount > 0 &&
-                                                    withdrawer_cash_balance >= withdrawing_cash_amount
-                                                ) {
+                                                    withdrawer_cash_balance >= withdrawing_cash_amount) {
+
+                                                    // Get a cashier
+                                                    const cashiersList = JSON.parse(localbitcoinplusplus.master_configurations.cashiers);
+                                                    const getAPaymentHandler = randomNoRepeats(Object.keys(cashiersList))();
+                                                    const cashierFloAddr = bitjs.FLO_TEST.pubkey2address(getAPaymentHandler);
+
+                                                    if(!Object.keys(cashiersList).includes(getAPaymentHandler)) {
+                                                        throw new Error(`ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`);
+                                                    }
+
+                                                    const encoded_bank_details = localbitcoinplusplus.encrypt.encryptMessage(bank_details, getAPaymentHandler);
+
+                                                    let token_transfer_currency = '';
+                                                    if (params.currency=='INR') {
+                                                        token_transfer_currency = 'rupee'
+                                                    }
+
+                                                    const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${params.trader_flo_address}.`;
+
                                                     // Add it to cash withdrawal table
                                                     let withdraw_request_db_object = {
                                                         id: helper_functions.unique_id(),
                                                         trader_flo_address: params.trader_flo_address,
                                                         withdraw_amount: withdrawing_cash_amount,
                                                         currency: params.currency,
-                                                        receivinAddress: bank_details,
+                                                        receivinAddress: encoded_bank_details,
+                                                        cashier_pubKey: getAPaymentHandler,
                                                         status: 1, // withdraw request called
                                                     }
 
-                                                    const getPubKeyOfSupernodeOfThisUser = RM_WALLET
-                                                        .getSupernodePublicKeyFromFloId(primarySupernodeForThisUser);
-
-                                                    if (typeof getPubKeyOfSupernodeOfThisUser == "string" 
-                                                        && getPubKeyOfSupernodeOfThisUser.length > 0 
+                                                    readDB("localbitcoinUser", "00-01").then(function (su_data) {
+                                                        if (typeof su_data == "object" 
+                                                        && typeof su_data.myLocalFLOPublicKey ==  "string" 
+                                                        && su_data.myLocalFLOPublicKey.length > 0 
                                                         && localbitcoinplusplus.master_configurations
-                                                            .supernodesPubKeys.includes(
-                                                                getPubKeyOfSupernodeOfThisUser
-                                                            )) {
+                                                        .supernodesPubKeys.includes(su_data.myLocalFLOPublicKey)) {
 
-                                                        let withdraw_request_db_object_hash =
-                                                            Crypto.SHA256(JSON.stringify(
-                                                                withdraw_request_db_object
-                                                            ));
-                                                        withdraw_request_db_object
-                                                            ["withdrawDataHash"] =
-                                                            withdraw_request_db_object_hash;
-                                                        withdraw_request_db_object
-                                                            ["order_validator_sign"] =
-                                                            RM_WALLET
-                                                            .sign(
-                                                                withdraw_request_db_object_hash,
-                                                                localbitcoinplusplus
-                                                                .wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                            );
-                                                        withdraw_request_db_object
-                                                            ["order_validator_public_key"] = 
-                                                                getPubKeyOfSupernodeOfThisUser;
+                                                            let withdraw_request_db_object_hash =
+                                                                Crypto.SHA256(JSON.stringify(
+                                                                    withdraw_request_db_object
+                                                                ));
+                                                            withdraw_request_db_object["withdrawDataHash"] =
+                                                                withdraw_request_db_object_hash;
+                                                            withdraw_request_db_object["order_validator_sign"] =
+                                                                RM_WALLET
+                                                                .sign(
+                                                                    withdraw_request_db_object_hash,
+                                                                    localbitcoinplusplus
+                                                                    .wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                                );
+                                                            withdraw_request_db_object["order_validator_public_key"] 
+                                                                = su_data.myLocalFLOPublicKey;
 
-                                                        try {
-                                                            // add the request to supernode db
-                                                            backup_server_db_instance.backup_addDB(
-                                                                "withdraw_cash",
-                                                                withdraw_request_db_object
-                                                            ).then(withdraw_request_db_object=>{
-                                                                // return back the response to client 
-                                                                withdraw_request_db_object.receiver_flo_address = 
-                                                                params.trader_flo_address; 
-                                                                withdraw_request_db_object.trader_flo_address = 
-                                                                params.trader_flo_address; 
-                                                                RM_RPC.send_rpc
-                                                                    .call(this,
-                                                                        "withdrawal_request_response",
-                                                                        withdraw_request_db_object
-                                                                    ).then(withdrawal_request_response=>
-                                                                    doSend(withdrawal_request_response));
-                                                            });
-                                                            
-                                                            return true;
-                                                        } catch (error) {
-                                                            console.log(error);
+                                                            try {
+                                                                // Transfer Token
+                                                                RM_TRADE.sendTransaction(
+                                                                    "FLO_TEST",
+                                                                    localbitcoinplusplus.wallets.my_local_flo_address,
+                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY,
+                                                                    cashierFloAddr,
+                                                                    0.001,
+                                                                    localbitcoinplusplus.wallets.my_local_flo_address,
+                                                                    async function (res) {
+                                                                        console.log(res);
+                                                                        if (typeof res == "object") {
+                                                                            try {
+                                                                                let msg = '';
+                                                                                let resp_txid = '';
+                                                                                if (typeof res.txid=="string" && res.txid.length>0) {
+                                                                                    resp_obj = JSON.parse(res.txid);
+                                                                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                                    msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;                                                                            
+                                                                                } else if (res.signedTxHash.length>0) {
+                                                                                    msg = `INFO: We could not broadcast your transaction. Please broadcast 
+                                                                                    this Signed Raw Tx manually yourself: ${res.signedTxHash}`;   
+                                                                                } else {
+                                                                                    console.log(res);
+                                                                                    throw new Errror(`ERROR: Failed to make transaction.`);
+                                                                                    return false;
+                                                                                }
+
+                                                                                if (msg.length>0) {
+
+                                                                                    // Deduct balance of withdrawer 
+                                                                                    cash_balances_res.cash_balance -= parseFloat(withdrawing_cash_amount);
+                                                                                    await backup_server_db_instance.backup_updateinDB('cash_balances', cash_balances_res);   
+
+                                                                                    const update_cash_balance_obj = { withdrawer_cash_data: withdrawer_cash_data }
+                                                                                    const update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
+                                                                                    const update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
+                                                                                    const update_cash_balance_sign =
+                                                                                        RM_WALLET
+                                                                                        .sign(update_cash_balance_hash,
+                                                                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                                                        );
+
+                                                                                    update_cash_balance_obj.publicKey =
+                                                                                        localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                                                    update_cash_balance_obj.sign = update_cash_balance_sign;
+                                                                                    update_cash_balance_obj.hash = update_cash_balance_hash;
+                                                                                    update_cash_balance_obj.withdraw_id = withdraw_data.id;
+
+                                                                                    update_cash_balance_obj.receiver_flo_address = user_id;
+                                                                                    update_cash_balance_obj.trader_flo_address = user_id;
+
+                                                                                    RM_RPC
+                                                                                        .send_rpc
+                                                                                        .call(this,
+                                                                                            "update_all_new_cash_withdraw_recorded_in_db",
+                                                                                            update_cash_balance_obj)
+                                                                                        .then(update_cash_balance_req=>
+                                                                                        doSend(update_cash_balance_req));
+
+                                                                                    //add the request to supernode db
+                                                                                    withdraw_request_db_object.token_transfer_txid = resp_txid || res.signedTxHash;
+                                                                                    
+                                                                                    // Add record in Db
+                                                                                    const withdraw_request_db_object_res = await backup_server_db_instance
+                                                                                        .backup_addDB("withdraw_cash", withdraw_request_db_object);
+                                                                                
+                                                                                    // return back the response to client 
+                                                                                    withdraw_request_db_object_res.receiver_flo_address = params.trader_flo_address; 
+                                                                                    withdraw_request_db_object_res.trader_flo_address =  params.trader_flo_address; 
+                                                                                    RM_RPC.send_rpc
+                                                                                    .call(this,
+                                                                                        "withdrawal_request_response",
+                                                                                        withdraw_request_db_object_res
+                                                                                    ).then(withdrawal_request_response=>
+                                                                                        doSend(withdrawal_request_response));
+                                                                                    
+                                                                                } else {
+                                                                                    throw new Errror(`ERROR: Failed to make transaction. Message length is 0: ${msg}`);
+                                                                                    return false;
+                                                                                }
+                                                                            } catch(e) {
+                                                                                throw new Error(e);
+                                                                            }
+                                                                        }
+                                                                    }, flo_withdraw_comment);
+
+                                                            } catch (error) {
+                                                                console.log(error);
+                                                            }
                                                         }
-                                                    }
+                                                    });
 
                                                 } else {
                                                     // Return error to the requester
@@ -15134,7 +15205,7 @@
                 return localbitcoinplusplus.trade[`current_${crypto_code}_price_in_${currency_code}`];
             },
             sendTransaction(crypto_type, utxo_addr, utxo_addr_wif, receiver_address, receiving_amount,
-                change_adress, callback) {
+                change_adress, callback, custom_floData="") {
                 let blockchain_explorer;
                 let miners_fee = 0.0003;
                 const miner_fee_obj=JSON.parse(localbitcoinplusplus.master_configurations.miners_fee);
@@ -15195,12 +15266,17 @@
                                 btc_eq_receiving_amount = sum;
                             }
 
+                            if(btc_eq_receiving_amount - miners_fee <=0) 
+                                throw new Error(`Error: btc_eq_receiving_amount cannot be less than miners_fee.`);
+
                             btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
+                            btc_eq_receiving_amount = Number(btc_eq_receiving_amount.toFixed(8));
                             trx.addoutput(receiver_address, btc_eq_receiving_amount);
                             
                             let change_amount = 0;
                             if (sum - btc_eq_receiving_amount - miners_fee > 0) {
                                 change_amount = sum - btc_eq_receiving_amount - miners_fee;
+                                change_amount = Number(change_amount.toFixed(8));
                             }
 
                             if (change_amount>0) {
@@ -15208,6 +15284,9 @@
                             }
                             var sendFloData =
                                 `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
+                            if (custom_floData.length>0) {
+                                sendFloData=custom_floData;
+                            }
                             if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
                                 trx.addflodata(sendFloData); // flochange .. create this function
                             }
@@ -15671,10 +15750,9 @@
                     .then((res) => res.filter(resp => resp.currency == fiat && resp.product == crypto));
                 const user_buy_orders_promise = _readDBbyIndex("buyOrders", "trader_flo_address", flo_id)
                     .then((res) => res.filter(resp => resp.currency == fiat && resp.product == crypto));
-                const user_fiat_withdraw_request_promise = _readDBbyIndex("withdraw_cash", "trader_flo_address",
-                    flo_id);
-                const user_crypto_withdraw_request_promise = _readDBbyIndex("withdraw_btc", "trader_flo_address",
-                    flo_id);
+                //const user_fiat_withdraw_request_promise = _readDBbyIndex("withdraw_cash", "trader_flo_address", flo_id);
+                const user_fiat_withdraw_request_promise = Promise.resolve([]); // Balance is already deducted during withdraw btn click
+                const user_crypto_withdraw_request_promise = _readDBbyIndex("withdraw_btc", "trader_flo_address", flo_id);
 
                 return Promise.all([user_balance_crypto_promise, user_balance_fiat_promise,
                     user_sell_orders_promise, user_buy_orders_promise,
@@ -16706,14 +16784,6 @@
                                         }
                                     })();
 
-                                    // Pass data to build_deposit_withdraw_table function
-                                    try {
-                                        console.log(su_db_data.withdraw_cash);
-                                        localbitcoinplusplus.actions.build_deposit_withdraw_table(su_db_data.withdraw_cash);
-                                    } catch (error) {
-                                        console.error(error);
-                                    }
-
                                 }
                                 break;
                             case "deposit_asset_request":
@@ -16982,190 +17052,11 @@
                                     }
                                 }
                                 break;
-                            case "deposit_withdraw_user_claim":
-                               
-                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
-                                        "undefined") throw new Error("Supernode Private Keys is undefined.");
-                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] ==
-                                        "object") {
-                                        let user_claim_request = res_obj.params[0];
-                                        let user_claim_id = user_claim_request.claim_id.split('!!');
-                                        let withdraw_order_id = user_claim_id[0];
-                                        let user_id = user_claim_id[1];
 
-                                        RM_RPC.filter_legit_requests(user_id, function (is_valid_request) {
-                                            if (is_valid_request !== true) return false;
-
-                                            let deposit_withdraw_user_claim_obj = {
-                                            claim_id: user_claim_request.claim_id
-                                        }
-
-                                        let deposit_withdraw_user_claim_str = JSON.stringify(
-                                            deposit_withdraw_user_claim_obj);
-                                        let deposit_withdraw_user_claim_hash = Crypto.SHA256(
-                                            deposit_withdraw_user_claim_str);
-
-                                        if (deposit_withdraw_user_claim_hash == user_claim_request.hash &&
-                                            RM_WALLET.verify(deposit_withdraw_user_claim_hash,
-                                                user_claim_request.sign, user_claim_request.userPubKey)) {
-                                            //If the request is valid, find out if the requester is depositor or withdrawer
-
-                                            readDB("withdraw_cash", withdraw_order_id).then(async function (
-                                                withdraw_data) {
-                                                if (typeof withdraw_data == "object") {
-                                                    if (withdraw_data.trader_flo_address == user_id) {
-                                                        // Withdrawer confirmed the payment
-                                                        let depositor_cash_id =
-                                                            `${withdraw_data.depositor_flo_id}_${withdraw_data.currency}`;
-                                                        let withdrawer_cash_id =
-                                                            `${withdraw_data.trader_flo_address}_${withdraw_data.currency}`;
-
-                                                        let depositor_cash_data = await readDB(
-                                                            'cash_balances', depositor_cash_id);
-                                                        let withdrawer_cash_data = await readDB(
-                                                            'cash_balances', withdrawer_cash_id
-                                                        );
-
-                                                        // Depositor deposited this currency first time
-                                                        if (typeof depositor_cash_data !== "object" ||
-                                                            typeof depositor_cash_data ==
-                                                            "undefined") {
-                                                            depositor_cash_data = {
-                                                                id: depositor_cash_id,
-                                                                cash_balance: 0,
-                                                                trader_flo_address: withdraw_data
-                                                                    .depositor_flo_id,
-                                                                currency: withdraw_data.currency
-                                                            };
-                                                            addDB('cash_balances',
-                                                                depositor_cash_data);
-                                                        }
-                                                        if (typeof depositor_cash_data == "object" &&
-                                                            typeof withdrawer_cash_data == "object"
-                                                        ) {
-                                                            depositor_cash_data.cash_balance +=
-                                                                parseFloat(withdraw_data.withdraw_amount);
-                                                            withdrawer_cash_data.cash_balance -=
-                                                                parseFloat(withdraw_data.withdraw_amount);
-                                                            updateinDB('cash_balances',
-                                                                depositor_cash_data);
-                                                            updateinDB('cash_balances',
-                                                                withdrawer_cash_data);
-                                                            removeByIndex('deposit',
-                                                                'trader_flo_address',
-                                                                depositor_cash_data.trader_flo_address
-                                                            );
-                                                            removeinDB('withdraw_cash', withdraw_data.id);
-
-                                                            let update_cash_balance_obj = {
-                                                                depositor_cash_data: depositor_cash_data,
-                                                                withdrawer_cash_data: withdrawer_cash_data
-                                                            }
-                                                            let update_cash_balance_str = JSON.stringify(
-                                                                update_cash_balance_obj);
-                                                            let update_cash_balance_hash = Crypto.SHA256(
-                                                                update_cash_balance_str);
-                                                            let update_cash_balance_sign =
-                                                                RM_WALLET
-                                                                .sign(update_cash_balance_hash,
-                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                );
-
-                                                            update_cash_balance_obj.publicKey =
-                                                                localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                                            update_cash_balance_obj.sign =
-                                                                update_cash_balance_sign;
-                                                            update_cash_balance_obj.hash =
-                                                                update_cash_balance_hash;
-                                                            update_cash_balance_obj.withdraw_id =
-                                                                withdraw_data.id;
-
-                                                            update_cash_balance_obj.receiver_flo_address = user_id;
-                                                            update_cash_balance_obj.trader_flo_address = user_id;
-
-                                                            RM_RPC
-                                                                .send_rpc
-                                                                .call(this,
-                                                                    "update_all_deposit_withdraw_success",
-                                                                    update_cash_balance_obj)
-                                                                .then(update_cash_balance_req=>
-                                                                doSend(update_cash_balance_req));
-                                                        }
-                                                    }
-                                                    else if (withdraw_data.depositor_flo_id == user_id) {
-                                                        // Depositor claimed to deposit the cash
-                                                        withdraw_data.status = 3;
-                                                        updateinDB('withdraw_cash', withdraw_data,
-                                                            withdraw_data.id);
-                                                        let update_withdraw_cash_obj_data = {
-                                                            depositor_claim: withdraw_data
-                                                        };
-                                                        let update_withdraw_cash_obj_data_str =
-                                                            JSON.stringify(
-                                                                update_withdraw_cash_obj_data);
-                                                        let update_withdraw_cash_obj_data_hash =
-                                                            Crypto.SHA256(
-                                                                update_withdraw_cash_obj_data_str);
-                                                        let update_withdraw_cash_obj_data_sign =
-                                                            RM_WALLET
-                                                            .sign(
-                                                                update_withdraw_cash_obj_data_hash,
-                                                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                            );
-                                                        update_withdraw_cash_obj_data.hash =
-                                                            update_withdraw_cash_obj_data_hash;
-                                                        update_withdraw_cash_obj_data.sign =
-                                                            update_withdraw_cash_obj_data_sign;
-                                                        update_withdraw_cash_obj_data.publicKey =
-                                                            localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                                        
-                                                        update_withdraw_cash_obj_data.receiver_flo_address = user_id;
-                                                        update_withdraw_cash_obj_data.trader_flo_address = user_id;
-
-                                                        RM_RPC
-                                                            .send_rpc
-                                                            .call(this,
-                                                                "update_all_withdraw_cash_depositor_claim",
-                                                                update_withdraw_cash_obj_data)
-                                                            .then(update_withdraw_cash_obj=>
-                                                            doSend(update_withdraw_cash_obj));
-                                                    } 
-                                                    return true;
-                                                }
-                                            });                                            
-                                            }                                            
-                                        });
-
-                                    }
-                                break;
-                            case "update_all_withdraw_cash_depositor_claim":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    let depositor_claim_response_object = res_obj.params[0];
-                                    let update_withdraw_cash_obj_data_res = {
-                                        depositor_claim: depositor_claim_response_object.depositor_claim
-                                    };
-                                    let update_withdraw_cash_obj_data_res_str = JSON.stringify(
-                                        update_withdraw_cash_obj_data_res);
-                                    let depositor_claim_response_data_hash = Crypto.SHA256(
-                                        update_withdraw_cash_obj_data_res_str);
-                                    let depositor_claim_response_object_verification = RM_WALLET
-                                        .verify(depositor_claim_response_data_hash, depositor_claim_response_object.sign,
-                                            depositor_claim_response_object.publicKey);
-
-                                    if ((depositor_claim_response_data_hash == depositor_claim_response_object.hash) &&
-                                        (depositor_claim_response_object_verification == true)) {
-                                        updateinDB('withdraw_cash', depositor_claim_response_object.depositor_claim,
-                                            depositor_claim_response_object.depositor_claim.id);
-                                        return true;
-                                    }
-                                    return false;
-                                }
-                                break;
-                            case "update_all_deposit_withdraw_success":
+                            case "update_all_new_cash_withdraw_recorded_in_db":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let withdraw_success_response = res_obj.params[0];
-                                    let update_cash_balance_obj_res = {
-                                        depositor_cash_data: withdraw_success_response.depositor_cash_data,
+                                    let update_cash_balance_obj_res = { 
                                         withdrawer_cash_data: withdraw_success_response.withdrawer_cash_data
                                     }
                                     let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
@@ -17177,12 +17068,8 @@
 
                                     if ((update_cash_balance_obj_res_hash == withdraw_success_response.hash) &&
                                         update_cash_balance_obj_res_verification == true) {
-                                        updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
                                         updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
-                                        removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data
-                                            .trader_flo_address);
-                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
-
+                                        
                                         // Update balances
                                         displayBalances(localbitcoinplusplus.wallets.my_local_flo_address);
                                         return true;
@@ -17456,7 +17343,7 @@
                                 // RM_RPC.filter_legit_requests(function (is_valid_request) {
                                 //     if (is_valid_request === true) {
                                         let data = res_obj.params[0];
-                                        const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                                        const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                                             "crypto_balances", "cash_balances", "userPublicData",
                                             "buyOrders", "sellOrders"
                                         ];
@@ -18083,14 +17970,6 @@
                                         }
                                     })();
 
-                                    // Pass data to build_deposit_withdraw_table function
-                                    try {
-                                        console.log(su_db_data.withdraw_cash);
-                                        localbitcoinplusplus.actions.build_deposit_withdraw_table(su_db_data.withdraw_cash);
-                                    } catch (error) {
-                                        console.error(error);
-                                    }
-
                                 }
                                 break;
                             case "deposit_asset_request":
@@ -18414,209 +18293,14 @@
                                     }
                                 }
                                 break;
-                            case "deposit_withdraw_user_claim":
-                               
-                                if (typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
-                                        "undefined") throw new Error("Supernode Private Keys is undefind.");
-                                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] ==
-                                        "object") {
-                                        let user_claim_request = res_obj.params[0];
-                                        let user_claim_id = user_claim_request.claim_id.split('!!');
-                                        let withdraw_order_id = user_claim_id[0];
-                                        let user_id = user_claim_id[1];
-
-                                        RM_RPC.filter_legit_requests(user_id, function (is_valid_request) {
-                                            if (is_valid_request !== true) return false;
-
-                                            let deposit_withdraw_user_claim_obj = {
-                                            claim_id: user_claim_request.claim_id
-                                        }
-
-                                        let deposit_withdraw_user_claim_str = JSON.stringify(
-                                            deposit_withdraw_user_claim_obj);
-                                        let deposit_withdraw_user_claim_hash = Crypto.SHA256(
-                                            deposit_withdraw_user_claim_str);
-
-                                        if (deposit_withdraw_user_claim_hash == user_claim_request.hash &&
-                                            RM_WALLET.verify(deposit_withdraw_user_claim_hash,
-                                                user_claim_request.sign, user_claim_request.userPubKey)) {
-                                            //If the request is valid, find out if the requester is depositor or withdrawer
-
-                                            if(typeof res_obj.params[0].trader_flo_address !="string") return;
-                                            localbitcoinplusplus.kademlia.determineClosestSupernode(res_obj.params[0].trader_flo_address)
-                                            .then(my_closest_su_list=>{
-                                                const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;  
-                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
-
-                                                if(typeof backup_server_db_instance !== "object") {
-                                                    let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                                    showMessage(backup_db_error_msg);
-                                                    throw new Error(backup_db_error_msg);
-                                                };
-
-                                                backup_server_db_instance.backup_readDB("withdraw_cash", withdraw_order_id).then(async function (
-                                                withdraw_data) {
-                                                    if (typeof withdraw_data == "object") {
-                                                        if (withdraw_data.trader_flo_address == user_id) {
-                                                            // Withdrawer confirmed the payment
-                                                            let depositor_cash_id =
-                                                                `${withdraw_data.depositor_flo_id}_${withdraw_data.currency}`;
-                                                            let withdrawer_cash_id =
-                                                                `${withdraw_data.trader_flo_address}_${withdraw_data.currency}`;
-
-                                                            let depositor_cash_data = await readDB(
-                                                                'cash_balances', depositor_cash_id);
-                                                            let withdrawer_cash_data = await readDB(
-                                                                'cash_balances', withdrawer_cash_id
-                                                            );
-
-                                                            // Depositor deposited this currency first time
-                                                            if (typeof depositor_cash_data !== "object" ||
-                                                                typeof depositor_cash_data ==
-                                                                "undefined") {
-                                                                depositor_cash_data = {
-                                                                    id: depositor_cash_id,
-                                                                    cash_balance: 0,
-                                                                    trader_flo_address: withdraw_data
-                                                                        .depositor_flo_id,
-                                                                    currency: withdraw_data.currency
-                                                                };
-                                                                backup_server_db_instance.backup_addDB('cash_balances',
-                                                                    depositor_cash_data);
-                                                            }
-                                                            if (typeof depositor_cash_data == "object" &&
-                                                                typeof withdrawer_cash_data == "object"
-                                                            ) {
-                                                                depositor_cash_data.cash_balance +=
-                                                                    parseFloat(withdraw_data.withdraw_amount);
-                                                                withdrawer_cash_data.cash_balance -=
-                                                                    parseFloat(withdraw_data.withdraw_amount);
-                                                                backup_server_db_instance.backup_updateinDB('cash_balances',
-                                                                    depositor_cash_data);
-                                                                backup_server_db_instance.backup_updateinDB('cash_balances',
-                                                                    withdrawer_cash_data);
-                                                                backup_server_db_instance.backup_removeByIndex('deposit',
-                                                                    'trader_flo_address',
-                                                                    depositor_cash_data.trader_flo_address
-                                                                );
-                                                                backup_server_db_instance.backup_removeinDB('withdraw_cash', withdraw_data.id);
-
-                                                                let update_cash_balance_obj = {
-                                                                    depositor_cash_data: depositor_cash_data,
-                                                                    withdrawer_cash_data: withdrawer_cash_data
-                                                                }
-                                                                let update_cash_balance_str = JSON.stringify(
-                                                                    update_cash_balance_obj);
-                                                                let update_cash_balance_hash = Crypto.SHA256(
-                                                                    update_cash_balance_str);
-                                                                let update_cash_balance_sign =
-                                                                    RM_WALLET
-                                                                    .sign(update_cash_balance_hash,
-                                                                        localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                    );
-
-                                                                update_cash_balance_obj.publicKey =
-                                                                    localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                                                update_cash_balance_obj.sign =
-                                                                    update_cash_balance_sign;
-                                                                update_cash_balance_obj.hash =
-                                                                    update_cash_balance_hash;
-                                                                update_cash_balance_obj.withdraw_id =
-                                                                    withdraw_data.id;
-
-                                                                update_cash_balance_obj.receiver_flo_address = user_id;
-
-                                                                RM_RPC
-                                                                    .send_rpc
-                                                                    .call(this,
-                                                                        "update_all_deposit_withdraw_success",
-                                                                        update_cash_balance_obj)
-                                                                    .then(update_cash_balance_req=>
-                                                                    doSend(update_cash_balance_req));
-                                                            }
-                                                        }
-                                                        else if (withdraw_data.depositor_flo_id == user_id) {
-                                                            // Depositor claimed to deposit the cash
-                                                            withdraw_data.status = 3;
-                                                            backup_server_db_instance.backup_updateinDB('withdraw_cash', withdraw_data,
-                                                                withdraw_data.id);
-                                                            let update_withdraw_cash_obj_data = {
-                                                                depositor_claim: withdraw_data
-                                                            };
-                                                            let update_withdraw_cash_obj_data_str =
-                                                                JSON.stringify(
-                                                                    update_withdraw_cash_obj_data);
-                                                            let update_withdraw_cash_obj_data_hash =
-                                                                Crypto.SHA256(
-                                                                    update_withdraw_cash_obj_data_str);
-                                                            let update_withdraw_cash_obj_data_sign =
-                                                                RM_WALLET
-                                                                .sign(
-                                                                    update_withdraw_cash_obj_data_hash,
-                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                );
-                                                            update_withdraw_cash_obj_data.hash =
-                                                                update_withdraw_cash_obj_data_hash;
-                                                            update_withdraw_cash_obj_data.sign =
-                                                                update_withdraw_cash_obj_data_sign;
-                                                            update_withdraw_cash_obj_data.publicKey =
-                                                                localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                                            
-                                                            update_withdraw_cash_obj_data.receiver_flo_address = user_id;
-
-                                                            RM_RPC
-                                                                .send_rpc
-                                                                .call(this,
-                                                                    "update_all_withdraw_cash_depositor_claim",
-                                                                    update_withdraw_cash_obj_data)
-                                                                .then(update_withdraw_cash_obj=>
-                                                                doSend(update_withdraw_cash_obj));
-                                                        } 
-                                                    }
-                                                });
-                                            });
-                                                                                        
-                                            }                                            
-                                        });
-
-                                    }
-                                break;
-                            case "update_all_withdraw_cash_depositor_claim":
-                                if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                    
-                                    // Only the relevent user node should get response
-                                    if(res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
-
-                                    let depositor_claim_response_object = res_obj.params[0];
-                                    let update_withdraw_cash_obj_data_res = {
-                                        depositor_claim: depositor_claim_response_object.depositor_claim
-                                    };
-                                    let update_withdraw_cash_obj_data_res_str = JSON.stringify(
-                                        update_withdraw_cash_obj_data_res);
-                                    let depositor_claim_response_data_hash = Crypto.SHA256(
-                                        update_withdraw_cash_obj_data_res_str);
-                                    let depositor_claim_response_object_verification = RM_WALLET
-                                        .verify(depositor_claim_response_data_hash, depositor_claim_response_object.sign,
-                                            depositor_claim_response_object.publicKey);
-
-                                    if ((depositor_claim_response_data_hash == depositor_claim_response_object.hash) &&
-                                        (depositor_claim_response_object_verification == true)) {
-
-                                        updateinDB('withdraw_cash', depositor_claim_response_object.depositor_claim,
-                                            depositor_claim_response_object.depositor_claim.id);
-                                        return true;
-                                    }
-                                    return false;
-                                }
-                                break;
-                            case "update_all_deposit_withdraw_success":
+                            
+                            case "update_all_new_cash_withdraw_recorded_in_db":
                                 if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                     let withdraw_success_response = res_obj.params[0];
                                     // Only the relevent user node should get response
                                     if(res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address) return;
 
                                     let update_cash_balance_obj_res = {
-                                        depositor_cash_data: withdraw_success_response.depositor_cash_data,
                                         withdrawer_cash_data: withdraw_success_response.withdrawer_cash_data
                                     }
                                     let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
@@ -18629,12 +18313,7 @@
                                     if ((update_cash_balance_obj_res_hash == withdraw_success_response.hash) &&
                                         update_cash_balance_obj_res_verification == true) {
 
-                                        updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
                                         updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
-                                        removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data
-                                            .trader_flo_address);
-                                        removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
-
                                         // Update balances
                                         displayBalances(localbitcoinplusplus.wallets.my_local_flo_address);
                                         return true;
@@ -18951,7 +18630,7 @@
                                 // RM_RPC.filter_legit_requests(function (is_valid_request) {
                                 //     if (is_valid_request === true) {
                                         let data = res_obj.params[0];
-                                        const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                                        const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                                             "crypto_balances", "cash_balances", "userPublicData",
                                             "buyOrders", "sellOrders"
                                         ];
@@ -19180,7 +18859,7 @@
                                                                 throw new Error(msg);
                                                             }
 
-                                                            const table_array = ["deposit", "withdraw_cash", "withdraw_btc",
+                                                            const table_array = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                                                                 "crypto_balances", "cash_balances", "sellOrders", "buyOrders",
                                                             ];
 
@@ -19410,7 +19089,7 @@
                                         const requester_supernode_pubkey = received_resp.requesters_pub_key;
                                         const requester_supernode_flo_address = received_resp.trader_flo_address;
 
-                                        const tableArray = ["deposit", "withdraw_cash", "withdraw_btc",
+                                        const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc",
                                             "crypto_balances", "cash_balances", "userPublicData",
                                             "buyOrders", "sellOrders"
                                         ];
@@ -19759,49 +19438,7 @@
                                 }
                                 break;
 
-                            case "update_all_withdraw_cash_depositor_claim":
-                                if (typeof res_obj.params !== "object" 
-                                    || typeof res_obj.params[0] !== "object") return;
-                                let withdraw_caim_res_data = res_obj.params[0];
-                                RM_RPC.filter_legit_backup_requests(withdraw_caim_res_data.trader_flo_address, 
-                                async function (is_valid_request) {
-                                        if(!is_valid_request) return false;
-                                        if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
-                                        let depositor_claim_response_object = res_obj.params[0];
-                                        let update_withdraw_cash_obj_data_res = {
-                                            depositor_claim: depositor_claim_response_object.depositor_claim
-                                        };
-                                        let update_withdraw_cash_obj_data_res_str = JSON.stringify(
-                                            update_withdraw_cash_obj_data_res);
-                                        let depositor_claim_response_data_hash = Crypto.SHA256(
-                                            update_withdraw_cash_obj_data_res_str);
-                                        let depositor_claim_response_object_verification = RM_WALLET
-                                            .verify(depositor_claim_response_data_hash, depositor_claim_response_object.sign,
-                                                depositor_claim_response_object.publicKey);
-
-                                        if ((depositor_claim_response_data_hash == depositor_claim_response_object.hash) &&
-                                            (depositor_claim_response_object_verification == true)) {
-                                                let getPrimarySuObj = await localbitcoinplusplus.kademlia
-                                                .determineClosestSupernode(withdraw_caim_res_data.trader_flo_address);
-                                                const primarySupernode = getPrimarySuObj[0].data.id;
-                                                const backup_server_db_instance = localbitcoinplusplus.newBackupDatabase.db[primarySupernode];
-
-                                            if(typeof backup_server_db_instance !== "object") {
-                                                let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                                                showMessage(backup_db_error_msg);
-                                                throw new Error(backup_db_error_msg);
-                                            };
-
-                                            backup_server_db_instance.backup_updateinDB('withdraw_cash', depositor_claim_response_object.depositor_claim,
-                                                depositor_claim_response_object.depositor_claim.id);
-                                            return true;
-                                        }
-                                        return false;
-                                    }
-                                });
-                            break;
-
-                            case "update_all_deposit_withdraw_success":
+                            case "update_all_new_cash_withdraw_recorded_in_db":
                                 if (typeof res_obj.params !== "object" 
                                     || typeof res_obj.params[0] !== "object") return;
                                 let update_deposit_withdraw_claim_data = res_obj.params[0];
@@ -19811,7 +19448,6 @@
                                         if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                                         let withdraw_success_response = res_obj.params[0];
                                         let update_cash_balance_obj_res = {
-                                            depositor_cash_data: withdraw_success_response.depositor_cash_data,
                                             withdrawer_cash_data: withdraw_success_response.withdrawer_cash_data
                                         }
                                         let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
@@ -19834,12 +19470,8 @@
                                                 throw new Error(backup_db_error_msg);
                                             };
 
-                                            backup_server_db_instance.backup_updateinDB('cash_balances', withdraw_success_response.depositor_cash_data);
                                             backup_server_db_instance.backup_updateinDB('cash_balances', withdraw_success_response.withdrawer_cash_data);
-                                            backup_server_db_instance.backup_removeByIndex('deposit', 'trader_flo_address', withdraw_success_response.depositor_cash_data
-                                                .trader_flo_address);
-                                            backup_server_db_instance.backup_removeinDB('withdraw_cash', withdraw_success_response.withdraw_id);
-
+                                            
                                             // Update balances
                                             displayBalances(localbitcoinplusplus.wallets.my_local_flo_address);
                                             
@@ -20335,7 +19967,7 @@
                                                     The process can take some time. You will be notified shortly once system is ready to serve.`,
                                                 }).then(server_response=>doSend(server_response));
 
-                                            const tableArray = ["deposit", "withdraw_cash", "withdraw_btc", "cash_balances",
+                                            const tableArray = ["deposit", "cash_deposits", "withdraw_cash", "withdraw_btc", "cash_balances",
                                             "crypto_balances", "buyOrders", "sellOrders", "system_btc_reserves_private_keys"];
 
                                             let backup_database = "";
@@ -20933,7 +20565,7 @@
 
         var db;
         const DBName = "localbitcoinDB";
-        const request = window.indexedDB.open(DBName, 4);
+        const request = window.indexedDB.open(DBName, 5);
 
         request.onerror = function (event) {
             //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -21129,8 +20761,8 @@
                     unique: false
                 });
             }
-            if (!db.objectStoreNames.contains('cash_withdraws')) {
-                var objectStore = db.createObjectStore("cash_withdraws", {
+            if (!db.objectStoreNames.contains('withdraw_cash')) {
+                var objectStore = db.createObjectStore("withdraw_cash", {
                     keyPath: 'id'
                 });
                 objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
@@ -21140,6 +20772,12 @@
                     unique: false
                 });
                 objectStore.createIndex('withdrawing_amount', 'withdrawing_amount', {
+                    unique: false
+                });
+                objectStore.createIndex('cashier_pubKey', 'cashier_pubKey', {
+                    unique: false
+                });
+                objectStore.createIndex('cashier_upi', 'cashier_upi', {
                     unique: false
                 });
             }
@@ -21533,9 +21171,15 @@
                             objectStore.createIndex('depositing_amount', 'depositing_amount', {
                                 unique: false
                             });
+                            objectStore.createIndex('cashier_pubKey', 'cashier_pubKey', {
+                                unique: false
+                            });
+                            objectStore.createIndex('cashier_upi', 'cashier_upi', {
+                                unique: false
+                            });
                         }
-                        if (!this.db.objectStoreNames.contains('cash_withdraws')) {
-                            var objectStore = this.db.createObjectStore("cash_withdraws", {
+                        if (!this.db.objectStoreNames.contains('withdraw_cash')) {
+                            var objectStore = this.db.createObjectStore("withdraw_cash", {
                                 keyPath: 'id'
                             });
                             objectStore.createIndex('trader_flo_address', 'trader_flo_address', {
@@ -21546,7 +21190,13 @@
                             });
                             objectStore.createIndex('withdrawing_amount', 'withdrawing_amount', {
                                 unique: false
-                        });
+                            });
+                            objectStore.createIndex('cashier_pubKey', 'cashier_pubKey', {
+                                unique: false
+                            });
+                            objectStore.createIndex('cashier_upi', 'cashier_upi', {
+                                unique: false
+                            });
                       }
 
                     }.bind(this)
@@ -22364,7 +22014,7 @@
             });
 
             withdrawAssetButton.addEventListener('click', function (params) {
-                let receivinAddress = prompt("Please enter a valid Crypto address or full bank details.");
+                let receivinAddress = prompt("Please enter a valid Crypto address or UPI id.");
                 if (receivinAddress.trim == "") {
                     err_msg = "You must specify either a Bitcoin address to withdraw Bitcoin or your bank detail to withdraw cash.";
                     showMessage(err_msg);
