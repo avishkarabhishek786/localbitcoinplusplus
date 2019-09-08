@@ -14470,7 +14470,7 @@ Event information log
               /***************************FOR CASHIERS OPERATIONS****************************************/
               if (
                 typeof params[0].cashier_pubKey == "string" 
-                && param[0].for_cashier === true
+                && params[0].for_cashier === true
                 && Object.keys(
                   JSON.parse(
                     localbitcoinplusplus.master_configurations.cashiers
@@ -17979,8 +17979,7 @@ Event information log
                   params.cashier_pubKey
                 );
 
-                if (get_all_deposit_reqs_for_this_cashier.length) {
-                  RM_RPC.send_rpc
+                RM_RPC.send_rpc
                     .call(
                       this,
                       "list_of_cashier_latest_pending_cash_deposits",
@@ -17992,20 +17991,123 @@ Event information log
                       }
                     )
                     .then(resp => doSend(resp));
-                } else {
-                  RM_RPC.send_rpc
+                
+                break;
+              case "give_cashier_latest_pending_cash_withdraws":
+                const get_all_withdraws_reqs_for_this_cashier = await readDBbyIndex(
+                  "withdraw_cash",
+                  "cashier_pubKey",
+                  params.cashier_pubKey
+                );
+
+                RM_RPC.send_rpc
                     .call(
                       this,
-                      "list_of_cashier_latest_pending_cash_deposits",
+                      "list_of_cashier_latest_pending_cash_withdrawals",
                       {
                         for_cashier: true,
                         cashier_pubKey: request.nodePubKey,
                         receiver_flo_address: request.globalParams.senderFloId,
-                        data: get_all_deposit_reqs_for_this_cashier
+                        data: get_all_withdraws_reqs_for_this_cashier
                       }
                     )
                     .then(resp => doSend(resp));
-                }
+
+                break;
+
+              case "cashier_confirms_user_cash_deposit":
+                  try {
+
+                    const cash_deposited_by_user = Number(params.cash_deposited);   
+                  if (params.flo_txid===null
+                        || params.flo_txid.length<1
+                        || params.deposit_id==null
+                        || params.deposit_id.length<1
+                        || typeof cash_deposited_by_user == NaN
+                        || params.cash_deposited < 1
+                    ) {
+                        throw new Error(`Error: Incomplete or invalid data received for Cash Deposit Id: ${params.deposit_id}`);
+                    }      
+
+                    // Validate deposit_id
+                    const user_deposit_req = await readDB("cash_deposits", params.deposit_id);
+                    if (typeof user_deposit_req!=="object" 
+                        || user_deposit_req.length<1) return;                  
+
+                    // Validate Flo txid
+                    const validate_flo_txid = await helper_functions
+                        .ajaxGet(`https://ranchimallflo-testnet.duckdns.org/api/v1.0/getTransactionDetails/${params.flo_txid}`);
+
+                    if(typeof validate_flo_txid !== "object"
+                    || typeof validate_flo_txid.transactionDetails !== "object"
+                    || typeof validate_flo_txid.transactionDetails.floData !== "string"
+                    || validate_flo_txid.transactionDetails.floData.length < 1
+                    ) throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
+
+                    let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g))[0];
+                    if(typeof amount_deposited !== "number" || amount_deposited < 1 || amount_deposited===NaN) {
+                        amount_deposited = cash_deposited_by_user;
+                    }
+
+                    amount_deposited = Number(amount_deposited);
+                    
+                    // Update balances datastore
+                    const user_cash_id = `${user_deposit_req.trader_flo_address}_${user_deposit_req.currency}`;
+                    const get_user_balance = await readDB('cash_balances',user_cash_id);
+                    let updateUserBalance;
+
+                    if(typeof get_user_balance=="object" 
+                        && typeof get_user_balance.cash_balance==="number"
+                    ) {
+                        get_user_balance.cash_balance += amount_deposited;
+                        updateUserBalance = await updateinDB("cash_balances", get_user_balance);
+
+                    } else {
+                        let cash_obj = {
+                            cash_balance: amount_deposited,
+                            currency: user_deposit_req.currency,
+                            id: user_cash_id,
+                            trader_flo_address: user_deposit_req.trader_flo_address,
+                        }
+                        updateUserBalance = await updateinDB("cash_balances", cash_obj);
+                    }
+
+                    // Delete data from deposits
+                    if (typeof updateUserBalance!=="object" && updateUserBalance==null) 
+                        throw new Error(`Error: Failed to update balance of User Cash Id: ${user_cash_id}.`);
+                    
+                    removeinDB("cash_deposits", params.deposit_id);    
+                                         
+                    // Broadcast deposit and cash balances datastore data to backups
+                    let update_cash_balance_obj = {
+                        depositor_cash_data: updateUserBalance
+                    }
+                    let update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
+                    let update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
+                    let update_cash_balance_sign =
+                        RM_WALLET
+                        .sign(update_cash_balance_hash,
+                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                        );
+
+                    update_cash_balance_obj.publicKey =
+                        localbitcoinplusplus.wallets.my_local_flo_public_key;
+                    update_cash_balance_obj.sign = update_cash_balance_sign;
+                    update_cash_balance_obj.hash = update_cash_balance_hash;
+                    update_cash_balance_obj.trader_flo_address 
+                        = user_deposit_req.trader_flo_address;
+
+                    RM_RPC
+                        .send_rpc
+                        .call(this,
+                            "update_all_deposit_success",
+                            update_cash_balance_obj)
+                        .then(update_cash_balance_req=>
+                    doSend(update_cash_balance_req));
+
+                  } catch (error) {
+                      throw new Error(error);
+                  }
 
                 break;
 
@@ -26214,6 +26316,39 @@ Event information log
                   }
                   break;
 
+                case "update_all_deposit_success":
+                    // If either Sender and Receiver are not Supernodes, return.
+                    if (!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        res_obj.nodePubKey) 
+                        || 
+                        !localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        localbitcoinplusplus.wallets.my_local_flo_public_key) 
+                    ) return;
+
+                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                        const deposit_success_response = res_obj.params[0];
+                        let update_cash_balance_obj_res = {
+                            depositor_cash_data: deposit_success_response.depositor_cash_data
+                        }
+                        let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
+                        let update_cash_balance_obj_res_hash = Crypto.SHA256(
+                            update_cash_balance_obj_res_str);
+                        let update_cash_balance_obj_res_verification = RM_WALLET
+                            .verify(update_cash_balance_obj_res_hash, deposit_success_response.sign,
+                            deposit_success_response.publicKey);
+
+                        if ((update_cash_balance_obj_res_hash === deposit_success_response.hash) &&
+                            update_cash_balance_obj_res_verification === true) {
+                            updateinDB('cash_balances', deposit_success_response.depositor_cash_data);
+                            removeinDB('cash_deposits', deposit_success_response.depositor_cash_data.id);
+
+                            return true;
+                        }
+                        throw new Error(`Error: Hash matching failed while updating cash deposit.`);
+                        return false;
+                    }
+                break;
+        
                 default:
                   break;
               }
@@ -26274,6 +26409,18 @@ Event information log
 
               switch (res_obj.method) {
                 case "give_cashier_latest_pending_cash_deposits":
+                  response_from_sever = RM_RPC.receive_cashiers_rpc_response.call(
+                    this,
+                    JSON.stringify(res_obj)
+                  );
+                  break;
+                case "give_cashier_latest_pending_cash_withdraws":
+                  response_from_sever = RM_RPC.receive_cashiers_rpc_response.call(
+                    this,
+                    JSON.stringify(res_obj)
+                  );
+                  break;
+                case "cashier_confirms_user_cash_deposit":
                   response_from_sever = RM_RPC.receive_cashiers_rpc_response.call(
                     this,
                     JSON.stringify(res_obj)
