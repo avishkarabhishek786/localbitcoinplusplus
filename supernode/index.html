@@ -17937,14 +17937,16 @@ Event information log
 
           if (typeof params == "object" && typeof method == "string") {
             if (
-              typeof request.globalParams !== "object" ||
-              !Object.keys(
+              typeof request.globalParams !== "object" 
+              || !Object.keys(
                 JSON.parse(localbitcoinplusplus.master_configurations.cashiers)
-              ).includes(request.nodePubKey) ||
-              (typeof request.globalParams.receiversList == "object" &&
+              ).includes(request.nodePubKey) 
+              || (typeof request.globalParams.receiversList == "object" &&
                 !request.globalParams.receiversList.includes(
                   localbitcoinplusplus.wallets.my_local_flo_address
-                ))
+              ))
+              || !(localbitcoinplusplus.master_configurations.supernodesPubKeys)
+              .includes(request.nodePubKey)
             )
               return;
 
@@ -18080,7 +18082,8 @@ Event information log
                                          
                     // Broadcast deposit and cash balances datastore data to backups
                     let update_cash_balance_obj = {
-                        depositor_cash_data: updateUserBalance
+                        depositor_cash_data: updateUserBalance,
+                        deposit_req_id: params.deposit_id
                     }
                     let update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
                     let update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
@@ -18109,6 +18112,44 @@ Event information log
                       throw new Error(error);
                   }
 
+                break;
+
+              case "cashier_confirms_user_cash_withdraw":
+
+                try {
+                    if (typeof params.withdraw_id!=="string"
+                    || params.withdraw_id.length<1
+                    || typeof params.upi_txid!=="string"
+                    || params.upi_txid.length<1)
+                    throw new Error(`Error: Invalid/Incomplete message sent by cashier.`);
+    
+                    // Fetch and update withdraw request from db
+                    // #todo 
+                    // Note: Remove withdraw requests older than 1 week using 
+                    // window.requestIdleCallback function
+    
+                    const withdraw_req = await readDB('withdraw_cash', params.withdraw_id);
+                    if(typeof withdraw_req!=="object" 
+                    || withdraw_req.id.length<=0) return;
+    
+                    withdraw_req.upi_txid = params.upi_txid;
+                    withdraw_req.status = 2; // Cashier sent money to Withdrawer
+                    const updated_withdraw_req = await updateinDB('withdraw_cash', params, params.withdraw_id);
+
+                    if(typeof updated_withdraw_req !=="object") 
+                        throw new Error(`Error: Failed to update "cashier_confirms_user_cash_withdraw" data.`);
+                    
+                    // Broadcast to backups
+                    RM_RPC
+                        .send_rpc
+                        .call(this,
+                            "record_upi_tx_of_successfull_withdraw",
+                            updated_withdraw_req)
+                        .then(resp=> doSend(resp));
+                    
+                } catch (error) {
+                    throw new Error(error);
+                }
                 break;
 
               default:
@@ -26328,7 +26369,8 @@ Event information log
                     if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                         const deposit_success_response = res_obj.params[0];
                         let update_cash_balance_obj_res = {
-                            depositor_cash_data: deposit_success_response.depositor_cash_data
+                            depositor_cash_data: deposit_success_response.depositor_cash_data,
+                            deposit_req_id: deposit_success_response.depositor_cash_data.deposit_id
                         }
                         let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
                         let update_cash_balance_obj_res_hash = Crypto.SHA256(
@@ -26339,14 +26381,54 @@ Event information log
 
                         if ((update_cash_balance_obj_res_hash === deposit_success_response.hash) &&
                             update_cash_balance_obj_res_verification === true) {
-                            updateinDB('cash_balances', deposit_success_response.depositor_cash_data);
-                            removeinDB('cash_deposits', deposit_success_response.depositor_cash_data.id);
+                            
+                            const my_closest_su_list = localbitcoinplusplus.kademlia
+                            .determineClosestSupernode(
+                                res_obj.params[0].trader_flo_address
+                            )
+                            const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
+                            const foreign_db =
+                            localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
+
+                            _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                            _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                            
+                            _updateinDB('cash_balances', deposit_success_response.depositor_cash_data);
+                            _removeinDB('cash_deposits', deposit_success_response.depositor_cash_data.deposit_id);
 
                             return true;
                         }
                         throw new Error(`Error: Hash matching failed while updating cash deposit.`);
                         return false;
                     }
+                break;
+
+                case "record_upi_tx_of_successfull_withdraw":
+                    // If either Sender and Receiver are not Supernodes, return.
+                    if (!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        res_obj.nodePubKey) 
+                        || 
+                        !localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        localbitcoinplusplus.wallets.my_local_flo_public_key) 
+                    ) return;
+
+                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                        const successfull_withdraw_resp = res_obj.params[0];
+                        console.log(successfull_withdraw_resp);   
+
+                        const my_closest_su_list = localbitcoinplusplus.kademlia
+                            .determineClosestSupernode(
+                                successfull_withdraw_resp.trader_flo_address
+                            );
+                        const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
+                        const foreign_db =
+                        localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
+
+                        _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+
+                        _updateinDB('withdraw_cash', successfull_withdraw_resp);
+                    }
+
                 break;
         
                 default:
@@ -26421,6 +26503,12 @@ Event information log
                   );
                   break;
                 case "cashier_confirms_user_cash_deposit":
+                  response_from_sever = RM_RPC.receive_cashiers_rpc_response.call(
+                    this,
+                    JSON.stringify(res_obj)
+                  );
+                  break;
+                case "cashier_confirms_user_cash_withdraw":
                   response_from_sever = RM_RPC.receive_cashiers_rpc_response.call(
                     this,
                     JSON.stringify(res_obj)

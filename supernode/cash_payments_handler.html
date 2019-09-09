@@ -222,11 +222,11 @@
           placeholder="Search anything"
         />
         <button
-            type="button"
-            class="btn btn-outline-primary"
-            id="fetch_withdraws"
+          type="button"
+          class="btn btn-outline-primary"
+          id="fetch_withdraws"
         >
-            Load Pending Cash Withdrawals
+          Load Pending Cash Withdrawals
         </button>
 
         <table id="withdraws_list" class="myTable">
@@ -239,8 +239,6 @@
           </tr>
         </table>
       </div>
-
-
     </main>
 
     <footer class="footer">
@@ -12180,10 +12178,10 @@
             privateKeyDecimal = BigInteger(pk).toString();
             privateKeyHex = Crypto.util.bytesToHex(pk);
             return {
-                privateKeyDecimal: privateKeyDecimal,
-                privateKeyHex: privateKeyHex
+              privateKeyDecimal: privateKeyDecimal,
+              privateKeyHex: privateKeyHex
             };
-          },
+          }
         };
 
         /* CODE_JUNCTION: RPC */
@@ -13062,7 +13060,7 @@
                         t += `<td> ${m.trader_flo_address} </td>`;
                         t += `<td> ${m.depositing_amount} </td>`;
                         t += `<td> ${m.currency} </td>`;
-                        t += `<td> <button type="button" id-"cnf_deposits" value="${m.id}" class="btn btn-info">Deposit Received!</button> </td>`;
+                        t += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_deposits">Deposit Received!</button> </td>`;
                         t += `</tr>`;
                       });
                       deposits_table.insertAdjacentHTML("beforeend", t);
@@ -13083,7 +13081,8 @@
                       response_from_sever.data.map(m => {
                         const user_upi = localbitcoinplusplus.encrypt.decryptMessage(
                           response_from_sever.data[0].receivinAddress.secret,
-                          response_from_sever.data[0].receivinAddress.senderPublicKeyString
+                          response_from_sever.data[0].receivinAddress
+                            .senderPublicKeyString
                         );
                         t += `<tr>`;
                         t += `<td> ${user_upi} </td>`;
@@ -13091,6 +13090,7 @@
                         t += `<td> ${m.withdraw_amount} </td>`;
                         t += `<td> ${m.currency} </td>`;
                         t += `<td> ${m.token_transfer_txid} </td>`;
+                        t += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_withdrawal">Money Transferred!</button> </td>`;
                         t += `</tr>`;
                       });
                       withdraws_table.insertAdjacentHTML("beforeend", t);
@@ -13222,11 +13222,11 @@
         function showMessage(msg = "", t = 10000) {
           if (msg.length > 0) LogEvent(msg);
           console.info(msg);
-          //displayMessages();
-          // setTimeout(function(){
-          //     closeMessage();
-          //     clearTimeout();
-          // }, t);
+          displayMessages();
+          setTimeout(function() {
+            closeMessage();
+            clearTimeout();
+          }, t);
         }
 
         function displayMessages() {
@@ -13409,36 +13409,75 @@
         }
 
         function confirmDepositReceivedFromUser() {
-            const recv_deposit_btn = document.getElementById('cnf_deposits');
-            recv_deposit_btn.addEventListener('click', function(evt) {
+          const recv_deposit_btn = document.getElementsByClassName("cnf_deposits");
+          
+          Array.from(recv_deposit_btn).forEach(function(element) {
+            element.addEventListener("click", function(evt) {
                 evt.preventDefault();
                 const deposit_id = this.value;
                 console.log(deposit_id);
-                
+
                 const flo_txid = prompt("Enter Deposit Token Transfer Flo Txid: ");
                 if (flo_txid.length < 1) return;
-                
+
                 const upi_txid = prompt("Enter Received Cash UPI Txid: ");
                 if (upi_txid.length < 1) return;
-                
-                const cash_recvd_from_user = prompt("Enter Amount Received in Cash: ");
-                if (typeof cash_recvd_from_user!=="number" || cash_recvd_from_user < 1) return;
+
+                const cash_recvd_from_user = prompt(
+                "Enter Amount Received in Cash: "
+                );
+                if (
+                typeof cash_recvd_from_user !== "number" ||
+                cash_recvd_from_user < 1
+                )
+                return;
 
                 const RM_RPC = new localbitcoinplusplus.rpc();
                 RM_RPC.send_rpc
-                    .call(this, "cashier_confirms_user_cash_deposit", {
-                        trader_flo_address:
-                            localbitcoinplusplus.wallets.my_local_flo_address,
-                        cashier_pubKey:
-                            localbitcoinplusplus.wallets.my_local_flo_public_key,
-                        receiver_flo_address:
-                            localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS,
-                        flo_txid: flo_txid,
-                        deposit_id: deposit_id,
-                        cash_deposited: cash_recvd_from_user
+                .call(this, "cashier_confirms_user_cash_deposit", {
+                    trader_flo_address:
+                    localbitcoinplusplus.wallets.my_local_flo_address,
+                    cashier_pubKey:
+                    localbitcoinplusplus.wallets.my_local_flo_public_key,
+                    receiver_flo_address:
+                    localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS,
+                    flo_txid: flo_txid,
+                    deposit_id: deposit_id,
+                    cash_deposited: cash_recvd_from_user
+                })
+                .then(resp => doSend(resp));
+            });
+            });
+        
+        }
+
+        function confirmCashierTransferredMoneyToWithdrawer() {
+          const recv_deposit_btn = document.getElementsByClassName("cnf_withdrawal");
+
+          Array.from(recv_deposit_btn).forEach(function(element) {
+              
+              element.addEventListener("click", function(evt) {
+                  evt.preventDefault();
+                  const withdraw_id = this.value;
+                  console.log(withdraw_id);
+                  
+                  const upi_txid = prompt("Enter Transferred Cash UPI Txid: ");
+                  if (upi_txid.length < 1) return;
+                  
+                  const RM_RPC = new localbitcoinplusplus.rpc();
+                  RM_RPC.send_rpc
+                  .call(this, "cashier_confirms_user_cash_withdraw", {
+                      trader_flo_address:
+                      localbitcoinplusplus.wallets.my_local_flo_address,
+                      cashier_pubKey:
+                      localbitcoinplusplus.wallets.my_local_flo_public_key,
+                      receiver_flo_address:
+                      localbitcoinplusplus.CONNECTED_SUPERNODE_FLO_ADDRESS,
+                      withdraw_id: withdraw_id,
+                      upi_txid: upi_txid
                     })
                     .then(resp => doSend(resp));
-
+                });
             });
         }
 
