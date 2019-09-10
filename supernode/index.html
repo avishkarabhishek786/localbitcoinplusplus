@@ -14939,7 +14939,7 @@ Event information log
               case "deposit_asset_request":
                 RM_RPC.filter_legit_requests(
                   params.trader_flo_address,
-                  function(is_valid_request) {
+                  async function(is_valid_request) {
                     if (is_valid_request !== true) return false;
 
                     // This code will only run for supernodes
@@ -14963,12 +14963,11 @@ Event information log
                       typeof params.trader_flo_address == "string" &&
                       params.trader_flo_address.length > 0
                     ) {
-                      RM_WALLET.getUserPublicKey(
-                        params.trader_flo_address,
-                        async function(requester_public_key) {
+                        const requester_public_key = request.nodePubKey;
                           if (
                             requester_public_key == undefined ||
-                            requester_public_key == null
+                            requester_public_key == null ||
+                            requester_public_key.length < 1
                           ) {
                             err_msg = "Failed to get public key of the user.";
                             showMessage(err_msg);
@@ -15177,8 +15176,7 @@ Event information log
 
                             return false;
                           }
-                        }
-                      );
+                        
                     } else {
                       err_msg = "deposit asset request error";
                       showMessage(err_msg);
@@ -16576,23 +16574,17 @@ Event information log
                       typeof params.trader_flo_address == "string" &&
                       params.trader_flo_address.length > 0
                     ) {
-                      const requester_public_req = await backup_server_db_instance.backup_readDB(
-                        "userPublicData",
-                        params.trader_flo_address
-                      );
-                      if (typeof requester_public_req !== "object") return;
-                      const requester_public_key =
-                        requester_public_req.trader_flo_pubKey;
-
-                      if (
-                        typeof requester_public_key == "undefined" ||
-                        requester_public_key == null
-                      ) {
-                        err_msg = "Failed to get public key of the user.";
-                        showMessage(err_msg);
-                        throw new Error(err_msg);
-                      }
-                      params.depositor_public_key = requester_public_key;
+                        const requester_public_key = request.nodePubKey;
+                          if (
+                            requester_public_key == undefined ||
+                            requester_public_key == null ||
+                            requester_public_key.length < 1
+                          ) {
+                            err_msg = "Failed to get public key of the user.";
+                            showMessage(err_msg);
+                            throw new Error(err_msg);
+                          }
+                          params.depositor_public_key = requester_public_key;
 
                       await RM_TRADE.resolve_current_crypto_price_in_fiat(
                         params.product,
@@ -16876,10 +16868,9 @@ Event information log
                           receivedTradeInfo.cashier_upi =
                             cashiersList[getAPaymentHandler];
                           receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
-                          const receivedTradeInfoResp = await addDB(
-                            "cash_deposits",
-                            receivedTradeInfo
-                          );
+                         
+                          const receivedTradeInfoResp = await backup_server_db_instance
+                                .backup_addDB("cash_deposits", receivedTradeInfo);
 
                           let deposit_response_object = {
                             error: false,
@@ -17938,21 +17929,22 @@ Event information log
           if (typeof params == "object" && typeof method == "string") {
             if (
               typeof request.globalParams !== "object" 
-              || !Object.keys(
+              || (!Object.keys(
                 JSON.parse(localbitcoinplusplus.master_configurations.cashiers)
-              ).includes(request.nodePubKey) 
+                ).includes(request.nodePubKey) 
+              && !(localbitcoinplusplus.master_configurations.supernodesPubKeys)
+              .includes(request.nodePubKey)
+              )
               || (typeof request.globalParams.receiversList == "object" &&
                 !request.globalParams.receiversList.includes(
                   localbitcoinplusplus.wallets.my_local_flo_address
-              ))
-              || !(localbitcoinplusplus.master_configurations.supernodesPubKeys)
-              .includes(request.nodePubKey)
+              ))            
             )
               return;
 
             /************************************
-                        #todo: VALIDATE CASHIER'S SIGNATURE HERE
-                    *************************************/
+                #todo: VALIDATE CASHIER'S SIGNATURE HERE
+            *************************************/
 
             const RM_WALLET = new localbitcoinplusplus.wallets();
             const RM_RPC = new localbitcoinplusplus.rpc();
@@ -18021,12 +18013,12 @@ Event information log
                   try {
 
                     const cash_deposited_by_user = Number(params.cash_deposited);   
-                  if (params.flo_txid===null
+                    if (params.flo_txid===null
                         || params.flo_txid.length<1
                         || params.deposit_id==null
                         || params.deposit_id.length<1
                         || typeof cash_deposited_by_user == NaN
-                        || params.cash_deposited < 1
+                        || cash_deposited_by_user < 1
                     ) {
                         throw new Error(`Error: Incomplete or invalid data received for Cash Deposit Id: ${params.deposit_id}`);
                     }      
@@ -18034,7 +18026,7 @@ Event information log
                     // Validate deposit_id
                     const user_deposit_req = await readDB("cash_deposits", params.deposit_id);
                     if (typeof user_deposit_req!=="object" 
-                        || user_deposit_req.length<1) return;                  
+                        || user_deposit_req===null) return;                  
 
                     // Validate Flo txid
                     const validate_flo_txid = await helper_functions
@@ -18043,10 +18035,10 @@ Event information log
                     if(typeof validate_flo_txid !== "object"
                     || typeof validate_flo_txid.transactionDetails !== "object"
                     || typeof validate_flo_txid.transactionDetails.floData !== "string"
-                    || validate_flo_txid.transactionDetails.floData.length < 1
+                    || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
                     ) throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
 
-                    let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g))[0];
+                    let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
                     if(typeof amount_deposited !== "number" || amount_deposited < 1 || amount_deposited===NaN) {
                         amount_deposited = cash_deposited_by_user;
                     }
@@ -18134,9 +18126,9 @@ Event information log
     
                     withdraw_req.upi_txid = params.upi_txid;
                     withdraw_req.status = 2; // Cashier sent money to Withdrawer
-                    const updated_withdraw_req = await updateinDB('withdraw_cash', params, params.withdraw_id);
+                    const updated_withdraw_req = await updateinDB('withdraw_cash', withdraw_req, withdraw_req.id);
 
-                    if(typeof updated_withdraw_req !=="object") 
+                    if(typeof updated_withdraw_req.id !=="string") 
                         throw new Error(`Error: Failed to update "cashier_confirms_user_cash_withdraw" data.`);
                     
                     // Broadcast to backups
@@ -22825,8 +22817,8 @@ Event information log
                           typeof user == "object" &&
                           user.myLocalFLOAddress == resp.data.trader_flo_address
                         ) {
-                          let counterTraderAccountAddress = `Please pay the amount to following UPI ID: 
-                                                    ${resp.msg}`;
+                          let counterTraderAccountAddress = 
+                            `Please pay the amount to following UPI ID: ${resp.msg}`;
                           showMessage(counterTraderAccountAddress);
                           modalWindow(counterTraderAccountAddress);
                         }
@@ -26370,7 +26362,7 @@ Event information log
                         const deposit_success_response = res_obj.params[0];
                         let update_cash_balance_obj_res = {
                             depositor_cash_data: deposit_success_response.depositor_cash_data,
-                            deposit_req_id: deposit_success_response.depositor_cash_data.deposit_id
+                            deposit_req_id: deposit_success_response.deposit_req_id
                         }
                         let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
                         let update_cash_balance_obj_res_hash = Crypto.SHA256(
@@ -26382,10 +26374,10 @@ Event information log
                         if ((update_cash_balance_obj_res_hash === deposit_success_response.hash) &&
                             update_cash_balance_obj_res_verification === true) {
                             
-                            const my_closest_su_list = localbitcoinplusplus.kademlia
+                            const my_closest_su_list = await localbitcoinplusplus.kademlia
                             .determineClosestSupernode(
                                 res_obj.params[0].trader_flo_address
-                            )
+                            );
                             const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
                             const foreign_db =
                             localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
@@ -26393,8 +26385,9 @@ Event information log
                             _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
                             _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
                             
-                            _updateinDB('cash_balances', deposit_success_response.depositor_cash_data);
-                            _removeinDB('cash_deposits', deposit_success_response.depositor_cash_data.deposit_id);
+                            _updateinDB('cash_balances', deposit_success_response.depositor_cash_data, 
+                                deposit_success_response.depositor_cash_data.id, false, false);
+                            _removeinDB('cash_deposits', deposit_success_response.deposit_req_id);
 
                             return true;
                         }
@@ -26416,17 +26409,18 @@ Event information log
                         const successfull_withdraw_resp = res_obj.params[0];
                         console.log(successfull_withdraw_resp);   
 
-                        const my_closest_su_list = localbitcoinplusplus.kademlia
-                            .determineClosestSupernode(
+                        localbitcoinplusplus.kademlia.determineClosestSupernode(
                                 successfull_withdraw_resp.trader_flo_address
-                            );
-                        const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
-                        const foreign_db =
-                        localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
+                        ).then(my_closest_su_list=>{
+                            if(typeof my_closest_su_list[0]!=="object") return;
+                            const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
+                            const foreign_db =
+                            localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
-                        _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                            _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
 
-                        _updateinDB('withdraw_cash', successfull_withdraw_resp);
+                            _updateinDB('withdraw_cash', successfull_withdraw_resp);
+                        });
                     }
 
                 break;
