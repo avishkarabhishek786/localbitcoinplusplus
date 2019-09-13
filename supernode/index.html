@@ -13350,18 +13350,6 @@ Event information log
                 op[0].flo_public_key
               )
             ) {
-              // Kill the connection manually to ensure connection is really closed.
-              /* Source of inspiration:-
-                        https://github.com/dart-lang/sdk/issues/25536
-                        https://bugs.chromium.org/p/chromium/issues/detail?id=76358 
-                        */
-
-              if (
-                localbitcoinplusplus.backupWS[getFLOId].ws_connection
-                  .readyState == 1
-              ) {
-                localbitcoinplusplus.backupWS[getFLOId].ws_connection.close();
-              }
 
               // Stop yourself from serving it unless proper DB sync
               localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;
@@ -13902,18 +13890,10 @@ Event information log
         // remove above lines with these
         readAllDB(`myClosestSupernodes`).then(sups => {
           sups
-            .filter(f => {
-              const supWSConn =
-                localbitcoinplusplus.backupWS[f.trader_flo_address];
-              if (
-                typeof supWSConn == "object" &&
-                supWSConn.ws_connection.readyState < 2
-              ) {
-                return f;
-              }
-            })
             .map(backup_id => {
-              if (!localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
+              if (!localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)
+              && backup_id.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
+              ) {
                 const backup_conns =
                   localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
                 if (typeof backup_conns.ws_connection == "object") {
@@ -13927,13 +13907,13 @@ Event information log
                       localbitcoinplusplus.backupWS[
                         backup_id.trader_flo_address
                       ].ws_connection.close();
-                      delete localbitcoinplusplus.backupWS[backup_id];
+                      delete localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
                     }
                   } else {
                     localbitcoinplusplus.backupWS[
                       backup_id.trader_flo_address
                     ].ws_connection.close();
-                    delete localbitcoinplusplus.backupWS[backup_id];
+                    delete localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
                   }
                 }
               }
