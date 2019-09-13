@@ -13226,10 +13226,7 @@ Event information log
       reactor.registerEvent("switchToBackupWSForSuperNodesOperations");
       reactor.registerEvent("user_flo_keys_active");
       reactor.registerEvent("remove_extra_backup_connections");
-      reactor.registerEvent(
-        "request_to_modify_user_balance_on_successfull_fiat_deposit"
-      );
-
+    
       reactor.addEventListener("fireNodeWelcomeBackEvent", function(evt) {
         let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
 
@@ -13353,18 +13350,6 @@ Event information log
                 op[0].flo_public_key
               )
             ) {
-              // Kill the connection manually to ensure connection is really closed.
-              /* Source of inspiration:-
-                        https://github.com/dart-lang/sdk/issues/25536
-                        https://bugs.chromium.org/p/chromium/issues/detail?id=76358 
-                        */
-
-              if (
-                localbitcoinplusplus.backupWS[getFLOId].ws_connection
-                  .readyState == 1
-              ) {
-                localbitcoinplusplus.backupWS[getFLOId].ws_connection.close();
-              }
 
               // Stop yourself from serving it unless proper DB sync
               localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;
@@ -13738,21 +13723,19 @@ Event information log
               localbitcoinplusplus.backupWS[getFLOId].ws_connection
                 .readyState >= 2
             ) {
-              localbitcoinplusplus.backupWS[getFLOId] = null;
-              localbitcoinplusplus.backupWS[
-                getFLOId
-              ] = new backupSupernodesWebSocketObject(back_ws_url);
-              localbitcoinplusplus.backupWS[getFLOId].connectWS();
-              /* Now in connectWS if connection fails call switchToBackupWSForSuperNodesOperations() in onClose() 
+                if (getFLOId !== localbitcoinplusplus.wallets.my_local_flo_address) {
+                    localbitcoinplusplus.backupWS[getFLOId] = null;
+                    localbitcoinplusplus.backupWS[
+                        getFLOId
+                    ] = new backupSupernodesWebSocketObject(back_ws_url);
+                    localbitcoinplusplus.backupWS[getFLOId].connectWS();
+                    /* Now in connectWS if connection fails call switchToBackupWSForSuperNodesOperations() in onClose() 
                         for next su node, if its success check for max baxkup connection conditon, if required
-                        execute 'resolve_backup_ws_connections' in onOpen() or exit */
+                        execute 'resolve_backup_ws_connections' in onOpen() or exit */   
+                }              
             }
           } catch (error) {
             console.error(error);
-            reactor.dispatchEvent(
-              "switchToBackupWSForSuperNodesOperations",
-              back_ws_url
-            );
           }
         }
       });
@@ -13809,15 +13792,15 @@ Event information log
                 continue;
 
               // Get the highest index of connected supernodes
-              const highestIndexOfConnectedSupernode = Object.keys(
-                localbitcoinplusplus.backupWS
-              ).reduce((acc, val) =>
-                acc === undefined ||
-                myClosestSupsFloList.indexOf(val) >
-                  myClosestSupsFloList.indexOf(acc)
-                  ? myClosestSupsFloList.indexOf(val)
-                  : myClosestSupsFloList.indexOf(acc)
-              );
+              let highestIndexOfConnectedSupernode = -1;
+              
+              for(let i=0; i<=currenctBackupWsList.length; i++) {
+                if(myClosestSupsFloList.indexOf(currenctBackupWsList[i])
+                    >highestIndexOfConnectedSupernode) {
+                    highestIndexOfConnectedSupernode 
+                        = myClosestSupsFloList.indexOf(currenctBackupWsList[i]);
+                }
+              }
 
               if (
                 myClosestSupsFloList.indexOf(supsObj.trader_flo_address) <
@@ -13882,9 +13865,11 @@ Event information log
           );
 
           if (
-            typeof nextClosestSupernodeElem == "object" &&
-            nextClosestSupernodeElem[0].trader_flo_address !==
-              user_data.myLocalFLOAddress
+            typeof nextClosestSupernodeElem == "object"
+            && nextClosestSupernodeElem !== null 
+            && nextClosestSupernodeElem !== undefined 
+            && nextClosestSupernodeElem[0].trader_flo_address 
+                !== user_data.myLocalFLOAddress
           ) {
             reactor.dispatchEvent(
               "shift_ws_connection",
@@ -13905,18 +13890,10 @@ Event information log
         // remove above lines with these
         readAllDB(`myClosestSupernodes`).then(sups => {
           sups
-            .filter(f => {
-              const supWSConn =
-                localbitcoinplusplus.backupWS[f.trader_flo_address];
-              if (
-                typeof supWSConn == "object" &&
-                supWSConn.ws_connection.readyState < 2
-              ) {
-                return f;
-              }
-            })
             .map(backup_id => {
-              if (!localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)) {
+              if (!localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)
+              && backup_id.trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
+              ) {
                 const backup_conns =
                   localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
                 if (typeof backup_conns.ws_connection == "object") {
@@ -13930,13 +13907,13 @@ Event information log
                       localbitcoinplusplus.backupWS[
                         backup_id.trader_flo_address
                       ].ws_connection.close();
-                      delete localbitcoinplusplus.backupWS[backup_id];
+                      delete localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
                     }
                   } else {
                     localbitcoinplusplus.backupWS[
                       backup_id.trader_flo_address
                     ].ws_connection.close();
-                    delete localbitcoinplusplus.backupWS[backup_id];
+                    delete localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
                   }
                 }
               }
@@ -13956,20 +13933,23 @@ Event information log
         }
       });
 
-      /*This function is used to verify a tx denoting token transfer by trusted guy to the supernode
-          and to increase balance of the respective user node.*/
-
-      reactor.addEventListener(
-        "request_to_modify_user_balance_on_successfull_fiat_deposit",
-        function(token_transfer_resp) {
-          /*
-                token_transfer_resp = {
-                    tx: ec289d40069bb4db8b633133560269004a35f834c4a146560887ac87f7789d35,
-                    user_action: 'deposit'
-                }
-            */
-        }
-      );
+      /* This function runs when a backup ws is down */  
+      reactor.addEventListener("backup_supernode_down", async function(evt) {
+        showMessage(
+            `Disconnected to backup Supernode sever: ${evt.srcElement.url}.`
+        );
+        const switchMyWS = new backupSupernodesWebSocketObject();
+        switchMyWS.updateSupernodeAvailabilityStatus(
+            evt.srcElement.url,
+            false
+        );
+        // Request next backup server to connect
+        await reactor.dispatchEvent(
+            "switchToBackupWSForSuperNodesOperations",
+            evt.srcElement.url
+        );
+       });      
+ 
     </script>
 
     <!-- Misc functions -->
@@ -20295,21 +20275,7 @@ Event information log
             reactor.dispatchEvent("backup_supernode_up");
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
-            reactor.addEventListener("backup_supernode_down", async function() {
-              showMessage(
-                `Disconnected to backup Supernode sever: ${evt.srcElement.url}.`
-              );
-              switchMyWS.updateSupernodeAvailabilityStatus(
-                evt.srcElement.url,
-                false
-              );
-              // Request next backup server to connect
-              await reactor.dispatchEvent(
-                "switchToBackupWSForSuperNodesOperations",
-                evt.srcElement.url
-              );
-            });
-            reactor.dispatchEvent("backup_supernode_down");
+            reactor.dispatchEvent("backup_supernode_down", evt);
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
             let response = evt.data;
