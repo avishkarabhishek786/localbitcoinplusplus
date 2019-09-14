@@ -13380,11 +13380,24 @@ Event information log
               )
             ) {
 
+              // Kill the connection manually to ensure connection is really closed.
+              /* Source of inspiration:-
+                 https://github.com/dart-lang/sdk/issues/25536
+                 https://bugs.chromium.org/p/chromium/issues/detail?id=76358 
+              */ 
+              if (localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState==1) {
+                localbitcoinplusplus.backupWS[getFLOId].ws_connection.close();   
+              } 
+
               // Stop yourself from serving it unless proper DB sync
               localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;
 
               // Initiate connections with next live supernodes
-              reactor.dispatchEvent("resolve_backup_ws_connections");
+              
+              // "resolve_backup_ws_connections" is not needed as 
+              // backup close will connect to next backup Supernode 
+              
+              // reactor.dispatchEvent("resolve_backup_ws_connections");
 
               const mcs = await readAllDB("myClosestSupernodes");
               const myClosestSupList = mcs.filter(
@@ -13974,6 +13987,7 @@ Event information log
             showMessage(
               `Connected to backup Supernode sever: ${evt.srcElement.url}.`
             );
+            const switchMyWS = new backupSupernodesWebSocketObject();
             switchMyWS.updateSupernodeAvailabilityStatus(
               evt.srcElement.url,
               true
@@ -13999,16 +14013,14 @@ Event information log
                     localbitcoinplusplus.master_configurations.MaxBackups
                 ) {
                     // Ask conn_su_flo_id to ask you your DB data
-                    // const RM_RPC = new localbitcoinplusplus.rpc();
-                    // RM_RPC.send_rpc.call(this, "request_me_db_data", {
-                    //     trader_flo_address: my_local_data.myLocalFLOAddress,
-                    //     receiver_flo_address: conn_su_flo_id,
-                    //     db_inst: my_local_data.myLocalFLOAddress
-                    // })
-                    // .then(req=>localbitcoinplusplus.pending_tasks.push({
-                    //     func: doSend,
-                    //     params: req
-                    // }));
+                    // This will give your db data to newly connected backup Supernode
+                    const RM_RPC = new localbitcoinplusplus.rpc();
+                    RM_RPC.send_rpc.call(this, "request_me_db_data", {
+                        trader_flo_address: my_local_data.myLocalFLOAddress,
+                        receiver_flo_address: conn_su_flo_id,
+                        db_inst: my_local_data.myLocalFLOAddress
+                    })
+                    .then(req=>doSend(req, conn_su_flo_id));
                 }
 
                 // Check if the number of backup ws connections satisfy max baxkup master
@@ -20318,8 +20330,8 @@ Event information log
             reactor.dispatchEvent("backup_supernode_down", evt);
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
-            let response = evt.data;
-
+            let response = evt.data || evt;
+            console.log(`backup onmessage: ${response}`);
             let isItANodeLeavingMessage = response.search(`\\-- left`);
             if (isItANodeLeavingMessage >= 0) {
               reactor.dispatchEvent("fireNodeGoodByeEvent", response);
@@ -22355,6 +22367,28 @@ Event information log
                         `can_serve_${res_obj.params[0].can_serve_supernode}`
                       ] = true;
                     }
+                  }
+                  break;
+
+                case "request_me_db_data":
+                  if (
+                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                      res_obj.nodePubKey
+                    )
+                  ) {
+                    const resp = res_obj.params[0];
+
+                    if (
+                      localbitcoinplusplus.wallets.my_local_flo_address !==
+                      resp.receiver_flo_address
+                    )
+                      return;
+
+                    localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
+                      localbitcoinplusplus.wallets.my_local_flo_address,
+                      resp.trader_flo_address,
+                      resp.db_inst
+                    );
                   }
                   break;
 
@@ -26538,7 +26572,8 @@ Event information log
         const request_array = [
           "send_back_shamirs_secret_supernode_pvtkey",
           "retrieve_shamirs_secret_supernode_pvtkey",
-          "store_shamirs_secret_pvtkey_shares"
+          "store_shamirs_secret_pvtkey_shares",
+          "request_me_db_data",
         ];
 
         let finalMessage = message;
@@ -26632,7 +26667,8 @@ Event information log
           const request_array = [
             "send_back_shamirs_secret_supernode_pvtkey",
             "retrieve_shamirs_secret_supernode_pvtkey",
-            "store_shamirs_secret_pvtkey_shares"
+            "store_shamirs_secret_pvtkey_shares",
+            "request_me_db_data"
           ];
 
           try {
