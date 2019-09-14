@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <link rel="shortcut icon" href="">
     <title>P2P CRYPTO TRADING SOFTWARE</title>
     <link
       href="https://fonts.googleapis.com/css?family=Montserrat"
@@ -13971,14 +13972,14 @@ Event information log
       });
 
       /*This function denotes that a user is probably live and is using the system*/
-      reactor.addEventListener("user_flo_keys_active", async function(usrObj) {
+      reactor.addEventListener("user_flo_keys_active", async function(usr_pubkey) {
         if (
           localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-            usrObj.myLocalFLOPublicKey
+            usr_pubkey
           )
         ) {
           // Connect to nearest live backup nodes
-          //reactor.dispatchEvent("resolve_backup_ws_connections");
+          reactor.dispatchEvent("resolve_backup_ws_connections");
         }
       });
 
@@ -14404,6 +14405,16 @@ Event information log
                     dataBaseUIOperations();
                   }
 
+                  // Private key is built. Now execute private key dependent functions
+                  const RM_WALLET = new localbitcoinplusplus.wallets;
+                  const pubkey = RM_WALLET
+                    .generateFloKeys(localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY)
+                    .pubKeyHex
+                  if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+                  .includes(pubkey)) {
+                    reactor.dispatchEvent("user_flo_keys_active", pubkey);
+                  }
+
                   Promise.resolve(true);
                 } else {
                   let mes = `WARNING: Failed to build your private key. You can reset keys and generate new keys from keys section below.`;
@@ -14438,6 +14449,16 @@ Event information log
               enumerable: false
             }
           );
+          
+          // Private key is built. Now execute private key dependent functions
+            const pubkey = RM_WALLET
+                .generateFloKeys(localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY)
+                .pubKeyHex
+            if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+              .includes(pubkey)) {
+                reactor.dispatchEvent("user_flo_keys_active", pubkey);
+            }
+            return true;
         },
         rebuild_private_key: function(
           private_key_shamirs_shares,
@@ -20169,8 +20190,6 @@ Event information log
                     idbData.myLocalFLOPublicKey
                   )
                 ) {
-                  // Invoke functions
-                  reactor.dispatchEvent("user_flo_keys_active", idbData);
 
                   wsUri.map((uri, index) => {
                     // Do not serve to any requests unless data is fully synced.
@@ -20186,9 +20205,6 @@ Event information log
                       BACKUP_DB[uri.trader_flo_address].createNewDB();
                     }
                   });
-
-                  // Connect to nearest live backup nodes
-                  reactor.dispatchEvent("resolve_backup_ws_connections");
                 }
 
                 localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS =
@@ -20289,7 +20305,7 @@ Event information log
               )
             ) {
               // Invoke functions
-              reactor.dispatchEvent("user_flo_keys_active", idbData);
+              //reactor.dispatchEvent("user_flo_keys_active", idbData);
 
               wsUri.map((uri, index) => {
                 // Do not serve to any requests unless data is fully synced.
@@ -20305,7 +20321,7 @@ Event information log
               });
 
               // Connect to nearest live backup nodes
-              reactor.dispatchEvent("resolve_backup_ws_connections");
+              //reactor.dispatchEvent("resolve_backup_ws_connections");
             }
 
             resolve(true);
