@@ -11531,7 +11531,7 @@ Event information log
         trade: {},
         rpc: {},
         master_configurations: {},
-        cron_jobs = {}
+        cron_jobs: {}
       };
 
       Object.defineProperty(localbitcoinplusplus, "server", {
@@ -27894,17 +27894,9 @@ Event information log
     <!-- CRON Jobs / requestIdleCallback Implementations -->
     <script>
 
-        const RM_CRON = new localbitcoinplusplus.cron_jobs;
-
-        window.addEventListener('load', RM_CRON.resetTimer, true);
-        var user_events = ['mousedown', 'mousemove', 'keypress',
-                        'scroll', 'touchstart', 'click'];
-        user_events.forEach(function (name) {
-            document.addEventListener(name, RM_CRON.resetTimer, true);
-        });
+        const eventsList = [];
 
         const CRON = localbitcoinplusplus.cron_jobs = function CronFunction() {
-            this.eventsList = [];
             this.NumSetIntCalled=0;
             this.inactivityPeriodCounter = 0;
             this.setIntTimeInterval = 10000; // time is in milliseconds
@@ -27912,17 +27904,12 @@ Event information log
             this.isRequestIdleCallbackScheduled = false;
         };
 
-        CronFunction.prototype.test_ws_connection = function test_supernode_ws_connection(url="", subject_ws=null) {
+        CRON.prototype.test_ws_connection = function test_supernode_ws_connection() {
             this.ws = {};
             this.job = 'ws_conn_test';
-            this.url = url;
+            this.url = this.subject_ws.url;
             this.is_conn_live;
-            this.close_conn = function() {
-                ws.close();
-            };
-            this.close_subject_ws_conn = function() {
-                ws.close();
-            };
+            this.server_conn_counter = 0;
             this.start_conn = function startTestConn() {
                 return new Promise((resolve, reject) => {
                     this.ws = new WebSocket(this.url);
@@ -27930,7 +27917,8 @@ Event information log
                     this.ws.onopen = function (e) {
                         console.info('CONNECTED ' + this.url);
                         this.is_conn_live = true;
-                    }.bind(this);
+                        this.reset_idle_timer();
+                    }
 
                     this.ws.onmessage = function (evt) {
                         var received_msg = evt.data;
@@ -27938,43 +27926,51 @@ Event information log
                         let node_alive = received_msg.search(`\\++ joined`);
                         console.log(node_alive);
                         if (node_alive>=0) {
-                            ws.close();
-                            console.info("Node is alive");
-                            resetTimer();
+                            // Here reset the timer 
+                            //this.ws.close();
+                            //console.info("Node is alive");
+                            //const RM_CRON = new localbitcoinplusplus.cron_jobs;
+                            //RM_CRON.reset_idle_timer();
                         }
-                    }.bind(this);
+                    }
 
                     this.ws.onclose = function (e) {
                         if (!e.wasClean) {
                             // !websocket is closed. Inform Supernode
-                            console.log("SERVER ABRUPTLY DISCONNECTED ");
+                            this.server_conn_counter++;
+                            console.log(`SERVER ${this.url} ABRUPTLY DISCONNECTED`);
                         }
-                        console.log("SERVER DISCONNECTED");
-                        subject_ws.close();
+                        console.log(this.server_conn_counter);
+                        // Close it after x number of attempts
+                        if (this.server_conn_counter===3) {
+                            this.subject_ws.close();    
+                        }
+                        
                         //setTimeout("schedulePendingEvents()", 60000);
                         //requestIdleCallback(schedulePendingEvents, { timeout: 60000 });
-                    }.bind(this);
-                });
+                    }
+                }).bind(this);
             }
         }
 
-        CronFunction.prototype.launch_idle_time_functions = function initIdleFuncs() {
+        CRON.prototype.launch_idle_time_functions = function initIdleFuncs() {
             // your function for too long inactivity goes here
             console.log("inactive");
+            console.log(this);
             this.inactivityPeriodCounter++;
             this.inactivityTime = this.setIntTimeInterval*this.inactivityPeriodCounter;
             console.log("inactivityTime: ", this.inactivityTime);
-            requestIdleCallback(this.schedulePendingEvents, { timeout: 60000 });
+            requestIdleCallback(this.schedule_pending_events.bind(this), { timeout: 60000 });
         }
         
-        CronFunction.prototype.resset_idle_timer = function resetTimer() {
+        CRON.prototype.reset_idle_timer = function resetTimer() {
             this.inactivityPeriodCounter=0;
             clearTimeout(this.NumSetIntCalled);
-            this.NumSetIntCalled = setInterval(this.checkWSConnections, this.setIntTimeInterval);  
+            this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
             console.log("NumSetIntCalled: ", this.NumSetIntCalled);
         }
 
-        CronFunction.prototype.schedule_pending_events = function schedulePendingEvents() {
+        CRON.prototype.schedule_pending_events = function schedulePendingEvents() {
 
             // Only schedule the rIC if one has not already been set.
             if (typeof this.isRequestIdleCallbackScheduled == "undefined"
@@ -27984,32 +27980,33 @@ Event information log
 
             if ('requestIdleCallback' in window) {
                 // Wait at most two seconds before processing events.
-                requestIdleCallback(this.processPendingEvents);
-                //requestIdleCallback(processPendingEvents, { timeout: 10000 });
+                requestIdleCallback(this.process_pending_events).bind(this);
+                //requestIdleCallback(this.process_pending_events.bind(this), { timeout: 10000 });
             } else {
-                this.processPendingEvents();
+                this.process_pending_events.call(this);
             }
         }
 
-        CronFunction.prototype.process_pending_events = function processPendingEvents(deadline) {
+        CRON.prototype.process_pending_events = function processPendingEvents(deadline) {
 
             if(typeof this.ws!=="string") throw new Error('Error: ws is not defined.');
 
             if (this.inactivityTime>30000) {
-                this.eventsList.push({
+                eventsList.push({
                     job: "testing_ws_connection",
                     func: this.test_supernode_ws_connection,
-                    params: this.url
+                    params: this.url 
+                         || this.subject_ws.url
                 });   
             } else {
-                this.eventsList.push({
+                eventsList.push({
                     job: "ping",
-                    func: this.ws.send,
+                    func: this.subject_ws.send,
                     params: "is_node_alive_request"
                 });
             }
 
-            console.log(this.eventsList);
+            console.log(eventsList);
 
             // Reset the boolean so future rICs can be set.
             this.isRequestIdleCallbackScheduled = false;
@@ -28022,26 +28019,18 @@ Event information log
             // Go for as long as there is time remaining and work to do.
 
             while ((deadline.timeRemaining() > 0)
-                && this.eventsList.length > 0
+                && eventsList.length > 0
             ) {
-                var evt = this.eventsList.pop();
+                var evt = eventsList.pop();
                 console.log(evt);
-                // try {
-                //     evt.func(evt.params);
-                // } catch (error) {
-                //     try {
-                //         evt.func.bind(ws).call(this, evt.params);
-                //     } catch (error) {
-                //         console.log(error);
-                //     }
-                // }
+
                 switch (evt.job) {
                     case "testing_ws_connection":
-                        console.table(evt);
+                        evt.func.bind(this.subject_ws).call(this, evt.params);        
                         break;
                 
                     case "ping":
-                        console.table(evt);
+                        evt.func.bind(this.subject_ws).call(this, evt.params);
                         break;
 
                     default:
@@ -28050,12 +28039,24 @@ Event information log
             }
 
             // Check if there are more events still to send.
-            if (this.eventsList.length > 0)
+            if (eventsList.length > 0)
                 this.schedulePendingEvents();
         }
 
-        CronFunction.prototype.set_new_cron = function(cronObject, cronClass) {
+        CRON.prototype.set_new_cron = function(cronObject) {
+            Object.keys(cronObject).map(m=>{
+                this[m] = cronObject[m];
+            });
             
+            window.addEventListener('load', this.reset_idle_timer.bind(this), true);
+            this.user_events = ['mousedown', 'mousemove', 'keypress',
+                            'scroll', 'touchstart', 'click'];
+            this.user_events.forEach(function (name) {
+                document.addEventListener(name, this.reset_idle_timer.bind(this), true);
+            }.bind(this));
+
+            // Start idle functions
+            this.reset_idle_timer.call(this);
         }
 
     </script>
