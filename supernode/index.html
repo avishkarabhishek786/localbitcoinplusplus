@@ -26607,7 +26607,7 @@ Event information log
         }
       }
 
-      async function handleCronOperations(response) {
+      async function handleCronOperations(evt) {
         var response = evt.data || evt;
         console.log("RESPONSE CRON: " + response);
 
@@ -26653,7 +26653,8 @@ Event information log
                 case "primary_ws_ping":
                     try {
                         const ping_primary_data = res_obj.params[0];
-                        if(res_obj.globalParams.senderFloId!==ping_primary_data.trader_flo_address) return;
+                        const senderFloId = bitjs.FLO_TEST.pubkey2address(res_obj.nodePubKey);
+                        if(senderFloId!==ping_primary_data.trader_flo_address) return;
                         const backws = localbitcoinplusplus.backupWS[ping_primary_data.trader_flo_address];
                         if (typeof backws!=="object" || backws==null) return;
                         let resp = {
@@ -26662,7 +26663,7 @@ Event information log
                             receiver_flo_address: ping_primary_data.trader_flo_address
                         }
                         RM_RPC.send_rpc.call(this, "primary_ws_pong", resp)
-                        .then(m=>backws.ws_connection.send(m));
+                        .then(m=>doSend(m, ping_primary_data.trader_flo_address));
                     } catch (error) {
                         throw new Error(error);
                     }
@@ -26674,9 +26675,8 @@ Event information log
                         if(localbitcoinplusplus.wallets.my_local_flo_address
                           !==ping_primary_data_response.receiver_flo_address) return;
 
-                        debugger;
                         CRON.prototype.reset_idle_timer
-                        .call(localbitcoinpluslus
+                        .call(localbitcoinplusplus
                         .active_crons[`ping_${ping_primary_data_response.receiver_flo_address}`]);
 
                     } catch (error) {
@@ -28089,7 +28089,7 @@ Event information log
                             });
                             this.ws_connection_attempts++;   
                         } else {
-                            if(this.ws_connection_attempts>2 && this.subject_ws.readyState>1) return;
+                            if(this.ws_connection_attempts>2 || this.subject_ws.readyState>1) return;
                             if(localbitcoinplusplus.master_configurations.supernodesPubKeys
                             .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                                 func_params = await RM_RPC.send_rpc.call(this, "primary_ws_ping", {
@@ -28108,7 +28108,7 @@ Event information log
                             
                             this.eventsList.push({
                                 job: "ping",
-                                func: this.subject_ws.send,
+                                func: doSend,
                                 params: func_params
                             });
                         }       
@@ -28129,7 +28129,8 @@ Event information log
         CRON.prototype.reset_idle_timer = function resetTimer() {
             this.inactivityPeriodCounter=0;
             this.ws_connection_attempts=0;
-            clearTimeout(this.NumSetIntCalled);
+            //clearTimeout(this.NumSetIntCalled);
+            clearInterval(this.NumSetIntCalled);
             this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
             console.log("NumSetIntCalled: ", this.NumSetIntCalled);
         }
@@ -28178,7 +28179,7 @@ Event information log
                 switch (evt.job) {
                     case "testing_ws_connection":
                         //evt.func(evt.params);
-                        requestIdleCallback(evt.func(evt.params));        
+                        requestIdleCallback(evt.func.bind(this, evt.params));        
                         break;
                 
                     case "ping":
