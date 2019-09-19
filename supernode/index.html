@@ -13254,6 +13254,7 @@ Event information log
       reactor.registerEvent("switchToBackupWSForSuperNodesOperations");
       reactor.registerEvent("user_flo_keys_active");
       reactor.registerEvent("remove_extra_backup_connections");
+      reactor.registerEvent("launch_ws_ping_pong")
     
       reactor.addEventListener("fireNodeWelcomeBackEvent", function(evt) {
         let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
@@ -13941,6 +13942,7 @@ Event information log
       reactor.addEventListener("remove_extra_backup_connections", function() {
         // remove above lines with these
         readAllDB(`myClosestSupernodes`).then(sups => {
+          let max_conns = 0;
           sups
             .map(backup_id => {
               if (!localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)
@@ -13948,8 +13950,8 @@ Event information log
               ) {
                 const backup_conns =
                   localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
-                if (typeof backup_conns.ws_connection == "object") {
-                  let max_conns = 0;
+                if (typeof backup_conns == "object" 
+                && typeof backup_conns.ws_connection == "object") {
                   if (backup_conns.ws_connection.readyState < 2) {
                     max_conns++;
                     if (
@@ -14077,6 +14079,41 @@ Event information log
         );
        });      
  
+      /* This function initiates ping pong for all ws connections */    
+      reactor.addEventListener('launch_ws_ping_pong', function(evt) {
+        const RM_CRON = new localbitcoinplusplus.cron_jobs;
+        
+        // ping-pong for primary ws
+        RM_CRON.set_new_cron({
+            cron_name: `ping_${localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS}`,
+            cron_type: "ping",
+            subject_ws: websocket,
+            url: websocket.url,
+            setIntTimeInterval: 40000, // time is in milliseconds
+            max_runtime: 120000
+        });
+
+        // ping-pong for backup ws
+        Object.keys(localbitcoinplusplus.backupWS).map(backup_supernode_flo_id=>{
+            if (typeof localbitcoinplusplus.backupWS[backup_supernode_flo_id]=="object"
+                && localbitcoinplusplus.backupWS[backup_supernode_flo_id].ws_connection.readyState<2
+            ) {
+                const RM_CRON = new localbitcoinplusplus.cron_jobs;
+                RM_CRON.set_new_cron({
+                    cron_name: `pong_${backup_supernode_flo_id}`,
+                    cron_type: "pong",
+                    subject_ws: localbitcoinplusplus.backupWS[backup_supernode_flo_id].ws_connection,
+                    url: localbitcoinplusplus.backupWS[backup_supernode_flo_id].ws_connection.url,
+                    max_runtime: 120000
+                });
+            } else {
+                RM_CRON.unset_cron(`pong_${backup_supernode_flo_id}`);
+            }
+        });
+
+      });
+
+
     </script>
 
     <!-- Misc functions -->
@@ -20317,8 +20354,6 @@ Event information log
                 idbData.myLocalFLOPublicKey
               )
             ) {
-              // Invoke functions
-              //reactor.dispatchEvent("user_flo_keys_active", idbData);
 
               wsUri.map((uri, index) => {
                 // Do not serve to any requests unless data is fully synced.
@@ -20353,9 +20388,14 @@ Event information log
           this.ws_connection = new WebSocket(this.ws_url);
           const switchMyWS = new backupSupernodesWebSocketObject();
           this.ws_connection.onopen = function(evt) {
+            // Remove unneccessary ws connections
+            reactor.dispatchEvent('remove_extra_backup_connections');
             reactor.dispatchEvent("backup_supernode_up", evt);
+            //reactor.dispatchEvent("launch_ws_ping_pong");
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
+            // Remove unneccessary ws connections
+            reactor.dispatchEvent('remove_extra_backup_connections');
             reactor.dispatchEvent("backup_supernode_down", evt);
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
@@ -20648,14 +20688,15 @@ Event information log
 
       async function onMessage(evt) {
         var response = evt.data || evt;
-        console.log("RESPONSE: " + response);
-
+        
         // Check if message is about a cron operation
         const isMsgCronJob = response.search("__FOR_CRON_OPERATIONS__");
         if (isMsgCronJob >= 0) {
             handleCronOperations(response);  
             return;
         }
+
+        console.log("RESPONSE: " + response);
         
         // If the message is about leaving of a node determine its FLO Id
         // and fire respective events
@@ -26634,7 +26675,6 @@ Event information log
               return;
 
             const isIncomingMessageValid = await validateIncomingMessage(res);
-            console.log("isIncomingMessageValid: ", isIncomingMessageValid);
 
             if (!isIncomingMessageValid) return;
 
@@ -26662,6 +26702,18 @@ Event information log
                             trader_flo_address:ping_primary_data.trader_flo_address,
                             receiver_flo_address: ping_primary_data.trader_flo_address
                         }
+
+                        Object.keys(localbitcoinplusplus.backupWS).map(backup_supernode_flo_id=>{
+                            if (typeof localbitcoinplusplus.backupWS[backup_supernode_flo_id]=="object") {
+                                // Reset Backup Supernode ws close timer
+                                const RM_CRON = new localbitcoinplusplus.cron_jobs;
+                                RM_CRON.reset_idle_timer
+                                .call(localbitcoinplusplus
+                                .active_crons[`pong_${backup_supernode_flo_id}`]);
+                            }
+                        });
+
+                        // Send Pong to sender Supernode
                         RM_RPC.send_rpc.call(this, "primary_ws_pong", resp)
                         .then(m=>doSend(m, ping_primary_data.trader_flo_address));
                     } catch (error) {
@@ -26675,7 +26727,8 @@ Event information log
                         if(localbitcoinplusplus.wallets.my_local_flo_address
                           !==ping_primary_data_response.receiver_flo_address) return;
 
-                        CRON.prototype.reset_idle_timer
+                        const RM_CRON = new localbitcoinplusplus.cron_jobs;
+                        RM_CRON.reset_idle_timer
                         .call(localbitcoinplusplus
                         .active_crons[`ping_${ping_primary_data_response.receiver_flo_address}`]);
 
@@ -26828,10 +26881,8 @@ Event information log
             };
 
             const initialMsgObjStr = JSON.stringify(initialMsgObj);
-            console.log(initialMsgObjStr);
 
             const initialMsgObjStrHash = Crypto.SHA256(initialMsgObjStr);
-            console.log(initialMsgObjStrHash);
 
             const RM_WALLET = new localbitcoinplusplus.wallets();
             if (
@@ -28015,7 +28066,6 @@ Event information log
             this.eventsList = [];
             this.NumSetIntCalled=0;
             this.inactivityPeriodCounter = 0;
-            this.setIntTimeInterval = 10000; // time is in milliseconds
             this.inactivityTime;
             this.isRequestIdleCallbackScheduled = false;
         };
@@ -28024,29 +28074,19 @@ Event information log
             this.ws = {};
             this.job = 'ws_conn_test';
             this.url = this.subject_ws.url;
-            this.is_conn_live;
             if(typeof this.server_conn_counter !== "number") this.server_conn_counter = 0;
             return new Promise(function(resolve, reject) {
                 this.ws = new WebSocket(this.url);
 
                 this.ws.onopen = function (e) {
                     console.info('CONNECTED ' + this.url);
-                    this.is_conn_live = true;
-                    this.reset_idle_timer();
+                    this.reset_idle_timer.call(this);
+                    this.ws.close();
                 }.bind(this);
 
                 this.ws.onmessage = function (evt) {
                     var received_msg = evt.data;
-                    console.log(received_msg);
-                    let node_alive = received_msg.search(`\\++ joined`);
-                    console.log(node_alive);
-                    if (node_alive>=0) {
-                        // Here reset the timer 
-                        //this.ws.close();
-                        //console.info("Node is alive");
-                        //const RM_CRON = new localbitcoinplusplus.cron_jobs;
-                        //RM_CRON.reset_idle_timer();
-                    }
+                    //console.log(received_msg);
                 }.bind(this);
 
                 this.ws.onclose = function (e) {
@@ -28072,16 +28112,20 @@ Event information log
                 console.log("inactive");
                 console.log(this);
                 this.inactivityPeriodCounter++;
-                this.inactivityTime = this.setIntTimeInterval*this.inactivityPeriodCounter;
+                if(typeof this.setIntTimeInterval == "number") {
+                    this.inactivityTime = this.setIntTimeInterval*this.inactivityPeriodCounter;
+                } else {
+                    this.inactivityTime = this.max_runtime;
+                }
                 console.log("inactivityTime: ", this.inactivityTime);
 
                 const RM_RPC = new localbitcoinplusplus.rpc;
 
                 switch (this.cron_type) {
-                    case "ping-pong":
+                    case "ping":
                         let func_params = null;
                         if(typeof this.ws_connection_attempts !=="number") this.ws_connection_attempts=0;
-                        if (this.inactivityTime>100000 && this.ws_connection_attempts<=2) {
+                        if (this.inactivityTime>=this.max_runtime && this.ws_connection_attempts<=2) {
                             this.eventsList.push({
                                 job: "testing_ws_connection",
                                 func: this.test_ws_connection,
@@ -28113,6 +28157,13 @@ Event information log
                             });
                         }       
                         break;
+
+                    case "pong":
+                        console.log(this);
+                        if (this.inactivityTime>=this.max_runtime) {
+                            this.subject_ws.close();
+                        }
+                        break;
                 
                     default:
                         break;
@@ -28130,8 +28181,17 @@ Event information log
             this.inactivityPeriodCounter=0;
             this.ws_connection_attempts=0;
             //clearTimeout(this.NumSetIntCalled);
-            clearInterval(this.NumSetIntCalled);
-            this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
+            //clearInterval(this.NumSetIntCalled);
+            //this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
+            
+            if (this.cron_type=="ping") {
+                clearInterval(this.NumSetIntCalled);
+                this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
+            } else if(this.cron_type=="pong") {
+                clearTimeout(this.NumSetIntCalled);
+                this.NumSetIntCalled = setTimeout(this.launch_idle_time_functions.bind(this), this.max_runtime);  
+            }
+            
             console.log("NumSetIntCalled: ", this.NumSetIntCalled);
         }
 
@@ -28154,7 +28214,7 @@ Event information log
 
         CRON.prototype.process_pending_events = function processPendingEvents(deadline) {
 
-            if(typeof this.url !== "string" || typeof this.subject_ws.url!=="string") 
+            if(typeof this.url !== "string" && typeof this.subject_ws.url!=="string") 
                 throw new Error('Error: subject_ws is not defined.');
 
             console.log(this);
@@ -28178,7 +28238,6 @@ Event information log
 
                 switch (evt.job) {
                     case "testing_ws_connection":
-                        //evt.func(evt.params);
                         requestIdleCallback(evt.func.bind(this, evt.params));        
                         break;
                 
@@ -28197,6 +28256,9 @@ Event information log
         }
 
         CRON.prototype.set_new_cron = function(cronObject) {
+
+            if (Object.keys(localbitcoinplusplus.active_crons)
+            .includes(cronObject.cron_name)) return;
             
             Object.keys(cronObject)
                 .map(m=>this[m] = cronObject[m]);
@@ -28207,6 +28269,13 @@ Event information log
             // Start idle functions
             this.reset_idle_timer.call(this);
         
+        }
+
+        CRON.prototype.unset_cron = function(cron_name) {
+            clearTimeout(this.NumSetIntCalled);
+            clearInterval(this.NumSetIntCalled);
+            //this=null;
+            delete localbitcoinplusplus.active_crons[cron_name];
         }
 
     </script>
