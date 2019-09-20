@@ -13304,16 +13304,14 @@ Event information log
 
       /* Inform users that primary Supernode is down. 
         Connects to new Supernode after 30 seconds of continued disconnection. */ 
-      reactor.addEventListener("primary_supernode_down", async function(evt) {
+      reactor.addEventListener("primary_supernode_down", async function(url='') {
         showMessage(
-          `INFO: Disconnected to Supernode server: ${evt.srcElement.url}`
+          `INFO: Disconnected to Supernode server: ${url}`
         );
 
         const switchMyWS = new backupSupernodesWebSocketObject();
-        switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, false);
-        const disconnectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(
-          evt.srcElement.url
-        );
+        switchMyWS.updateSupernodeAvailabilityStatus(url, false);
+        const disconnectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(url);
         showMessage(
           `INFO: Waiting for primary Supernode connection to come back within 30sec.`
         );
@@ -13331,7 +13329,7 @@ Event information log
             showMessage(
               `INFO: Connection to primary Supernode failed. Attempting to connect to secondary Supernode.`
             );
-            switchMyWS.switchToBackupWS(evt.srcElement.url);
+            switchMyWS.switchToBackupWS(url);
           }
         });
       });
@@ -13381,6 +13379,9 @@ Event information log
             if (
               localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                 op[0].flo_public_key
+              ) &&
+              localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                localbitcoinplusplus.wallets.my_local_flo_public_key
               )
             ) {
 
@@ -13389,19 +13390,13 @@ Event information log
                  https://github.com/dart-lang/sdk/issues/25536
                  https://bugs.chromium.org/p/chromium/issues/detail?id=76358 
               */ 
-              if (localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState==1) {
+              if (typeof localbitcoinplusplus.backupWS[getFLOId]==="object"
+               && localbitcoinplusplus.backupWS[getFLOId].ws_connection.readyState==1) {
                 localbitcoinplusplus.backupWS[getFLOId].ws_connection.close();   
               } 
 
               // Stop yourself from serving it unless proper DB sync
               localbitcoinplusplus.services[`can_serve_${getFLOId}`] = false;
-
-              // Initiate connections with next live supernodes
-              
-              // "resolve_backup_ws_connections" is not needed as 
-              // backup close will connect to next backup Supernode 
-              
-              // reactor.dispatchEvent("resolve_backup_ws_connections");
 
               const mcs = await readAllDB("myClosestSupernodes");
               const myClosestSupList = mcs.filter(
@@ -13421,6 +13416,8 @@ Event information log
 
               const RM_RPC = new localbitcoinplusplus.rpc();
 
+              // This loop shall only run once and only by most elligible next
+              // live supernode   
               for (i = 0; i <= newClosestSupernodeMasterList.length; i++) {
                 if (
                   newClosestSupernodeMasterList[i].is_live == true &&
@@ -13429,6 +13426,7 @@ Event information log
                 )
                   break;
 
+                // Only one single most elligible backup Supernode will pass this if
                 if (
                   newClosestSupernodeMasterList[i].trader_flo_address ==
                   localbitcoinplusplus.wallets.my_local_flo_address
@@ -13479,8 +13477,6 @@ Event information log
                     obj => newClosestSupernodeMasterList.indexOf(obj) == -1
                   );
 
-                  console.log(nonBackUpSusForDeadSu);
-
                   if (typeof su_db_data == "object") {
                     nonBackUpSusForDeadSu.map(nbs => {
                       su_db_data.trader_flo_address = getFLOId;
@@ -13504,6 +13500,7 @@ Event information log
               msg = `INFO: Supernode ${getFLOId} left.`;
             } else {
               if (websocket.readyState == 1) websocket.close();
+              reactor.dispatchEvent('primary_supernode_down', websocket.url);
               msg = `INFO: User node ${getFLOId} left.`;
             }
           }
@@ -13527,16 +13524,17 @@ Event information log
           )
             return;
 
+            const switchMyWS = new backupSupernodesWebSocketObject();
+            switchMyWS.updateSupernodeAvailabilityStatus(
+                params.trader_flo_address,
+                true
+            );
+
           if (
             localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
               localbitcoinplusplus.wallets.my_local_flo_public_key
             )
           ) {
-            const switchMyWS = new backupSupernodesWebSocketObject();
-            switchMyWS.updateSupernodeAvailabilityStatus(
-              params.trader_flo_address,
-              true
-            );
 
             // Resolve ws connections
             reactor.dispatchEvent("resolve_backup_ws_connections");
@@ -13556,24 +13554,29 @@ Event information log
       });
 
       /* Queries the subject node if its alive */ 
-      reactor.addEventListener("get_node_status_request", function() {
-        readAllDB("myClosestSupernodes").then(nearestSupernodeAddresslist => {
-          const RM_RPC = new localbitcoinplusplus.rpc();
-          nearestSupernodeAddresslist.map(f => {
-            if (
-              f.trader_flo_address !==
-              localbitcoinplusplus.wallets.my_local_flo_address
-            ) {
-              RM_RPC.send_rpc
-                .call(this, "is_node_alive_request", {
-                  JOB: "ARE_YOU_ALIVE",
-                  trader_flo_address:
-                    localbitcoinplusplus.wallets.my_local_flo_address,
-                  receiver_flo_address: f.trader_flo_address
-                })
-                .then(req => doSend(req));
-            }
-          });
+      reactor.addEventListener("get_node_status_request", async function(supernode="") {
+        let nearestSupernodeAddresslist;
+        if(supernode.length<1) {
+            nearestSupernodeAddresslist = await readAllDB("myClosestSupernodes");
+        } else {
+            nearestSupernodeAddresslist = [supernode];
+        }
+        
+        const RM_RPC = new localbitcoinplusplus.rpc();
+        nearestSupernodeAddresslist.map(f => {
+        if (
+            f.trader_flo_address !==
+            localbitcoinplusplus.wallets.my_local_flo_address
+        ) {
+            RM_RPC.send_rpc
+            .call(this, "is_node_alive_request", {
+                JOB: "ARE_YOU_ALIVE",
+                trader_flo_address:
+                localbitcoinplusplus.wallets.my_local_flo_address,
+                receiver_flo_address: f.trader_flo_address
+            })
+            .then(req => doSend(req));
+        }
         });
       });
 
@@ -20428,6 +20431,21 @@ Event information log
             if (res_pos >= 0) {
               var res = response.substr(res_pos);
               let res_obj = JSON.parse(res);
+
+              const senderFloId = bitjs.FLO_TEST.pubkey2address(res_obj.nodePubKey);
+              console.info("senderFloId: ", senderFloId);
+              
+              // Backup Supernode is responding. Unset the ding-dong cron 
+              if(Object.keys(localbitcoinplusplus.backupWS).includes(senderFloId)
+              && typeof localbitcoinplusplus.active_crons[`ding_${senderFloId}`]==="object"
+              ) {
+                const RM_CRON = new localbitcoinplusplus.cron_jobs;
+                RM_CRON.unset_cron
+                .call(localbitcoinplusplus
+                .active_crons[`ding_${senderFloId}`]);
+                showMessage(`INFO: Backup Supernode ${senderFloId} passed ding-dong test..`);
+              }  
+
               if (
                 res_obj.method === "add_user_public_data" ||
                 res_obj.method === "retrieve_shamirs_secret_btc_pvtkey" ||
@@ -20683,7 +20701,7 @@ Event information log
       }
 
       function onClose(evt) {
-        reactor.dispatchEvent("primary_supernode_down", evt);
+        reactor.dispatchEvent("primary_supernode_down", evt.srcElement.url);
       }
 
       async function onMessage(evt) {
@@ -20696,6 +20714,12 @@ Event information log
             return;
         }
 
+        const isMsgFromCashier = response.search("__FOR__CASHIER__");
+        if (isMsgFromCashier >= 0) {
+          handleCashierMessages(response);
+          return;
+        }
+
         console.log("RESPONSE: " + response);
         
         // If the message is about leaving of a node determine its FLO Id
@@ -20703,12 +20727,6 @@ Event information log
         let isItANodeLeavingMessage = response.search(`\\-- left`);
         if (isItANodeLeavingMessage >= 0) {
           reactor.dispatchEvent("fireNodeGoodByeEvent", response);
-          return;
-        }
-
-        const isMsgFromCashier = response.search("__FOR__CASHIER__");
-        if (isMsgFromCashier >= 0) {
-          handleCashierMessages(response);
           return;
         }
 
@@ -26699,7 +26717,7 @@ Event information log
                         if (typeof backws!=="object" || backws==null) return;
                         let resp = {
                             for_cron_job:true,
-                            trader_flo_address:ping_primary_data.trader_flo_address,
+                            trader_flo_address:localbitcoinplusplus.wallets.my_local_flo_address,
                             receiver_flo_address: ping_primary_data.trader_flo_address
                         }
 
@@ -26731,6 +26749,48 @@ Event information log
                         RM_CRON.reset_idle_timer
                         .call(localbitcoinplusplus
                         .active_crons[`ping_${ping_primary_data_response.receiver_flo_address}`]);
+
+                    } catch (error) {
+                        throw new Error(error);
+                    }
+
+                break;
+
+                case "primary_ws_ding":
+                    try {
+                        const ding_primary_data = res_obj.params[0];
+                        const senderFloId = bitjs.FLO_TEST.pubkey2address(res_obj.nodePubKey);
+                        if(senderFloId!==ding_primary_data.trader_flo_address) return;
+                        let resp = {
+                            for_cron_job:true,
+                            greet: 'dong',
+                            trader_flo_address:localbitcoinplusplus.wallets.my_local_flo_address,
+                            receiver_flo_address: senderFloId
+                        }
+
+                        // Send Pong to sender Supernode
+                        RM_RPC.send_rpc.call(this, "primary_ws_dong", resp)
+                        .then(m=>doSend(m));
+
+                    } catch (error) {
+                        throw new Error(error);
+                    }
+                break;
+
+                case "primary_ws_dong":
+                    try {
+                        const ding_primary_data_response = res_obj.params[0];
+                        if(localbitcoinplusplus.wallets.my_local_flo_address
+                          !==ding_primary_data_response.receiver_flo_address) return;
+
+                        // Backup Supernode is responding. Unset the ding-dong cron 
+                        const RM_CRON = new localbitcoinplusplus.cron_jobs;
+                        RM_CRON.unset_cron
+                        .call(localbitcoinplusplus
+                        .active_crons[`ding_${ding_primary_data_response.trader_flo_address}`]);
+
+                        showMessage(`INFO: Backup Supernode ${ding_primary_data_response.trader_flo_address}
+                         passed ding-dong test.`);
 
                     } catch (error) {
                         throw new Error(error);
@@ -28105,10 +28165,10 @@ Event information log
             }.bind(this));
         }
 
+        // function for too long inactivity goes here
         CRON.prototype.launch_idle_time_functions = async function initIdleFuncs() {
             
             try {
-                // your function for too long inactivity goes here
                 console.log("inactive");
                 console.log(this);
                 this.inactivityPeriodCounter++;
@@ -28164,6 +28224,31 @@ Event information log
                             this.subject_ws.close();
                         }
                         break;
+
+                    case "ding":
+                        if (this.dingTitle==='ding_supernode') {
+                            if(this.ws_connection_attempts>=3) {
+                                // Max attempts reached. Receiver seems dead. 
+                                // Close the ws connection. Next ws will itself get connected.
+                                this.subject_ws.close();
+                                this.unset_cron.call(this);
+                                return;
+                            }
+                            // Send ding messages to backup ws
+                            for(recvr of Object.keys(localbitcoinplusplus.backupWS)) {
+                                if(this.cron_name===`ding_${recvr}`) {
+                                    RM_RPC.send_rpc.call(this, "primary_ws_ding", {
+                                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address,
+                                        receiver_flo_address: recvr,
+                                        for_cron_job: true,
+                                        greet: 'ding' // If you received pong your primary ws is alive
+                                    }).then(res=>doSend(res, recvr));
+                                }
+                            }
+
+                            this.ws_connection_attempts++;
+                        }
+                        break;
                 
                     default:
                         break;
@@ -28180,16 +28265,30 @@ Event information log
         CRON.prototype.reset_idle_timer = function resetTimer() {
             this.inactivityPeriodCounter=0;
             this.ws_connection_attempts=0;
-            //clearTimeout(this.NumSetIntCalled);
-            //clearInterval(this.NumSetIntCalled);
-            //this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
             
-            if (this.cron_type=="ping") {
-                clearInterval(this.NumSetIntCalled);
-                this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);  
-            } else if(this.cron_type=="pong") {
-                clearTimeout(this.NumSetIntCalled);
-                this.NumSetIntCalled = setTimeout(this.launch_idle_time_functions.bind(this), this.max_runtime);  
+            switch (this.cron_type) {
+                case "ping":
+                    clearInterval(this.NumSetIntCalled);
+                    this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);    
+                    break;
+
+                case "pong":
+                    clearTimeout(this.NumSetIntCalled);
+                    this.NumSetIntCalled = setTimeout(this.launch_idle_time_functions.bind(this), this.max_runtime);
+                    break;
+
+                case "ding":
+                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                        
+                        clearInterval(this.NumSetIntCalled);
+                        this.dingTitle = 'ding_supernode';
+                        this.NumSetIntCalled = setInterval(this.launch_idle_time_functions.bind(this), this.setIntTimeInterval);
+                    }
+                    break;
+
+                default:
+                    break;
             }
             
             console.log("NumSetIntCalled: ", this.NumSetIntCalled);
@@ -28205,8 +28304,6 @@ Event information log
 
             if ('requestIdleCallback' in window) {
                 requestIdleCallback(this.process_pending_events.bind(this));
-                // Wait at most ten seconds before processing events.
-                //requestIdleCallback(this.process_pending_events.bind(this), { timeout: 10000 });
             } else {
                 this.process_pending_events.call(this);
             }
@@ -28274,8 +28371,11 @@ Event information log
         CRON.prototype.unset_cron = function(cron_name) {
             clearTimeout(this.NumSetIntCalled);
             clearInterval(this.NumSetIntCalled);
-            //this=null;
-            delete localbitcoinplusplus.active_crons[cron_name];
+            if(typeof cron_name==="string") {
+                delete localbitcoinplusplus.active_crons[cron_name];
+            } else {
+                delete localbitcoinplusplus.active_crons[this.cron_name];
+            }
         }
 
     </script>
@@ -28563,14 +28663,16 @@ Event information log
             // Upload files to DB
             uploadFileToDB();
 
-            // Get the node cuurent active status
-            reactor.dispatchEvent("get_node_status_request");
 
             if (
               localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                 MY_LOCAL_FLO_PUBLIC_KEY
               )
             ) {
+        
+              // Get neighbour Supernodes current status
+              reactor.dispatchEvent("get_node_status_request");
+        
               localbitcoinplusplus.master_configurations.tradableAsset1.forEach(
                 function(asset1) {
                   localbitcoinplusplus.master_configurations.tradableAsset2.forEach(
