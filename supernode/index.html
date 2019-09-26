@@ -546,10 +546,9 @@
           Close
         </div>
         <pre id="log">
-Event information log
+                Event information log
                 =====================
-            </pre
-        >
+        </pre>
       </div>
       <div class="w3-button w3-teal w3-xlarge" onclick="displayMessages()">
         ☰
@@ -13963,6 +13962,7 @@ Event information log
 
       function showMessage(msg = "", t = 10000) {
         if (msg.length > 0) LogEvent(msg);
+        console.trace(msg);
         displayMessages();
         setTimeout(function() {
           closeMessage();
@@ -14871,6 +14871,19 @@ Event information log
                         params.currency,
                         params.product
                       );
+                      // If margin is > 2% discontinue the trade
+                      const diffPercent = Math.floor(((eqCrypto- trade_margin.remaining_crypto_credit)
+                                                /trade_margin.remaining_crypto_credit)*100);
+                      console.log(trade_margin.remaining_crypto_credit, eqCrypto);
+                      console.info(diffPercent);
+                     
+                      if(diffPercent<=2) {
+                        eqCrypto = trade_margin.remaining_crypto_credit;
+                      }  else {
+                        console.info(`Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}`);  
+                        return;
+                      }
+
                       if (
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
@@ -16478,6 +16491,16 @@ Event information log
                         params.currency,
                         params.product
                       );
+                      const diffPercent = Math.floor(((eqCrypto- trade_margin.remaining_crypto_credit)
+                                                /trade_margin.remaining_crypto_credit)*100);
+
+                      if(diffPercent<=2) {
+                        eqCrypto=trade_margin.remaining_crypto_credit;
+                      } else {
+                        console.info(`Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}`);  
+                        return;
+                      } 
+
                       if (
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
@@ -20799,7 +20822,10 @@ Event information log
                       if (isDataSignedBySuperNode === true) {
                         // Add buy order
                         addDB("buyOrders", buyOrders_data).then(() => {
-                          showMessage(`Your buy order is placed successfully.`);
+                          if(localbitcoinplusplus.wallets.my_local_flo_address
+                          ===buyOrders_data.trader_flo_address) {
+                            showMessage(`Your buy order is placed successfully.`);
+                          }
                         });
                       }
                     }
@@ -20832,9 +20858,13 @@ Event information log
                       if (isDataSignedBySuperNode === true) {
                         // Add buy order
                         addDB("sellOrders", sellOrders_data).then(() => {
-                          showMessage(
+                            if(localbitcoinplusplus.wallets.my_local_flo_address
+                          ===sellOrders_data.trader_flo_address) {
+                            showMessage(
                             `Your sell order is placed successfully.`
-                          );
+                            );
+                          }
+                          
                         });
                       }
                     }
@@ -22584,7 +22614,10 @@ Event information log
                       if (isDataSignedBySuperNode === true) {
                         // Add buy order
                         addDB("buyOrders", buyOrders_data).then(() => {
-                          showMessage(`Your buy order is placed successfully.`);
+                            if(localbitcoinplusplus.wallets.my_local_flo_address
+                          ===buyOrders_data.trader_flo_address) {
+                            showMessage(`Your buy order is placed successfully.`);
+                          }
                         });
                       }
                     }
@@ -22626,9 +22659,12 @@ Event information log
                       if (isDataSignedBySuperNode === true) {
                         // Add buy order
                         addDB("sellOrders", sellOrders_data).then(() => {
-                          showMessage(
+                          if(localbitcoinplusplus.wallets.my_local_flo_address
+                            ===sellOrders_data.trader_flo_address) {
+                            showMessage(
                             `Your sell order is placed successfully.`
-                          );
+                            );
+                          }
                         });
                       }
                     }
@@ -24610,10 +24646,7 @@ Event information log
 
                       // Add buy order
                       backup_server_db_instance
-                        .backup_addDB("buyOrders", buyOrders_data)
-                        .then(() => {
-                          showMessage(`Your buy order is placed successfully.`);
-                        });
+                        .backup_addDB("buyOrders", buyOrders_data);
                     }
                   }
                   break;
@@ -24653,12 +24686,7 @@ Event information log
 
                         // Add buy order
                         backup_server_db_instance
-                          .backup_addDB("sellOrders", sellOrders_data)
-                          .then(() => {
-                            showMessage(
-                              `Your sell order is placed successfully.`
-                            );
-                          });
+                          .backup_addDB("sellOrders", sellOrders_data);
                       }
                     }
                   }
@@ -26783,7 +26811,7 @@ Event information log
 
       var db;
       const DBName = "localbitcoinDB";
-      const request = window.indexedDB.open(DBName, 5);
+      const request = window.indexedDB.open(DBName, 1);
 
       request.onerror = function(event) {
         //https://stackoverflow.com/questions/13972385/invalidstateerror-while-opening-indexeddb-in-firefox
@@ -28059,6 +28087,9 @@ Event information log
             // Deposit / Withdraw asset
             depositWithdrawAsset(idbData.myLocalFLOAddress);
 
+            // Deposit / Withdraw Fiat
+            depositWithdrawFiat(idbData.myLocalFLOAddress);
+
             // User's Trade Details
             displayTradeOrders(idbData.myLocalFLOAddress);
 
@@ -28389,7 +28420,7 @@ Event information log
 
     <!-- Deposit/Withdraw Crypto -->
     <script>
-      const depositWithdrawAsset = function(userFLOaddress) {
+      const depositWithdrawAsset = function(userFLOaddress="") {
         const RM_TRADE = new localbitcoinplusplus.trade();
         const RM_RPC = new localbitcoinplusplus.rpc();
 
@@ -28403,24 +28434,15 @@ Event information log
         asset_box.appendChild(assetTypeInput);
         if (
           typeof localbitcoinplusplus.master_configurations.tradableAsset1 !==
-            "undefined" &&
-          typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
-            "undefined"
-        ) {
+            "undefined") {
           let assetTypeSelectArray1 = JSON.parse(
             JSON.stringify(
               localbitcoinplusplus.master_configurations.tradableAsset1
             )
           );
-          let assetTypeSelectArray2 = JSON.parse(
-            JSON.stringify(
-              localbitcoinplusplus.master_configurations.tradableAsset2
-            )
-          );
           let assetTypeSelectArray = assetTypeSelectArray1
-            .concat(assetTypeSelectArray2)
             .filter((item, pos, finalArray) => finalArray.indexOf(item) == pos);
-          assetTypeSelectArray.unshift("Select Asset Type");
+          assetTypeSelectArray.unshift("Select Crypto");
           for (var i = 0; i < assetTypeSelectArray.length; i++) {
             var option = document.createElement("option");
             option.value = assetTypeSelectArray[i];
@@ -28428,22 +28450,6 @@ Event information log
             assetTypeInput.appendChild(option);
           }
         }
-
-        // Create a select input for trade amount
-        // let tradeAmountSelect = document.createElement('select');
-        // tradeAmountSelect.id = "trade_amount_select";
-        // asset_box.appendChild(tradeAmountSelect);
-        // if (typeof localbitcoinplusplus.master_configurations.validTradingAmount !== 'undefined' &&
-        //     localbitcoinplusplus.master_configurations.validTradingAmount.length > 0) {
-        //     let tradeAmountSelectArray = JSON.parse(JSON.stringify(localbitcoinplusplus.master_configurations.validTradingAmount));
-        //     tradeAmountSelectArray.unshift("Select Asset Amount");
-        //     for (var i = 0; i < tradeAmountSelectArray.length; i++) {
-        //         var option = document.createElement("option");
-        //         option.value = tradeAmountSelectArray[i];
-        //         option.text = tradeAmountSelectArray[i];
-        //         tradeAmountSelect.appendChild(option);
-        //     }
-        // }
 
         let tradeAmountSelect = document.createElement("input");
         tradeAmountSelect.setAttribute("type", "text");
@@ -28459,14 +28465,9 @@ Event information log
             "undefined" &&
           localbitcoinplusplus.master_configurations.tradableAsset2.length > 0
         ) {
-          let fiatList = localbitcoinplusplus.master_configurations.tradableAsset2.filter(
-            asset =>
-              !localbitcoinplusplus.master_configurations.tradableAsset1.includes(
-                asset
-              )
-          );
+          let fiatList = localbitcoinplusplus.master_configurations.tradableAsset2;
           let fiatListArray = JSON.parse(JSON.stringify(fiatList));
-          fiatListArray.unshift("Select Fiat Currency");
+          fiatListArray.unshift("Select Fiat Currency (for exchange rates)");
           for (var i = 0; i < fiatListArray.length; i++) {
             var option = document.createElement("option");
             option.value = fiatListArray[i];
@@ -28504,11 +28505,6 @@ Event information log
               .tradableAsset1 !== "undefined" &&
               localbitcoinplusplus.master_configurations.tradableAsset1.includes(
                 asset_type
-              )) ||
-            (typeof localbitcoinplusplus.master_configurations
-              .tradableAsset2 !== "undefined" &&
-              localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-                asset_type
               ))
           ) {
             RM_TRADE.depositAsset(
@@ -28526,11 +28522,10 @@ Event information log
 
         withdrawAssetButton.addEventListener("click", function(params) {
           let receivinAddress = prompt(
-            "Please enter a valid Crypto address or UPI id."
+            `Please enter your ${asset_type} receiving address.`
           );
           if (receivinAddress == null || receivinAddress.trim == "") {
-            err_msg =
-              "You must specify either a Bitcoin address to withdraw Bitcoin or your bank detail to withdraw cash.";
+            err_msg =`You must specify a valid ${asset_type} address to continue.`;
             showMessage(err_msg);
             throw new Error(err_msg);
           }
@@ -28548,29 +28543,9 @@ Event information log
             throw new Error(err_msg);
           }
           if (
-            localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-              asset_type
-            )
-          ) {
-            if (
-              typeof localbitcoinplusplus.master_configurations
-                .validTradingAmount !== "undefined" &&
-              !localbitcoinplusplus.master_configurations.validTradingAmount.includes(
-                tradeAmount
-              )
-            ) {
-              err_msg = "Invalid Fiat Value.";
-              showMessage(err_msg);
-              throw new Error(err_msg);
-            }
-          }
-          if (
             typeof localbitcoinplusplus.master_configurations.tradableAsset1 !==
               "undefined" &&
-            typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
-              "undefined" &&
             localbitcoinplusplus.master_configurations.tradableAsset1
-              .concat(localbitcoinplusplus.master_configurations.tradableAsset2)
               .includes(asset_type)
           ) {
             RM_TRADE.withdrawAsset(
@@ -28581,7 +28556,7 @@ Event information log
               fiatCurrency
             );
           } else {
-            err_msg = "Error while depositing your address.";
+            err_msg = `Error: Withdraw of Crypto failed. Invalid asset type ${asset_type} provided.`;
             showMessage(err_msg);
             throw new Error(err_msg);
           }
@@ -28610,7 +28585,7 @@ Event information log
 
     <!-- Deposit/Withdraw Cash -->
     <script>
-      function depositWithdrawFiat() {
+      function depositWithdrawFiat(userFLOaddress="") {
         const RM_TRADE = new localbitcoinplusplus.trade();
         const RM_RPC = new localbitcoinplusplus.rpc();
 
@@ -28644,34 +28619,34 @@ Event information log
         }
 
         // Create a select input for trade amount
-        let tradeAmountSelect = document.createElement("select");
-        tradeAmountSelect.id = "trade_amount_select";
-        asset_box.appendChild(tradeAmountSelect);
-        if (
-          typeof localbitcoinplusplus.master_configurations
-            .validTradingAmount !== "undefined" &&
-          localbitcoinplusplus.master_configurations.validTradingAmount.length >
-            0
-        ) {
-          let tradeAmountSelectArray = JSON.parse(
-            JSON.stringify(
-              localbitcoinplusplus.master_configurations.validTradingAmount
-            )
-          );
-          tradeAmountSelectArray.unshift("Select Asset Amount");
-          for (var i = 0; i < tradeAmountSelectArray.length; i++) {
-            var option = document.createElement("option");
-            option.value = tradeAmountSelectArray[i];
-            option.text = tradeAmountSelectArray[i];
-            tradeAmountSelect.appendChild(option);
-          }
-        }
-
-        // let tradeAmountSelect = document.createElement('input');
-        // tradeAmountSelect.setAttribute("type", "text");
-        // tradeAmountSelect.setAttribute("placeholder", "Specify Asset Amount");
+        // let tradeAmountSelect = document.createElement("select");
         // tradeAmountSelect.id = "trade_amount_select";
         // asset_box.appendChild(tradeAmountSelect);
+        // if (
+        //   typeof localbitcoinplusplus.master_configurations
+        //     .validTradingAmount !== "undefined" &&
+        //   localbitcoinplusplus.master_configurations.validTradingAmount.length >
+        //     0
+        // ) {
+        //   let tradeAmountSelectArray = JSON.parse(
+        //     JSON.stringify(
+        //       localbitcoinplusplus.master_configurations.validTradingAmount
+        //     )
+        //   );
+        //   tradeAmountSelectArray.unshift("Select Asset Amount");
+        //   for (var i = 0; i < tradeAmountSelectArray.length; i++) {
+        //     var option = document.createElement("option");
+        //     option.value = tradeAmountSelectArray[i];
+        //     option.text = tradeAmountSelectArray[i];
+        //     tradeAmountSelect.appendChild(option);
+        //   }
+        // }
+
+        let tradeAmountSelect = document.createElement('input');
+        tradeAmountSelect.setAttribute("type", "text");
+        tradeAmountSelect.setAttribute("placeholder", "Specify Asset Amount");
+        tradeAmountSelect.id = "trade_amount_select";
+        asset_box.appendChild(tradeAmountSelect);
 
         // let currencySelect = document.createElement('select');
         // currencySelect.id = `withdraw_fiat_currency`;
@@ -28693,14 +28668,16 @@ Event information log
         // Create a deposit and withdraw button
         let depositAssetButton = document.createElement("button");
         depositAssetButton.className += ` button bg-transparent fs-16 mg-5 `;
-        let depositAssetButtonText = document.createTextNode("Deposit");
+        let depositAssetButtonText = document.createTextNode("Deposit Cash");
         depositAssetButton.appendChild(depositAssetButtonText);
-        // let withdrawAssetButton = document.createElement('button');
-        // withdrawAssetButton.className += ` button bg-transparent fs-16 mg-5 `;
-        // let withdrawAssetButtonText = document.createTextNode('Withdraw');
-        // withdrawAssetButton.appendChild(withdrawAssetButtonText);
-        // asset_button_box.appendChild(depositAssetButton);
-        // asset_button_box.appendChild(withdrawAssetButton);
+        
+        let withdrawAssetButton = document.createElement('button');
+        withdrawAssetButton.className += ` button bg-transparent fs-16 mg-5 `;
+        let withdrawAssetButtonText = document.createTextNode('Withdraw Cash');
+        withdrawAssetButton.appendChild(withdrawAssetButtonText);
+        
+        asset_button_box.appendChild(depositAssetButton);
+        asset_button_box.appendChild(withdrawAssetButton);
 
         depositAssetButton.addEventListener("click", function() {
           const user_upi = prompt(
@@ -28736,11 +28713,73 @@ Event information log
               user_upi
             );
           } else {
-            err_msg = "Error while depositing your address.";
+            err_msg = "Error:  Deposit of Cash failed.";
             showMessage(err_msg);
             throw new Error(err_msg);
           }
         });
+
+
+        // Withdraw Cash function
+        withdrawAssetButton.addEventListener("click", function(params) {
+          let receivinAddress = prompt("Please enter a valid UPI id.");
+          if (receivinAddress == null || receivinAddress.trim == "") {
+            err_msg = "You must specify your valid UPI Id to withdraw cash.";
+            showMessage(err_msg);
+            throw new Error(err_msg);
+          }
+
+          const asset_type = assetTypeInput.value;
+          const tradeAmount = parseFloat(tradeAmountSelect.value);
+          const fiatCurrency = asset_type;
+          //const fiatCurrency = currencySelect.value;
+
+          if (
+            typeof userFLOaddress == undefined ||
+            userFLOaddress.trim().length < 1
+          ) {
+            err_msg = "Invalid or empty user FLO address.";
+            showMessage(err_msg);
+            throw new Error(err_msg);
+          }
+          if (
+            localbitcoinplusplus.master_configurations.tradableAsset2.includes(
+              asset_type
+            )
+          ) {
+            if (
+            //   typeof localbitcoinplusplus.master_configurations
+            //     .validTradingAmount !== "undefined" &&
+            //   !localbitcoinplusplus.master_configurations.validTradingAmount.includes(
+            //     tradeAmount
+            //   )
+              tradeAmount<=0
+            ) {
+              err_msg = "Invalid Fiat Value.";
+              showMessage(err_msg);
+              throw new Error(err_msg);
+            }
+          }
+          if (
+            typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
+              "undefined" &&
+            localbitcoinplusplus.master_configurations.tradableAsset2
+              .includes(asset_type)
+          ) {
+            RM_TRADE.withdrawAsset(
+              asset_type,
+              tradeAmount,
+              receivinAddress,
+              userFLOaddress,
+              fiatCurrency
+            );
+          } else {
+            err_msg = "Error: Withdraw cash failed. Invalid currency specified.";
+            showMessage(err_msg);
+            throw new Error(err_msg);
+          }
+        });
+
       }
     </script>
 
