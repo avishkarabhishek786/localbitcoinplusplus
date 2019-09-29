@@ -12411,11 +12411,10 @@
                   localbitcoinplusplus.master_configurations.supernodeSeeds;
                 if (typeof supernodeSeeds !== "object")
                   reject("Failed to get supernode seeds.");
-                let supernodeSeedsObj = JSON.parse(supernodeSeeds);
-                nearestSupernodeAddresslist = Object.values(supernodeSeedsObj);
+                nearestSupernodeAddresslist = Object.values(supernodeSeeds);
                 nearestSupernodeAddresslist.map((m, i) => {
-                  m.id = i + 1;
-                  updateinDB("supernodesList", m).catch(e => {
+                  let sl = Object.assign({id: i+1}, m);
+                  updateinDB("supernodesList", sl).catch(e => {
                     throw new Error(e);
                   });
                 });
@@ -12848,7 +12847,7 @@
           }
         }
 
-        async function updateinDB(
+        function updateinDB(
           tablename,
           Obj,
           key,
@@ -12857,43 +12856,51 @@
         ) {
           // updateByVectorClock==true will not return Obj back.
           // Return value will be undefined
-          try {
-            if (typeof Obj.vectorClock == "undefined") {
-              Obj.vectorClock = 0;
-            } else if (increaseVectorClock === false) {
-              // leave the vector clock field unchanged
-            } else {
-              Obj.vectorClock += 1;
-            }
-            if (typeof Obj.timestamp !== "number") {
-              Obj.timestamp = +new Date();
-            }
-            var request = db.transaction([tablename], "readwrite");
-            let store = request.objectStore(tablename);
-            if (updateByVectorClock === true) {
-              if (typeof key == "undefined") {
-                key = Obj[store.keyPath];
-              }
-              let objectStoreRequest = store.get(key);
-              objectStoreRequest.onsuccess = async function(event) {
-                var myRecord = objectStoreRequest.result;
-                if (typeof myRecord !== "object") {
-                  Obj.vectorClock = 1;
-                  await store.put(Obj);
-                  await request.complete;
-                } else if (myRecord.vectorClock + 1 < Obj.vectorClock) {
-                  await store.put(Obj);
-                  await request.complete;
+          return new Promise((resolve, reject) => {
+              
+            try {
+                if (typeof Obj.vectorClock == "undefined") {
+                  Obj.vectorClock = 0;
+                } else if (increaseVectorClock === false) {
+                // leave the vector clock field unchanged
+                } else {
+                    Obj.vectorClock += 1;
                 }
-              };
-            } else {
-              await store.put(Obj);
-              await request.complete;
+                if (typeof Obj.timestamp !== "number") {
+                    Obj.timestamp = +new Date();
+                }
+                var request = db.transaction([tablename], "readwrite");
+                let store = request.objectStore(tablename);
+                if (updateByVectorClock === true) {
+                    if (typeof key == "undefined") {
+                        key = Obj[store.keyPath];
+                    }
+                    let objectStoreRequest = store.get(key);
+                    objectStoreRequest.onsuccess = function(event) {
+                        var myRecord = objectStoreRequest.result;
+                        if (typeof myRecord !== "object") {
+                            Obj.vectorClock = 1;
+                            store.put(Obj);
+                        } else if (myRecord.vectorClock + 1 < Obj.vectorClock) {
+                            store.put(Obj);
+                        }
+                    };
+                } else {
+                    store.put(Obj);
+                }
+                
+                store.onsuccess = function() {
+                    resolve(Obj);
+                }
+
+                store.onerror = function(e) {
+                    reject(e);
+                }
+            } catch (error) {
+                reject(error);
+                return new Error(error);
             }
-            return Obj;
-          } catch (error) {
-            return new Error(error);
-          }
+          });
         }
 
         async function removeinDB(tablename, id) {
