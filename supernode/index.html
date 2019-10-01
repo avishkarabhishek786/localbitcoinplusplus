@@ -12869,6 +12869,9 @@
               return false;
             }
 
+            if(typeof n!=="number") n=localbitcoinplusplus
+                .master_configurations.supernodesPubKeys.length||1;
+
             if (su.length > 0) {
               try {
                 let closestSupernodeMasterList = supernodeKBucket.closest(
@@ -13229,7 +13232,12 @@
 
       reactor.addEventListener("new_supernode_connected", async function(evt) {
         const switchMyWS = new backupSupernodesWebSocketObject();
-        switchMyWS.updateSupernodeAvailabilityStatus(evt.srcElement.url, true);
+        const connected_su_flo_id = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
+        if(!localbitcoinplusplus.master_configurations.supernodesPubKeys
+        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+            localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS=connected_su_flo_id;
+        }
+        switchMyWS.updateSupernodeAvailabilityStatus(connected_su_flo_id, true);
         showMessage(
           `INFO: Connected successfully to Supernode: ${evt.srcElement.url}`
         );
@@ -13289,14 +13297,9 @@
             );
             return;
           }
-          const switchMyWS = new backupSupernodesWebSocketObject();
-          await switchMyWS.updateSupernodeAvailabilityStatus(
-            `ws://${cs[0].ip}:${cs[0].port}`,
-            false
-          );
 
-          // Wait for 10 seconds if the 'dead' supernode only refreshed the page
-          await localbitcoinplusplus.actions.delay(10000);
+          // Wait for 20 seconds if the 'dead' supernode only refreshed the page
+          await localbitcoinplusplus.actions.delay(20000);
 
           // Get the current status now
           const getStatusOfDeadSuAgain = await readDBbyIndex(
@@ -13308,7 +13311,13 @@
           // If its still dead find out if you are the next eligible backup supernode
           // If true, take charge of dead supernode's operations
           if (getStatusOfDeadSuAgain[0].is_live == false) {
-            if (
+          const switchMyWS = new backupSupernodesWebSocketObject();
+          await switchMyWS.updateSupernodeAvailabilityStatus(
+            `ws://${cs[0].ip}:${cs[0].port}`,
+            false
+          );
+
+          if (
               localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                 op[0].flo_public_key
               )
@@ -13848,10 +13857,10 @@
       );
 
       /* Remove WS connections which are not active currently */
-
       reactor.addEventListener("remove_extra_backup_connections", function() {
         // remove above lines with these
         readAllDB(`myClosestSupernodes`).then(sups => {
+          let max_conns = 0;
           sups
             .map(backup_id => {
               if (!localbitcoinplusplus.backupWS.hasOwnProperty(backup_id)
@@ -13859,8 +13868,8 @@
               ) {
                 const backup_conns =
                   localbitcoinplusplus.backupWS[backup_id.trader_flo_address];
-                if (typeof backup_conns.ws_connection == "object") {
-                  let max_conns = 0;
+                if (typeof backup_conns == "object" 
+                && typeof backup_conns.ws_connection == "object") {
                   if (backup_conns.ws_connection.readyState < 2) {
                     max_conns++;
                     if (
@@ -13913,6 +13922,80 @@
         );
        });      
  
+       reactor.addEventListener("backup_supernode_up", async function(url='') {
+              showMessage(
+                `Connected to backup Supernode sever: ${url}.`
+              );
+              const switchMyWS = new backupSupernodesWebSocketObject();
+              switchMyWS.updateSupernodeAvailabilityStatus(
+                url,
+                true
+              );
+              let my_local_data = await readDB("localbitcoinUser", "00-01");
+              if (typeof my_local_data == "object") {
+                const conn_su_flo_id = await switchMyWS.getFloIdFromWSUrl(
+                  url
+                );
+
+                if (
+                  localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                    my_local_data.myLocalFLOPublicKey
+                  )
+                ) {
+                  // If conn_su_flo_id is not an immediate backup then give your data to it to sync
+                  const myClosestSus = await readAllDB("myClosestSupernodes");
+                  const myClosestSusList = myClosestSus.map(
+                    m => m.trader_flo_address
+                  );
+                  if (
+                    myClosestSusList.indexOf(conn_su_flo_id) >
+                    localbitcoinplusplus.master_configurations.MaxBackups
+                  ) {
+                    // Ask conn_su_flo_id to ask you your DB data
+                    const RM_RPC = new localbitcoinplusplus.rpc();
+                    RM_RPC.send_rpc.call(this, "request_me_db_data", {
+                      trader_flo_address:
+                        localbitcoinplusplus.wallets.my_local_flo_address,
+                      receiver_flo_address: conn_su_flo_id,
+                      db_inst: localbitcoinplusplus.wallets.my_local_flo_address
+                    })
+                    .then(req=>doSend(req));
+                  }
+
+                  // Check if the number of backup ws connections satisfy max baxkup master
+                  // config condition. If false, request ws connection to next backup supernode.
+                  const currenctBackupWsList = Object.keys(
+                    localbitcoinplusplus.backupWS
+                  ).filter(
+                    m =>
+                      localbitcoinplusplus.backupWS[m].ws_connection
+                        .readyState < 2
+                  );
+
+                  if (
+                    currenctBackupWsList.length <
+                    localbitcoinplusplus.master_configurations.MaxBackups
+                  ) {
+                    // Request next backup to connect
+                    reactor.dispatchEvent(
+                      "switchToBackupWSForSuperNodesOperations",
+                      url
+                    );
+                  }
+                } else {
+                  if (typeof conn_su_flo_id == "string") {
+                    my_local_data.lastConnectedTime = +new Date();
+                    my_local_data.lastConnectedSupernode = conn_su_flo_id;
+                    updateinDB("localbitcoinUser", my_local_data);
+                  } else {
+                    mss = `WARNING: Failed to update current supernode connected status in localbitcoinUser.`;
+                    showMessage(mss);
+                    throw new Error(mss);
+                  }
+                }
+              }
+            });
+
     </script>
 
     <!-- Misc functions -->
@@ -20187,79 +20270,8 @@
           this.ws_connection = new WebSocket(this.ws_url);
           const switchMyWS = new backupSupernodesWebSocketObject();
           this.ws_connection.onopen = function(evt) {
-            reactor.addEventListener("backup_supernode_up", async function() {
-              showMessage(
-                `Connected to backup Supernode sever: ${evt.srcElement.url}.`
-              );
-              switchMyWS.updateSupernodeAvailabilityStatus(
-                evt.srcElement.url,
-                true
-              );
-              let my_local_data = await readDB("localbitcoinUser", "00-01");
-              if (typeof my_local_data == "object") {
-                const conn_su_flo_id = await switchMyWS.getFloIdFromWSUrl(
-                  evt.srcElement.url
-                );
-
-                if (
-                  localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                    my_local_data.myLocalFLOPublicKey
-                  )
-                ) {
-                  // If conn_su_flo_id is not an immediate backup then give your data to it to sync
-                  const myClosestSus = await readAllDB("myClosestSupernodes");
-                  const myClosestSusList = myClosestSus.map(
-                    m => m.trader_flo_address
-                  );
-                  if (
-                    myClosestSusList.indexOf(conn_su_flo_id) >
-                    localbitcoinplusplus.master_configurations.MaxBackups
-                  ) {
-                    // Ask conn_su_flo_id to ask you your DB data
-                    const RM_RPC = new localbitcoinplusplus.rpc();
-                    RM_RPC.send_rpc.call(this, "request_me_db_data", {
-                      trader_flo_address:
-                        localbitcoinplusplus.wallets.my_local_flo_address,
-                      receiver_flo_address: conn_su_flo_id,
-                      db_inst: localbitcoinplusplus.wallets.my_local_flo_address
-                    });
-                    //.then(req=>doSend(req));
-                  }
-
-                  // Check if the number of backup ws connections satisfy max baxkup master
-                  // config condition. If false, request ws connection to next backup supernode.
-                  const currenctBackupWsList = Object.keys(
-                    localbitcoinplusplus.backupWS
-                  ).filter(
-                    m =>
-                      localbitcoinplusplus.backupWS[m].ws_connection
-                        .readyState < 2
-                  );
-
-                  if (
-                    currenctBackupWsList.length <
-                    localbitcoinplusplus.master_configurations.MaxBackups
-                  ) {
-                    // Request next backup to connect
-                    reactor.dispatchEvent(
-                      "switchToBackupWSForSuperNodesOperations",
-                      evt.srcElement.url
-                    );
-                  }
-                } else {
-                  if (typeof conn_su_flo_id == "string") {
-                    my_local_data.lastConnectedTime = +new Date();
-                    my_local_data.lastConnectedSupernode = conn_su_flo_id;
-                    updateinDB("localbitcoinUser", my_local_data);
-                  } else {
-                    mss = `WARNING: Failed to update current supernode connected status in localbitcoinUser.`;
-                    showMessage(mss);
-                    throw new Error(mss);
-                  }
-                }
-              }
-            });
-            reactor.dispatchEvent("backup_supernode_up");
+            reactor.dispatchEvent("backup_supernode_up", evt.srcElement.url);
+            reactor.dispatchEvent("remove_extra_backup_connections");
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
             reactor.dispatchEvent("backup_supernode_down", evt);
@@ -20270,6 +20282,7 @@
             let isItANodeLeavingMessage = response.search(`\\-- left`);
             if (isItANodeLeavingMessage >= 0) {
               reactor.dispatchEvent("fireNodeGoodByeEvent", response);
+              return;
             }
 
             let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
@@ -20865,6 +20878,7 @@
                         // skip loop if the property is from prototype
                         if (
                           tableStoreName == "trader_flo_address" ||
+                          tableStoreName == "receiver_flo_address" ||
                           !su_db_data.hasOwnProperty(tableStoreName)
                         )
                           continue;
@@ -21756,6 +21770,7 @@
                     )
                       return;
                     updateinDB("ipTable", {
+                      id: helper_functions.unique_id(),  
                       flo_public_key: req_params.requesters_pub_key,
                       temporary_ip: incoming_msg_local_ip
                     })
@@ -21788,6 +21803,7 @@
                     )
                       return;
                     updateinDB("ipTable", {
+                      id: helper_functions.unique_id(),
                       flo_public_key: req_params.requesters_pub_key,
                       temporary_ip: incoming_msg_local_ip
                     }).then(ipRes => {
@@ -22374,6 +22390,28 @@
                   }
                   break;
 
+                case "request_me_db_data":
+                  if (
+                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                      res_obj.nodePubKey
+                    )
+                  ) {
+                    const resp = res_obj.params[0];
+
+                    if (
+                      localbitcoinplusplus.wallets.my_local_flo_address !==
+                      resp.receiver_flo_address
+                    )
+                      return;
+
+                    localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
+                      localbitcoinplusplus.wallets.my_local_flo_address,
+                      resp.trader_flo_address,
+                      resp.db_inst
+                    );
+                  }
+                  break;  
+
                 default:
                   break;
               }
@@ -22393,6 +22431,7 @@
 
         if (isItANodeLeavingMessage >= 0) {
           reactor.dispatchEvent("fireNodeGoodByeEvent", response);
+          return;
         }
 
         var res_pos = response.indexOf("{");
@@ -22731,6 +22770,7 @@
                         // skip loop if the property is from prototype
                         if (
                           tableStoreName == "trader_flo_address" ||
+                          tableStoreName == "receiver_flo_address" ||
                           !su_db_data.hasOwnProperty(tableStoreName)
                         )
                           continue;
@@ -23806,6 +23846,7 @@
                     )
                       return;
                     updateinDB("ipTable", {
+                      id: helper_functions.unique_id(),  
                       flo_public_key: req_params.requesters_pub_key,
                       temporary_ip: incoming_msg_local_ip
                     })
@@ -23838,6 +23879,7 @@
                     )
                       return;
                     updateinDB("ipTable", {
+                      id: helper_functions.unique_id(),    
                       flo_public_key: req_params.requesters_pub_key,
                       temporary_ip: incoming_msg_local_ip
                     }).then(ipRes => {
@@ -24264,7 +24306,7 @@
                   if (
                     typeof res_obj.params == "object" &&
                     typeof res_obj.params[0] == "object" &&
-                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                    !localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                       localbitcoinplusplus.wallets.my_local_flo_public_key
                     )
                   ) {
@@ -24460,6 +24502,7 @@
 
         if (isItANodeLeavingMessage >= 0) {
           reactor.dispatchEvent("fireNodeGoodByeEvent", response);
+          return;
         }
 
         var res_pos = response.indexOf("{");
@@ -24589,6 +24632,7 @@
                           // skip loop if the property is from prototype
                           if (
                             tableStoreName == "trader_flo_address" ||
+                            tableStoreName == "receiver_flo_address" ||
                             !su_backup_db_data.hasOwnProperty(tableStoreName)
                           )
                             continue;
@@ -25260,6 +25304,7 @@
                     )
                       return;
                     updateinDB("ipTable", {
+                      id: helper_functions.unique_id(),  
                       flo_public_key: req_params.requesters_pub_key,
                       temporary_ip: incoming_msg_local_ip
                     })
@@ -25291,6 +25336,7 @@
                     )
                       return;
                     updateinDB("ipTable", {
+                      id: helper_functions.unique_id(),
                       flo_public_key: req_params.requesters_pub_key,
                       temporary_ip: incoming_msg_local_ip
                     }).then(ipRes => {
@@ -26603,7 +26649,8 @@
         const request_array = [
           "send_back_shamirs_secret_supernode_pvtkey",
           "retrieve_shamirs_secret_supernode_pvtkey",
-          "store_shamirs_secret_pvtkey_shares"
+          "store_shamirs_secret_pvtkey_shares",
+          "request_me_db_data"
         ];
 
         let finalMessage = message;
@@ -26697,7 +26744,8 @@
           const request_array = [
             "send_back_shamirs_secret_supernode_pvtkey",
             "retrieve_shamirs_secret_supernode_pvtkey",
-            "store_shamirs_secret_pvtkey_shares"
+            "store_shamirs_secret_pvtkey_shares",
+            "request_me_db_data"
           ];
 
           try {
@@ -27074,7 +27122,10 @@
         }
         if (!db.objectStoreNames.contains("ipTable")) {
           var objectStore = db.createObjectStore("ipTable", {
-            keyPath: "flo_public_key"
+            keyPath: "id"
+          });
+          objectStore.createIndex("flo_public_key", "flo_public_key", {
+            unique: false
           });
           objectStore.createIndex("temporary_ip", "temporary_ip", {
             unique: false
@@ -27622,10 +27673,23 @@
               var objectStore = this.db.createObjectStore("kBucketStore", {
                 keyPath: "id"
               });
+              objectStore.createIndex(
+                    "primary_supernode_flo_public_key",
+                    "primary_supernode_flo_public_key",
+                    {
+                    unique: false
+                    }
+                );
             }
             if (!this.db.objectStoreNames.contains("ipTable")) {
               var objectStore = this.db.createObjectStore("ipTable", {
-                keyPath: "flo_public_key"
+                keyPath: "id"
+              });
+              objectStore.createIndex("flo_public_key", "flo_public_key", {
+                unique: false
+              });
+              objectStore.createIndex("temporary_ip", "temporary_ip", {
+                unique: false
               });
             }
             if (!this.db.objectStoreNames.contains("myClosestSupernodes")) {
@@ -27647,7 +27711,7 @@
               });
             }
             if (!this.db.objectStoreNames.contains("crypto_fiat_rates")) {
-              var objectStore = db.createObjectStore("crypto_fiat_rates", {
+              var objectStore = this.db.createObjectStore("crypto_fiat_rates", {
                 keyPath: "id"
               });
               objectStore.createIndex("currency_code", "currency_code", {
