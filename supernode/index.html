@@ -12066,6 +12066,25 @@
 
       localbitcoinplusplus.actions = {
         parse_flo_comments: async function(callback) {
+            text = `masterFLOPubKey=03EA5E2CAB18DA585400D6EC569438D415FAF200528E05D0E2B9BEAA2B5C3DCA90
+            #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
+            #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
+            #!#MaxBackups=2
+            #!#miners_fee={"btc":0.0003, "flo":0.0003}
+            #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
+            03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
+            03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
+            026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
+            #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
+            #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
+            "janeDoe@upi":"03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0"}
+            #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1","port":"9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
+            "ranchimall2":{"ip":"127.0.0.1","port":"9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
+            "ranchimall3":{"ip":"127.0.0.1","port":"9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
+            "ranchimall4":{"ip":"127.0.0.1","port":"9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
+            "ranchimall5":{"ip":"127.0.0.1","port":"9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
+            "ranchimall6":{"ip":"127.0.0.1","port":"9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
+            return callback(text);
           const master_data = await helper_functions
           .ajaxGet(`${localbitcoinplusplus.server.flo_testnet}/api/txs/?address=${localbitcoinplusplus.RM_FLO_SENDING_ADDR}`);
             if(typeof master_data==="object" && typeof master_data.txs==="object") {
@@ -12602,7 +12621,38 @@
             localbitcoinplusplus.kademlia.updateClosestSupernodeSeeds(myFloId);
 
           }
-        }
+        },
+
+        informAllANodeLeft: async function(evt_msg="") {
+            let i = evt_msg.indexOf(" ");
+            let temp_ip = evt_msg.substr(0, i);
+            const op = await readDBbyIndex("ipTable", "temporary_ip", temp_ip);
+            if (op.length < 1 || typeof op[0].temporary_ip !== "string") return ;
+            // Delete entry from iptable
+            removeByIndex("ipTable", "temporary_ip", temp_ip);
+            let getFLOId = bitjs.FLO_TEST.pubkey2address(op[0].flo_public_key);
+            // Update Node availability status to true/false
+            const cs = await readDBbyIndex(
+                "myClosestSupernodes",
+                "trader_flo_address",
+                getFLOId
+            );
+                
+            if (cs.length < 1) return;
+            const RM_WALLET = new localbitcoinplusplus.wallets;
+            const msg_obj = {};
+            msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+            msg_obj.event = 'supernode_went_down';
+            msg_obj.data = {down_flo_id: getFLOId};
+            msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+            msg_obj.hash = Crypto.SHA256(msg_obj);
+            msg_obj.sign = RM_WALLET.sign(
+                msg_obj.hash,
+                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+            );
+            reactor.dispatchEvent("informAllSuperNode", msg_obj);
+            reactor.dispatchEvent("fireNodeGoodByeEvent", getFLOId);
+        },
       };
 
       /*Modified functions from https://github.com/tristanls/k-bucket */
@@ -13204,6 +13254,7 @@
       reactor.registerEvent("user_flo_keys_active");
       reactor.registerEvent("remove_extra_backup_connections");
       reactor.registerEvent("createClosestSupernodesObject");
+      reactor.registerEvent("informAllSuperNode");
   
       reactor.addEventListener("fireNodeWelcomeBackEvent", function(evt) {
         let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
@@ -13288,30 +13339,8 @@
         });
       });
 
-      reactor.addEventListener("fireNodeGoodByeEvent", function(evt_msg) {
-        let i = evt_msg.indexOf(" ");
-        let temp_ip = evt_msg.substr(0, i);
-
-        readDBbyIndex("ipTable", "temporary_ip", temp_ip).then(async op => {
-          if (op.length < 1 || typeof op[0].temporary_ip !== "string") return;
-          let getFLOId = bitjs.FLO_TEST.pubkey2address(op[0].flo_public_key);
+      reactor.addEventListener("fireNodeGoodByeEvent", async function(getFLOId='') {
           let msg = "";
-
-          // Update Node availability status to true/false
-          const cs = await readDBbyIndex(
-            "myClosestSupernodes",
-            "trader_flo_address",
-            getFLOId
-          );
-          if (cs.length < 1) {
-            console.error(
-              `WARNING: Failed to update Supernodes ${getFLOId} status.`
-            );
-            return;
-          }
-
-          // Wait for 20 seconds if the 'dead' supernode only refreshed the page
-          await localbitcoinplusplus.actions.delay(20000);
 
           // Get the current status now
           const getStatusOfDeadSuAgain = await readDBbyIndex(
@@ -13320,22 +13349,17 @@
             getFLOId
           );
 
-          // If its still dead find out if you are the next eligible backup supernode
-          // If true, take charge of dead supernode's operations
-          if (getStatusOfDeadSuAgain[0].is_live == false) {
-          const switchMyWS = new backupSupernodesWebSocketObject();
+          if (getStatusOfDeadSuAgain.length < 1) return;
+          
+          // Update status to false
           await switchMyWS.updateSupernodeAvailabilityStatus(
-            `ws://${cs[0].ip}:${cs[0].port}`,
-            false
+              getFLOId,
+              false
           );
 
-          // Delete entry from iptable
-          removeByIndex("ipTable", "temporary_ip", temp_ip);
-
-          if (
-              localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                op[0].flo_public_key
-              )
+          if (localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+            localbitcoinplusplus.wallets.my_local_flo_public_key
+             )
             ) {
 
               // Stop yourself from serving it unless proper DB sync
@@ -13362,7 +13386,7 @@
 
               const RM_RPC = new localbitcoinplusplus.rpc();
 
-              for (i = 0; i <= newClosestSupernodeMasterList.length; i++) {
+              for (i = 0; i < newClosestSupernodeMasterList.length; i++) {
                 if (
                   newClosestSupernodeMasterList[i].is_live == true &&
                   newClosestSupernodeMasterList[i].trader_flo_address !==
@@ -13443,14 +13467,10 @@
               }
 
               msg = `INFO: Supernode ${getFLOId} left.`;
-            } else {
-              if (websocket.readyState == 1) websocket.close();
-              msg = `INFO: User node ${getFLOId} left.`;
             }
-          }
 
           showMessage(msg);
-        });
+        
       });
 
       reactor.addEventListener("nodeIsAlive", function(res_obj) {
@@ -13598,8 +13618,7 @@
         }
       });
 
-      reactor.addEventListener(
-        "sync_backup_nodes_of_my_backup_node",
+      reactor.addEventListener("sync_backup_nodes_of_my_backup_node",
         async function(subject_flo_id = "") {
           // Get backup nodes of your backup node (subject_flo_id)
           let closestNodes = await localbitcoinplusplus.kademlia.determineClosestSupernode(
@@ -13822,9 +13841,7 @@
       });
 
       /*To connect to next backup of given url*/
-      reactor.addEventListener(
-        "switchToBackupWSForSuperNodesOperations",
-        async function(disconnected_url = "") {
+      reactor.addEventListener("switchToBackupWSForSuperNodesOperations", async function(disconnected_url = "") {
           const user_data = await readDB("localbitcoinUser", "00-01");
           const user_flo_pubKey = user_data.myLocalFLOPublicKey;
           disconnected_url = disconnected_url.replace(/\/$/, "");
@@ -13871,8 +13888,7 @@
             showMessage(err_msg);
             throw new Error(err_msg);
           }
-        }
-      );
+        });
 
       /* Remove WS connections which are not active currently */
       reactor.addEventListener("remove_extra_backup_connections", function() {
@@ -14064,6 +14080,35 @@
 
             return localbitcoinplusplus.myClosestSupernodes;
         }); 
+    
+      /* Function to notify all Supernodes of a particuat event (may or maynot releated to a subject flo id) */   
+      reactor.addEventListener("informAllSuperNode", function(msg_obj={}) {
+        if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+            tempWS = {};
+            for(let sn in localbitcoinplusplus.myClosestSupernodes) {
+                (function() {
+                    if(sn!==localbitcoinplusplus.wallets.my_local_flo_address
+                    || sn!==msg_obj.subject_flo_id) {
+
+                        const url = `ws://${localbitcoinplusplus.myClosestSupernodes[sn].ip}:${localbitcoinplusplus.myClosestSupernodes[sn].port}`;
+                        
+                        tempWS[sn] = new WebSocket(url);
+                        tempWS[sn].onopen = async function(evt) {
+                            await localbitcoinplusplus.actions.delay(5000);
+                            tempWS[sn].send(JSON.stringify(msg_obj));
+                            await localbitcoinplusplus.actions.delay(5000);
+                            tempWS[sn].close();                 
+                        };
+                        tempWS[sn].onclose = function(evt) {
+                            console.info(`Closed ${evt.srcElement.url}`);
+                        };
+                    } 
+                })();
+            }
+        }
+      });  
+    
     </script>
 
     <!-- Misc functions -->
@@ -20353,10 +20398,11 @@
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
             let response = evt.data;
+            console.log(`backup message: ${response}`);
 
             let isItANodeLeavingMessage = response.search(`\\-- left`);
             if (isItANodeLeavingMessage >= 0) {
-              reactor.dispatchEvent("fireNodeGoodByeEvent", response);
+              localbitcoinplusplus.actions.informAllANodeLeft(isItANodeLeavingMessage);
               return;
             }
 
@@ -20628,8 +20674,8 @@
         // and fire respective events
         let isItANodeLeavingMessage = response.search(`\\-- left`);
         if (isItANodeLeavingMessage >= 0) {
-          reactor.dispatchEvent("fireNodeGoodByeEvent", response);
-          return;
+            localbitcoinplusplus.actions.informAllANodeLeft(isItANodeLeavingMessage);
+            return;
         }
 
         const isMsgFromCashier = response.search("__FOR__CASHIER__");
@@ -20656,6 +20702,34 @@
           var res = response.substr(res_pos);
           try {
             var res_obj = JSON.parse(res);
+
+            if(res_obj.protocol === "__ALL_SUPERNODES_MSG__") {
+                if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                .includes(res_obj.su_pubKey)) return;
+                
+                const msg_obj = {};     
+                msg_obj.protocol = res_obj.protocol;
+                msg_obj.event = res_obj.event;
+                msg_obj.data = {down_url: res_obj.data.down_url};
+                msg_obj.hash = Crypto.SHA256(msg_obj);
+                let isValidMsg = RM_WALLET.verify(
+                    msg_obj.hash,
+                    msg_obj.sign,
+                    msg_obj.su_pubKey
+                );
+
+                if(isValidMsg!==true) return;
+                
+                switch (res_obj.event) {
+                    case "supernode_went_down":
+                        reactor.dispatchEvent('fireNodeGoodByeEvent', down_flo_id);
+                        break;
+                
+                    default:
+                        break;
+                }
+                return;
+            }
 
             if (
               typeof res_obj.globalParams !== "object" ||
@@ -22495,7 +22569,7 @@
         let isItANodeLeavingMessage = response.search(`\\-- left`);
 
         if (isItANodeLeavingMessage >= 0) {
-          reactor.dispatchEvent("fireNodeGoodByeEvent", response);
+          localbitcoinplusplus.actions.informAllANodeLeft(isItANodeLeavingMessage);
           return;
         }
 
@@ -24566,7 +24640,7 @@
         let isItANodeLeavingMessage = response.search(`\\-- left`);
 
         if (isItANodeLeavingMessage >= 0) {
-          reactor.dispatchEvent("fireNodeGoodByeEvent", response);
+          localbitcoinplusplus.actions.informAllANodeLeft(isItANodeLeavingMessage);
           return;
         }
 
