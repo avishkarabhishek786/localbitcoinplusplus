@@ -13472,8 +13472,34 @@
               }
 
               /* ADD A CONDITION SO THAT ONLY ONE SUPERNODE IN THE LEFT CAN RUN THIS */
-              if(1) {
-                localbitcoinplusplus.actions.informAllANodeLeft(getFLOId);
+              const mcsFloIds = Object.keys(localbitcoinplusplus.myClosestSupernodes)
+                                .map(m=>m.trader_flo_address);
+              const idx = mcsFloIds.indexOf(getFLOId);
+              if(idx>=0) {
+                // Get the list of left Supernodes of disconnected Supernodes
+                console.table(mcs);
+                let getLeftSusOfDisconnectedSu = mcs
+                .filter((f,i)=>(i<=idx 
+                && localbitcoinplusplus.wallets.my_local_flo_address!==f.trader_flo_address));
+
+                console.table(getLeftSusOfDisconnectedSu);
+
+                let aNearerLeftSupernodeIsAlive = false;
+
+                for (let ln = 0; ln < getLeftSusOfDisconnectedSu.length; ln++) {
+                    const leftNodeObj = getLeftSusOfDisconnectedSu[ln];
+                    let conns = localbitcoinplusplus.backupWS[leftNodeObj.trader_flo_address];
+                    if(typeof conns === "object"
+                    && leftNodeObj.trader_flo_address !== getFLOId
+                    && conns.ws_connection.readyState==1) {
+                        console.log(conns);
+                        aNearerLeftSupernodeIsAlive=true;
+                    }
+                }
+
+                if(!aNearerLeftSupernodeIsAlive) {
+                    localbitcoinplusplus.actions.informAllANodeLeft(getFLOId);
+                }
               }
 
               msg = `INFO: Supernode ${getFLOId} left.`;
@@ -14135,7 +14161,7 @@
                 if (nextSu===flo_id
                 ||
                 nextSu===localbitcoinplusplus.wallets.my_local_flo_address) continue;
-                nextSupernodeObj = nextSu;
+                nextSupernodeObj = nextSuObj;
                 break;
             }
             return nextSupernodeObj;
@@ -14173,17 +14199,17 @@
                                 const switchMyWS = new backupSupernodesWebSocketObject();
                                 let closedFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
                                 let nxtSu = await getNextSupernode(closedFloId);
-                                if ((nxtSu==localbitcoinplusplus.wallets.my_local_flo_address
-                                || nxtSu==msg_obj.subject_flo_id)) {
-                                    let nxtSu2 = await getNextSupernode(nxtSu);
-                                    informOneSupernode(nxtSu2);
+                                if ((nxtSu.trader_flo_address==localbitcoinplusplus.wallets.my_local_flo_address
+                                || nxtSu.trader_flo_address==msg_obj.subject_flo_id)) {
+                                    let nxtSu2 = await getNextSupernode(nxtSu.trader_flo_address);
+                                    informOneSupernode(nxtSu2.trader_flo_address);
                                 } else if(typeof nxtSu !== "undefined") {
-                                    informOneSupernode(nxtSu);
+                                    informOneSupernode(nxtSu.trader_flo_address);
                                 }
                             }
                         };
                     } 
-                })();
+                })(sn);
             //}
         }
       });  
