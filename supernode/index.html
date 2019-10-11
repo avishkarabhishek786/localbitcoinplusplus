@@ -12644,7 +12644,7 @@
             msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
             msg_obj.event = 'supernode_went_down';
             msg_obj.data = {down_flo_id: getFLOId};
-            msg_obj.subject_flo_id = getFLOId;
+            msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
             msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
             msg_obj.hash = Crypto.SHA256(msg_obj);
             msg_obj.sign = RM_WALLET.sign(
@@ -13471,16 +13471,17 @@
                 }
               }
 
-              /* ADD A CONDITION SO THAT ONLY ONE SUPERNODE IN THE LEFT CAN RUN THIS */
-              const mcsFloIds = Object.keys(localbitcoinplusplus.myClosestSupernodes)
-                                .map(m=>m.trader_flo_address);
-              const idx = mcsFloIds.indexOf(getFLOId);
-              if(idx>=0) {
-                // Get the list of left Supernodes of disconnected Supernodes
-                console.table(mcs);
-                let getLeftSusOfDisconnectedSu = mcs
-                .filter((f,i)=>(i<=idx 
-                && localbitcoinplusplus.wallets.my_local_flo_address!==f.trader_flo_address));
+              /* ADD A CONDITION SO THAT ONLY ONE SUPERNODE IN THE LEFT CAN INFORM RIGHT BACKUP SUPERNODE OF DEAD SUPERNODE */
+              const subjectFloIdClosestNodes = await localbitcoinplusplus.kademlia.determineClosestSupernode('','','', getFLOId);
+              //const alowed_supernodes = subjectFloIdClosestNodes.slice(-localbitcoinplusplus.master_configurations.MaxBackups);
+              //const alowed_supernodes_flo_ids = alowed_supernodes.map(m=>m.trader_flo_address);
+              //const my_idx = subjectFloIdClosestNodes.indexOf(localbitcoinplusplus.wallets.my_local_flo_address);
+              const idx = Object.keys(localbitcoinplusplus.myClosestSupernodes).indexOf(getFLOId);
+              //if(alowed_supernodes_flo_ids.includes(localbitcoinplusplus.wallets.my_local_flo_address)) {
+                // Get the list of "left side" Supernodes of the disconnected Supernode
+                let getLeftSusOfDisconnectedSu = Object
+                .values(localbitcoinplusplus.myClosestSupernodes)
+                .slice(0, idx);
 
                 console.table(getLeftSusOfDisconnectedSu);
 
@@ -13488,6 +13489,11 @@
 
                 for (let ln = 0; ln < getLeftSusOfDisconnectedSu.length; ln++) {
                     const leftNodeObj = getLeftSusOfDisconnectedSu[ln];
+                    if(localbitcoinplusplus.wallets.my_local_flo_address 
+                    === leftNodeObj.trader_flo_address) continue;
+                    // First Check
+                    aNearerLeftSupernodeIsAlive=leftNodeObj.is_live||false;
+                    // Second check
                     let conns = localbitcoinplusplus.backupWS[leftNodeObj.trader_flo_address];
                     if(typeof conns === "object"
                     && leftNodeObj.trader_flo_address !== getFLOId
@@ -13500,7 +13506,7 @@
                 if(!aNearerLeftSupernodeIsAlive) {
                     localbitcoinplusplus.actions.informAllANodeLeft(getFLOId);
                 }
-              }
+              //}
 
               msg = `INFO: Supernode ${getFLOId} left.`;
             }
@@ -14174,14 +14180,23 @@
         if (localbitcoinplusplus.master_configurations.supernodesPubKeys
         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
             
-            const suList = await getNextSupernode();
+            let suList = await getNextSupernode();
             let sn = suList.trader_flo_address;
+
+            if(sn===msg_obj.data.down_flo_id || sn===localbitcoinplusplus.wallets.my_local_flo_address) {
+                suList = await getNextSupernode(sn);
+                sn = suList.trader_flo_address;
+            }
+
+            if(typeof sn !== "string") return;
+
+            msg_obj.receiverFloAddress = sn;
 
             tempWS = {};
             //for(let sn in localbitcoinplusplus.myClosestSupernodes) {
                 (function informOneSupernode(sn) {
-                    if((sn!==localbitcoinplusplus.wallets.my_local_flo_address
-                    || sn!==msg_obj.subject_flo_id)
+                    if(sn!==localbitcoinplusplus.wallets.my_local_flo_address
+                    && sn!==msg_obj.data.down_flo_id
                     && websocket.readyState===1) {
 
                         const url = `ws://${localbitcoinplusplus.myClosestSupernodes[sn].ip}:${localbitcoinplusplus.myClosestSupernodes[sn].port}`;
@@ -14200,7 +14215,7 @@
                                 let closedFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
                                 let nxtSu = await getNextSupernode(closedFloId);
                                 if ((nxtSu.trader_flo_address==localbitcoinplusplus.wallets.my_local_flo_address
-                                || nxtSu.trader_flo_address==msg_obj.subject_flo_id)) {
+                                || nxtSu.trader_flo_address==msg_obj.data.down_flo_id)) {
                                     let nxtSu2 = await getNextSupernode(nxtSu.trader_flo_address);
                                     informOneSupernode(nxtSu2.trader_flo_address);
                                 } else if(typeof nxtSu !== "undefined") {
@@ -20814,6 +20829,11 @@
             if(res_obj.protocol === "__ALL_SUPERNODES_MSG__") {
                 if (!localbitcoinplusplus.master_configurations.supernodesPubKeys
                 .includes(res_obj.su_pubKey)) return;
+
+                // Break any possiblity of a loop 
+                if(typeof res_obj.initialSender==="string" 
+                && res_obj.initialSender===
+                localbitcoinplusplus.my_local_flo_address.my_local_flo_address) return;
                 
                 const msg_obj = {};     
                 msg_obj.protocol = res_obj.protocol;
@@ -20830,7 +20850,25 @@
                 
                 switch (res_obj.event) {
                     case "supernode_went_down":
+                        // This should be run by only 1 Supernode who is the reciever
+                        if(localbitcoinplusplus.my_local_flo_address.my_local_flo_address 
+                        !== res_obj.receiverFloAddress) return;
                         reactor.dispatchEvent('fireNodeGoodByeEvent', res_obj.data.down_flo_id);
+                        
+                        // SYNC DATA OF ALL SUPERNODES IN MIDDLE OF SENDER AND RECEIVER
+                        // Get the Supernodes in between sender and receiver of this message
+                        const total_supernodes = Object.keys(localbitcoinplusplus.myClosestSupernodes).length;
+                        for (let q = total_supernodes-1; q>=0; q--) {
+                            const su_obj = localbitcoinplusplus.myClosestSupernodes[q];
+                            if(su_obj.trader_flo_address===res_obj.receiverFloAddress) break;
+                            if(su_obj.trader_flo_address===localbitcoinplusplus.wallets.my_local_flo_address
+                            || su_obj.is_live===true) continue;
+                            localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
+                                localbitcoinplusplus.wallets.my_local_flo_address,
+                                "",
+                                su_obj.trader_flo_address
+                            );
+                        }
                         break;
                 
                     default:
