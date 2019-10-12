@@ -14214,9 +14214,11 @@
                                 const switchMyWS = new backupSupernodesWebSocketObject();
                                 let closedFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
                                 let nxtSu = await getNextSupernode(closedFloId);
+                                msg_obj.receiverFloAddress = nxtSu;
                                 if ((nxtSu.trader_flo_address==localbitcoinplusplus.wallets.my_local_flo_address
                                 || nxtSu.trader_flo_address==msg_obj.data.down_flo_id)) {
                                     let nxtSu2 = await getNextSupernode(nxtSu.trader_flo_address);
+                                    msg_obj.receiverFloAddress = nxtSu2;
                                     informOneSupernode(nxtSu2.trader_flo_address);
                                 } else if(typeof nxtSu !== "undefined") {
                                     informOneSupernode(nxtSu.trader_flo_address);
@@ -20833,7 +20835,7 @@
                 // Break any possiblity of a loop 
                 if(typeof res_obj.initialSender==="string" 
                 && res_obj.initialSender===
-                localbitcoinplusplus.my_local_flo_address.my_local_flo_address) return;
+                localbitcoinplusplus.wallets.my_local_flo_address) return;
                 
                 const msg_obj = {};     
                 msg_obj.protocol = res_obj.protocol;
@@ -20851,18 +20853,18 @@
                 switch (res_obj.event) {
                     case "supernode_went_down":
                         // This should be run by only 1 Supernode who is the reciever
-                        if(localbitcoinplusplus.my_local_flo_address.my_local_flo_address 
+                        if(localbitcoinplusplus.wallets.my_local_flo_address 
                         !== res_obj.receiverFloAddress) return;
                         reactor.dispatchEvent('fireNodeGoodByeEvent', res_obj.data.down_flo_id);
                         
                         // SYNC DATA OF ALL SUPERNODES IN MIDDLE OF SENDER AND RECEIVER
                         // Get the Supernodes in between sender and receiver of this message
-                        const total_supernodes = Object.keys(localbitcoinplusplus.myClosestSupernodes).length;
-                        for (let q = total_supernodes-1; q>=0; q--) {
-                            const su_obj = localbitcoinplusplus.myClosestSupernodes[q];
-                            if(su_obj.trader_flo_address===res_obj.receiverFloAddress) break;
-                            if(su_obj.trader_flo_address===localbitcoinplusplus.wallets.my_local_flo_address
-                            || su_obj.is_live===true) continue;
+                        const all_supernodes = Object.keys(localbitcoinplusplus.myClosestSupernodes);
+                        for (let q = all_supernodes.length-1; q>=0; q--) {
+                            const su_obj = localbitcoinplusplus.myClosestSupernodes[all_supernodes[q]];
+                            if(su_obj.trader_flo_address===res_obj.initialSender) break;
+                            if(su_obj.trader_flo_address===localbitcoinplusplus.wallets.my_local_flo_address) 
+                            continue;
                             localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
                                 localbitcoinplusplus.wallets.my_local_flo_address,
                                 "",
@@ -26938,7 +26940,10 @@
 
         const msgObj = JSON.parse(message);
 
-        if (!request_array.includes(msgObj.method)) {
+        if (!request_array.includes(msgObj.method) ||  (
+            typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ===
+            "string"
+          )) {
           const RM_WALLET = new localbitcoinplusplus.wallets();
 
           message = JSON.stringify(msgObj);
@@ -26961,6 +26966,11 @@
             localbitcoinplusplus.wallets.my_local_flo_public_key;
 
           finalMessage = JSON.stringify(msgObj);
+        } else {
+            msgObj.nodePubKey =
+            localbitcoinplusplus.wallets.my_local_flo_public_key;
+
+            finalMessage = JSON.stringify(msgObj);
         }
 
         // The message is for a specific supernode only
@@ -27011,7 +27021,7 @@
           }
         }
 
-        console.log("SENT: " + finalMessage);
+        console.trace("SENT: " + finalMessage);
       }
 
       function validateIncomingMessage(message) {
