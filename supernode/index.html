@@ -12270,9 +12270,11 @@
                 localbitcoinplusplus.newBackupDatabase.db[backup_db];
               _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
             } else {
-              err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
-              showMessage(err_msg);
-              throw new Error(err_msg);
+                if(backup_db!==localbitcoinplusplus.wallets.my_local_flo_address) {
+                    err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                }
             }
           }
           for (const elem of dbTableNamesArray) {
@@ -13748,21 +13750,24 @@
           m => localbitcoinplusplus.backupWS[m].ws_connection.readyState < 2
         );
 
-        const reqFloIdIndex = Object.keys(localbitcoinplusplus.myClosestSupernodes).indexOf(getFLOId);
-       
-        // Get the highest index of connected supernodes
-        let highestIndexOfConnectedSupernode = -1;
+        if(currenctBackupWsList.length) {
+            const reqFloIdIndex = Object.keys(localbitcoinplusplus.myClosestSupernodes).indexOf(getFLOId);
         
-        for(let i=0; i<=currenctBackupWsList.length; i++) {
-            if(localbitcoinplusplus.myClosestSupernodes.indexOf(currenctBackupWsList[i])
-                >highestIndexOfConnectedSupernode) {
-                highestIndexOfConnectedSupernode 
-                    = localbitcoinplusplus.myClosestSupernodes.indexOf(currenctBackupWsList[i]);
+            // Get the highest index of connected supernodes
+            let highestIndexOfConnectedSupernode = -1;
+            
+            for(let i=0; i<=currenctBackupWsList.length; i++) {
+                if(Object.keys(localbitcoinplusplus.myClosestSupernodes).indexOf(currenctBackupWsList[i])
+                    >highestIndexOfConnectedSupernode) {
+                    highestIndexOfConnectedSupernode 
+                        = Object.keys(localbitcoinplusplus.myClosestSupernodes).indexOf(currenctBackupWsList[i]);
+                }
             }
+            // Only if a nearer Supernode than any connected Supernode can pass through
+            if(reqFloIdIndex>=highestIndexOfConnectedSupernode) return;
         }
 
-        // Only if a nearer Supernode than any connected Supernode can pass through
-        if(reqFloIdIndex>=highestIndexOfConnectedSupernode) return;
+
 
         if (
           typeof localbitcoinplusplus.backupWS[getFLOId] === "object" &&
@@ -26479,32 +26484,41 @@
                         console.log(mismatched_fields);
 
                         let latest_data = {};
+                        let old_data = {};
 
                         for (var i = 0; i < mismatched_fields.length; i++) {
                           const mf = mismatched_fields[i];
+                          latest_data[mf] = [];
+                          old_data[mf] = [];
                           const res_data_obj = await _readAllDB(mf, false);
-                          let filtered_data = res_data_obj.filter(odho => {
+                          if(res_data_obj.length===0) {
+                            old_data[mf].push(res_data_obj);
+                            continue;
+                          }
+                          for (let j = 0; j < res_data_obj.length; j++) {
+                            const odho = res_data_obj[j];
                             if (
                               typeof odho.timestamp == "number" &&
-                              typeof response_object.higestTimestampList[
-                                `${mf}_TIME`
-                              ] !== "undefined"
+                              typeof response_object
+                              .higestTimestampList[`${mf}_TIME`] !== "undefined"
                             ) {
-                              return (
-                                odho.timestamp >=
-                                Number(
-                                  response_object.higestTimestampList[
-                                    `${mf}_TIME`
-                                  ] - 3600000
-                                )
-                              );
-                            }
-                          });
-
-                          latest_data[mf] = filtered_data;
+                                if(odho.timestamp >=
+                                    Number(
+                                    response_object.higestTimestampList[
+                                        `${mf}_TIME`
+                                    ] - 3600000
+                                )) {
+                                    latest_data[mf].push(odho);    
+                                } else {
+                                    if(typeof odho.is_deletable ==="boolean") continue;
+                                    old_data[mf].push(odho);
+                                }
+                            }  
+                          }
                         }
 
                         console.log(latest_data);
+                        console.log(old_data);
 
                         // Send the data back to sender
                         if (
@@ -26535,6 +26549,15 @@
                             )
                             .then(server_sync_response =>
                               doSend(server_sync_response)
+                            );
+                        }
+
+                        let old_data_with_values = Object.values(old_data).filter(f=>f.length>0);
+                        if(Object.values(old_data_with_values).length) {
+                            localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
+                                localbitcoinplusplus.wallets.my_local_flo_address,
+                                res_obj.globalParams.senderFloId,
+                                primarySupernodeOfThisUser
                             );
                         }
                       });
