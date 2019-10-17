@@ -12580,12 +12580,6 @@
             }
           } else {
 
-            // const oldSupernodeKbucket = await localbitcoinplusplus.kademlia.restoreKbucket(
-            //   myFloId,
-            //   "FLO_TEST",
-            //   KBucket
-            // );
-
             const allUsersData = await readAllDB("userPublicData");
 
             const supernodesFloList = localbitcoinplusplus.master_configurations.supernodesPubKeys
@@ -12616,11 +12610,23 @@
                       immigrants_data
                     )
                     .then(server_sync_response => doSend(server_sync_response));
+
+                  // Delete this user from kBucketStore datastore and Kbucket
+                  const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', closestSu[0].data.id);
+                  await removeinDB('kBucketStore', UintID);
+                  KBucket.remove(UintID);  
                 }
               }
             }
 
             localbitcoinplusplus.kademlia.updateClosestSupernodeSeeds(myFloId);
+
+            // Rebuild KBucket
+            // localbitcoinplusplus.kademlia.restoreKbucket(
+            //   myFloId,
+            //   "FLO_TEST",
+            //   KBucket
+            // );
 
           }
         },
@@ -22507,17 +22513,23 @@
                           if (obj.length > 0) {
                             for (var prop in obj) {
                               if (!obj.hasOwnProperty(prop)) continue;
+
+                              if(typeof obj[prop].is_deletable==="boolean"
+                              && obj[prop].is_deletable===true) {
+                                removeinDB(tableStoreName, obj[prop].id);
+                                continue;
+                              }
+
                               await updateinDB(
                                 tableStoreName,
                                 obj[prop],
                                 obj[prop].id,
                                 true,
                                 false
-                              ).then(() => {
-                                showMessage(
-                                  `INFO: "${tableStoreName}" datastore syncing is complete.`
-                                );
-                              });
+                              );
+                              showMessage(
+                                `INFO: "${tableStoreName}" datastore syncing is complete.`
+                              );
                             }
                           }
 
@@ -28363,6 +28375,7 @@
                 };
 
                 this.request.onerror = function (event) {
+                    console.trace(event);
                     reject(event);
                 }
             } catch (error) {
