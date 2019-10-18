@@ -13456,8 +13456,9 @@
               const my_idx = subjectFloIdClosestNodesFloIdsFromLeft.indexOf(localbitcoinplusplus.wallets.my_local_flo_address);
               //const idx = Object.keys(localbitcoinplusplus.myClosestSupernodes).indexOf(getFLOId);
               //if(alowed_supernodes_flo_ids.includes(localbitcoinplusplus.wallets.my_local_flo_address)) {
-                // Get the list of "left side" Supernodes of the disconnected Supernode
-              let getLeftSusOfDisconnectedSu = subjectFloIdClosestNodesFloIdsFromLeft.slice(0, my_idx);
+              // Get the list of "left side" Supernodes of the disconnected Supernode
+              // If myIdx=0, increase its value by 1 to be used as 2nd param in slice
+              let getLeftSusOfDisconnectedSu = subjectFloIdClosestNodesFloIdsFromLeft.slice(0, my_idx+1);
               if(getLeftSusOfDisconnectedSu.length<1) return;     
               console.table(getLeftSusOfDisconnectedSu);  
 
@@ -14281,19 +14282,21 @@
                         tempWS[sn].onclose = async function(evt) {
                             console.info(`Closed ${evt.srcElement.url}`);
                             if(!evt.wasClean) {
-                                const switchMyWS = new backupSupernodesWebSocketObject();
+                                let switchMyWS = new backupSupernodesWebSocketObject();
                                 let closedFloId = await switchMyWS.getFloIdFromWSUrl(evt.srcElement.url);
-                                let nxtSu = await getNextSupernode(closedFloId);
+                                let nxtSuObj = await getNextSupernode(closedFloId);
+                                let nxtSu = nxtSuObj.trader_flo_address;
                                 if(typeof nxtSu !== "string") return;
                                 msg_obj.receiverFloAddress = nxtSu;
-                                if ((nxtSu.trader_flo_address==localbitcoinplusplus.wallets.my_local_flo_address
-                                || nxtSu.trader_flo_address==msg_obj.data.subject_flo_id)) {
-                                    let nxtSu2 = await getNextSupernode(nxtSu.trader_flo_address);
+                                if ((nxtSu==localbitcoinplusplus.wallets.my_local_flo_address
+                                || nxtSu==msg_obj.data.subject_flo_id)) {
+                                    let nxtSuObj2 = await getNextSupernode(nxtSu);
+                                    let nxtSu2 = nxtSuObj2.trader_flo_address;
                                     if(typeof nxtSu2 !== "string") return;
                                     msg_obj.receiverFloAddress = nxtSu2;
-                                    informOneSupernode(nxtSu2.trader_flo_address);
+                                    informOneSupernode(nxtSu2);
                                 } else if(typeof nxtSu !== "undefined") {
-                                    informOneSupernode(nxtSu.trader_flo_address);
+                                    informOneSupernode(nxtSu);
                                 }
                             }
                         };
@@ -15768,41 +15771,27 @@
                         params.currency
                       );
 
+                      params.id = helper_functions.unique_id();
+                      params.status = 1;
+                      
                       if (
                         localbitcoinplusplus.master_configurations.tradableAsset1.includes(
                           params.product
                         )
                       ) {
+                        const eqBTC = Number(parseFloat(params.withdrawing_amount).toFixed(8));
+
                         if (
                           trade_margin.remaining_crypto_credit < 0 ||
-                          params.withdrawing_amount <= 0 ||
+                          eqBTC <= 0 ||
                           trade_margin.remaining_crypto_credit <
-                            params.withdrawing_amount
+                            eqBTC
                         ) {
                           err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`;
                           showMessage(err_msg);
                           throw new Error(err_msg);
                         }
-                      } else {
-                        if (
-                          trade_margin.remaining_fiat_credit <= 0 ||
-                          params.withdrawing_amount <= 0 ||
-                          trade_margin.remaining_fiat_credit <
-                            params.withdrawing_amount
-                        ) {
-                          err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
-                          showMessage(err_msg);
-                          throw new Error(err_msg);
-                        }
-                      }
 
-                      params.id = helper_functions.unique_id();
-                      params.status = 1;
-                      if (
-                        localbitcoinplusplus.master_configurations.tradableAsset1.includes(
-                          params.product
-                        )
-                      ) {
                         // Check how much cryptos the user can withdraw
                         let withdrawer_btc_id = `${params.trader_flo_address}_${params.product}`;
                         readDB("crypto_balances", withdrawer_btc_id).then(
@@ -15816,9 +15805,7 @@
                               let withdrawer_btc_balance = Number(
                                 btc_balance_res.crypto_balance
                               ).toFixed(8);
-                              const eqBTC = Number(
-                                parseFloat(params.withdrawing_amount).toFixed(8)
-                              );
+
                               let withdrawer_new_btc_balance =
                                 withdrawer_btc_balance - eqBTC;
                               if (
@@ -15977,9 +15964,19 @@
                           showMessage(err_msg);
                           throw new Error(err_msg);
                         }
+                        if (
+                          trade_margin.remaining_fiat_credit <= 0 ||
+                          params.withdrawing_amount <= 0 ||
+                          trade_margin.remaining_fiat_credit <
+                            params.withdrawing_amount
+                        ) {
+                          err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
+                          showMessage(err_msg);
+                          throw new Error(err_msg);
+                        }
                         // Check if there's no already a withdraw cash order of this user
-                        /*ONLY DELETE A WITHDRAW ORDER WHEN A DEPOSITOR HAS CONFIRMED DEPOSIT
-                                        AND RECEIVER HAS CONFIRMED WITHDRAW*/
+                        /* ONLY DELETE A WITHDRAW ORDER WHEN A DEPOSITOR HAS CONFIRMED DEPOSIT
+                           AND RECEIVER HAS CONFIRMED WITHDRAW*/
 
                         // Check how much Cash user can withdraw
                         const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
@@ -20854,6 +20851,12 @@
             }
           );
 
+          if(nextClosestSupernodeElem.length<1) {
+            let ms = `Error: Failed to connect to any supernode.`;
+            showMessage(ms);
+            return Promise.reject(ms);  
+          }
+
           ideal_supernode = `ws://${nextClosestSupernodeElem[0].ip}:${nextClosestSupernodeElem[0].port}`;
 
           await startWebSocket(ideal_supernode);
@@ -21022,16 +21025,49 @@
                         // SYNC DATA OF ALL SUPERNODES IN MIDDLE OF SENDER AND RECEIVER
                         // Get the Supernodes in between sender and receiver of this message
                         const all_supernodes = Object.keys(localbitcoinplusplus.myClosestSupernodes);
+                        const tableArray = [
+                            "deposit",
+                            "cash_deposits",
+                            "withdraw_cash",
+                            "withdraw_btc",
+                            "cash_balances",
+                            "crypto_balances",
+                            "buyOrders",
+                            "sellOrders",
+                            "system_btc_reserves_private_keys"
+                        ];
+                        /* Sync/Forward data of all Supernodes between res_obj.initialSender (i.e
+                            node which informed you about a another node's death)
+                            and you.
+                        */
                         for (let q = all_supernodes.length-1; q>=0; q--) {
                             const su_obj = localbitcoinplusplus.myClosestSupernodes[all_supernodes[q]];
                             if(su_obj.trader_flo_address===res_obj.initialSender) break;
                             if(su_obj.trader_flo_address===localbitcoinplusplus.wallets.my_local_flo_address) 
                             continue;
-                            localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
-                                localbitcoinplusplus.wallets.my_local_flo_address,
-                                "",
+                            
+                            // Send data to next Supernode
+                            localbitcoinplusplus.actions.get_sharable_db_data(
+                                tableArray,
                                 su_obj.trader_flo_address
-                            );
+                            ).then(su_db_data=>{
+                                RM_RPC.send_rpc
+                                .call(
+                                    this,
+                                    "sync_backup_supernode_from_backup_supernode_response",
+                                    su_db_data
+                                )
+                                .then(server_sync_response =>
+                                    doSend(server_sync_response, su_obj.trader_flo_address)
+                                );
+                            });
+
+                            // Sync data from other Supernodes as well
+                            // localbitcoinplusplus.actions.sync_backup_supernode_from_backup_supernode(
+                            //     localbitcoinplusplus.wallets.my_local_flo_address,
+                            //     "",
+                            //     su_obj.trader_flo_address
+                            // );
                         }
                         break;
 
@@ -27695,7 +27731,42 @@
         });
       }
 
-      function readDBbyIndex(
+    //   function readDBbyIndex(
+    //     tablename,
+    //     index,
+    //     indexValue,
+    //     filter_deletables = true
+    //   ) {
+    //     return new Promise((resolve, reject) => {
+    //       var transaction = db.transaction([tablename]);
+    //       var objectStore = transaction.objectStore(tablename);
+    //       let response = [];
+    //       var myIndex = objectStore.index(index);
+    //       myIndex.openCursor().onerror = function(event) {
+    //         console.error("Error fetching data");
+    //         reject(event);
+    //       };
+    //       myIndex.openCursor().onsuccess = function(event) {
+    //         let cursor = event.target.result;
+    //         if (cursor) {
+    //           if (cursor.value[index] == indexValue) {
+    //             if (filter_deletables == true) {
+    //               if (typeof cursor.value.is_deletable == "undefined") {
+    //                 response.push(cursor.value);
+    //               }
+    //             } else {
+    //               response.push(cursor.value);
+    //             }
+    //           }
+    //           cursor.continue();
+    //         } else {
+    //           resolve(response);
+    //         }
+    //       };
+    //     });
+    //   }
+
+    function readDBbyIndex(
         tablename,
         index,
         indexValue,
@@ -27705,12 +27776,11 @@
           var transaction = db.transaction([tablename]);
           var objectStore = transaction.objectStore(tablename);
           let response = [];
-          var myIndex = objectStore.index(index);
-          myIndex.openCursor().onerror = function(event) {
+          objectStore.openCursor().onerror = function(event) {
             console.error("Error fetching data");
             reject(event);
           };
-          myIndex.openCursor().onsuccess = function(event) {
+          objectStore.openCursor().onsuccess = function(event) {
             let cursor = event.target.result;
             if (cursor) {
               if (cursor.value[index] == indexValue) {
@@ -27806,6 +27876,8 @@
                     // leave the vector clock field unchanged
                 } else {
                     Obj.vectorClock += 1;
+                    // If vectorClock is increased, also update timestamp
+                    Obj.timestamp = +new Date();
                 }
                 if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = +new Date();
@@ -28294,6 +28366,41 @@
           });
         },
 
+        // backup_readDBbyIndex(
+        //   tablename,
+        //   index,
+        //   indexValue,
+        //   filter_deletables = true
+        // ) {
+        //   return new Promise((resolve, reject) => {
+        //     this.transaction = this.db.transaction([tablename]);
+        //     var objectStore = this.transaction.objectStore(tablename);
+        //     let response = [];
+        //     var myIndex = objectStore.index(index);
+        //     myIndex.openCursor().onerror = function(event) {
+        //       console.error("Error fetching data");
+        //       reject(event);
+        //     };
+        //     myIndex.openCursor().onsuccess = function(event) {
+        //       let cursor = event.target.result;
+        //       if (cursor) {
+        //         if (cursor.value[index] == indexValue) {
+        //           if (filter_deletables == true) {
+        //             if (typeof cursor.value.is_deletable == "undefined") {
+        //               response.push(cursor.value);
+        //             }
+        //           } else {
+        //             response.push(cursor.value);
+        //           }
+        //         }
+        //         cursor.continue();
+        //       } else {
+        //         resolve(response);
+        //       }
+        //     };
+        //   });
+        // },
+
         backup_readDBbyIndex(
           tablename,
           index,
@@ -28304,12 +28411,11 @@
             this.transaction = this.db.transaction([tablename]);
             var objectStore = this.transaction.objectStore(tablename);
             let response = [];
-            var myIndex = objectStore.index(index);
-            myIndex.openCursor().onerror = function(event) {
+            objectStore.openCursor().onerror = function(event) {
               console.error("Error fetching data");
               reject(event);
             };
-            myIndex.openCursor().onsuccess = function(event) {
+            objectStore.openCursor().onsuccess = function(event) {
               let cursor = event.target.result;
               if (cursor) {
                 if (cursor.value[index] == indexValue) {
@@ -28400,6 +28506,8 @@
                 // leave the vector clock field unchanged
                 } else {
                     Obj.vectorClock += 1;
+                    // If vectorClock is increased, also update timestamp
+                    Obj.timestamp = +new Date();
                 }
                 if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = +new Date();
@@ -29273,6 +29381,7 @@
         });
 
         withdrawAssetButton.addEventListener("click", function(params) {
+          let asset_type = assetTypeInput.value;
           let receivinAddress = prompt(
             `Please enter your ${asset_type} receiving address.`
           );
@@ -29282,7 +29391,6 @@
             throw new Error(err_msg);
           }
 
-          let asset_type = assetTypeInput.value;
           let tradeAmount = parseFloat(tradeAmountSelect.value);
           let fiatCurrency = currencySelect.value;
 
