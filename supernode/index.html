@@ -12077,7 +12077,7 @@
             026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
             #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
             #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
-            "janeDoe@upi":"03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0"}
+            "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
             #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1","port":"9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
             "ranchimall2":{"ip":"127.0.0.1","port":"9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
             "ranchimall3":{"ip":"127.0.0.1","port":"9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
@@ -12465,8 +12465,9 @@
           );
 
           const promise2 = removeAllinDB("my_supernode_private_key_chunks");
-
-          return Promise.all([promise1, promise2])
+          const promise3 = removeAllinDB("myClosestSupernodes");
+          
+          return Promise.all([promise1, promise2, promise3])
             .then(() => true)
             .catch(e => false);
         },
@@ -14115,6 +14116,8 @@
             localbitcoinplusplus.master_configurations.supernodesPubKeys.length)
             return;
 
+        if(typeof localbitcoinplusplus.myClosestSupernodes==="object") return;    
+
         const idbData = await readDB("localbitcoinUser", "00-01");
 
         if (getClosestSuList.length < 1) {
@@ -14378,6 +14381,9 @@
 
     <!-- Misc functions -->
     <script>
+      function removeWhiteSpaces(text='') {
+        return text.replace(/\s/g,'');
+      }  
       // log event in the console
       function LogEvent(msg) {
         log.textContent += "> " + msg + "\n";
@@ -18408,181 +18414,251 @@
 
             switch (method) {
               case "give_cashier_latest_pending_cash_deposits":
-                const get_all_deposit_reqs_for_this_cashier = await readDBbyIndex(
-                  "cash_deposits",
-                  "cashier_pubKey",
-                  params.cashier_pubKey
-                );
+                (async function() {
+                    let _readDBbyIndex = readDBbyIndex;
+                    if(typeof params.parent_supernode==="string" 
+                    && params.parent_supernode.length
+                    && localbitcoinplusplus.wallets.my_local_flo_address 
+                        !== params.parent_supernode ) {
+                        const foreign_db =
+                            localbitcoinplusplus.newBackupDatabase.db[params.parent_supernode];
+                        if(typeof foreign_db !== "object") return;
+                        _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                    }
+                    const get_all_deposit_reqs_for_this_cashier = await _readDBbyIndex(
+                    "cash_deposits",
+                    "cashier_pubKey",
+                    params.cashier_pubKey
+                    );
 
-                RM_RPC.send_rpc
-                    .call(
-                      this,
-                      "list_of_cashier_latest_pending_cash_deposits",
-                      {
-                        for_cashier: true,
-                        cashier_pubKey: request.nodePubKey,
-                        receiver_flo_address: request.globalParams.senderFloId,
-                        data: get_all_deposit_reqs_for_this_cashier
-                      }
-                    )
-                    .then(resp => doSend(resp));
-                
+                    RM_RPC.send_rpc
+                        .call(
+                        this,
+                        "list_of_cashier_latest_pending_cash_deposits",
+                        {
+                            for_cashier: true,
+                            cashier_pubKey: request.nodePubKey,
+                            receiver_flo_address: request.globalParams.senderFloId,
+                            data: get_all_deposit_reqs_for_this_cashier,
+                            requesting_supernode: params.requesting_supernode,
+                            parent_supernode: params.parent_supernode
+                        }
+                        )
+                        .then(resp => doSend(resp));
+                    
+                   })();
                 break;
               case "give_cashier_latest_pending_cash_withdraws":
-                const get_all_withdraws_reqs_for_this_cashier = await readDBbyIndex(
-                  "withdraw_cash",
-                  "cashier_pubKey",
-                  params.cashier_pubKey
-                );
+                (async function() {
+                    let _readDBbyIndex = readDBbyIndex;
+                    if(typeof params.parent_supernode==="string" 
+                    && params.string.length
+                    && localbitcoinplusplus.wallets.my_local_flo_address 
+                        !== params.parent_supernode ) {
+                        const foreign_db =
+                            localbitcoinplusplus.newBackupDatabase.db[params.parent_supernode];
+                        if(typeof foreign_db !== "object") return;
+                        _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                    }
+                    const get_all_withdraws_reqs_for_this_cashier = await _readDBbyIndex(
+                    "withdraw_cash",
+                    "cashier_pubKey",
+                    params.cashier_pubKey
+                    );
 
-                RM_RPC.send_rpc
-                    .call(
-                      this,
-                      "list_of_cashier_latest_pending_cash_withdrawals",
-                      {
-                        for_cashier: true,
-                        cashier_pubKey: request.nodePubKey,
-                        receiver_flo_address: request.globalParams.senderFloId,
-                        data: get_all_withdraws_reqs_for_this_cashier
-                      }
-                    )
-                    .then(resp => doSend(resp));
+                    RM_RPC.send_rpc
+                        .call(
+                        this,
+                        "list_of_cashier_latest_pending_cash_withdrawals",
+                        {
+                            for_cashier: true,
+                            cashier_pubKey: request.nodePubKey,
+                            receiver_flo_address: request.globalParams.senderFloId,
+                            data: get_all_withdraws_reqs_for_this_cashier,
+                            requesting_supernode: params.requesting_supernode,
+                            parent_supernode: params.parent_supernode
+                        })
+                        .then(resp => doSend(resp));
+                })();   
 
                 break;
 
               case "cashier_confirms_user_cash_deposit":
-                  try {
+                  (async function() {
 
-                    const cash_deposited_by_user = Number(params.cash_deposited);   
-                    if (params.flo_txid===null
-                        || params.flo_txid.length<1
-                        || params.deposit_id==null
-                        || params.deposit_id.length<1
-                        || typeof cash_deposited_by_user == NaN
-                        || cash_deposited_by_user < 1
-                    ) {
-                        throw new Error(`Error: Incomplete or invalid data received for Cash Deposit Id: ${params.deposit_id}`);
-                    }      
+                    try {
 
-                    // Validate deposit_id
-                    const user_deposit_req = await readDB("cash_deposits", params.deposit_id);
-                    if (typeof user_deposit_req!=="object" 
-                        || user_deposit_req===null) return;                  
+                        const cash_deposited_by_user = Number(params.cash_deposited);   
+                        if (params.flo_txid===null
+                            || params.flo_txid.length<1
+                            || params.deposit_id==null
+                            || params.deposit_id.length<1
+                            || typeof cash_deposited_by_user == NaN
+                            || cash_deposited_by_user < 1
+                        ) {
+                            throw new Error(`Error: Incomplete or invalid data received for Cash Deposit Id: ${params.deposit_id}`);
+                        }      
+                        const parent_supernode = params.parent_supernode;
 
-                    // Validate Flo txid
-                    const validate_flo_txid = await helper_functions
-                        .ajaxGet(`https://ranchimallflo-testnet.duckdns.org/api/v1.0/getTransactionDetails/${params.flo_txid}`);
+                        if(localbitcoinplusplus.wallets.my_local_flo_address!==params.receiver_flo_address) return;
 
-                    if(typeof validate_flo_txid !== "object"
-                    || typeof validate_flo_txid.transactionDetails !== "object"
-                    || typeof validate_flo_txid.transactionDetails.floData !== "string"
-                    || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
-                    ) throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
+                        let _readDB = readDB;
+                        let _updateinDB = updateinDB;
+                        let _removeinDB = removeinDB;
 
-                    let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
-                    if(typeof amount_deposited !== "number" || amount_deposited < 1 || amount_deposited===NaN) {
-                        amount_deposited = cash_deposited_by_user;
-                    }
-
-                    amount_deposited = Number(amount_deposited);
-                    
-                    // Update balances datastore
-                    const user_cash_id = `${user_deposit_req.trader_flo_address}_${user_deposit_req.currency}`;
-                    const get_user_balance = await readDB('cash_balances',user_cash_id);
-                    let updateUserBalance;
-
-                    if(typeof get_user_balance=="object" 
-                        && typeof get_user_balance.cash_balance==="number"
-                    ) {
-                        get_user_balance.cash_balance += amount_deposited;
-                        updateUserBalance = await updateinDB("cash_balances", get_user_balance);
-
-                    } else {
-                        let cash_obj = {
-                            cash_balance: amount_deposited,
-                            currency: user_deposit_req.currency,
-                            id: user_cash_id,
-                            trader_flo_address: user_deposit_req.trader_flo_address,
+                        if (localbitcoinplusplus.wallets.my_local_flo_address!==parent_supernode &&
+                            typeof localbitcoinplusplus.newBackupDatabase.db[parent_supernode] ==
+                            "object"
+                        ) {
+                            const foreign_db =
+                                localbitcoinplusplus.newBackupDatabase.db[parent_supernode];
+                            _readDB = foreign_db.backup_readDB.bind(foreign_db);
+                            _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                            _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
                         }
-                        updateUserBalance = await updateinDB("cash_balances", cash_obj);
+
+                        // Validate deposit_id
+                        const user_deposit_req = await _readDB("cash_deposits", params.deposit_id);
+                        if (typeof user_deposit_req!=="object" 
+                            || user_deposit_req===null) return;                  
+
+                        // Validate Flo txid
+                        const validate_flo_txid = await helper_functions
+                            .ajaxGet(`https://ranchimallflo-testnet.duckdns.org/api/v1.0/getTransactionDetails/${params.flo_txid}`);
+
+                        if(typeof validate_flo_txid !== "object"
+                        || typeof validate_flo_txid.transactionDetails !== "object"
+                        || typeof validate_flo_txid.transactionDetails.floData !== "string"
+                        || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
+                        ) throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
+
+                        let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
+                        if(typeof amount_deposited !== "number" || amount_deposited < 1 || amount_deposited===NaN) {
+                            amount_deposited = cash_deposited_by_user;
+                        }
+
+                        amount_deposited = Number(amount_deposited);
+                        
+                        // Update balances datastore
+                        const user_cash_id = `${user_deposit_req.trader_flo_address}_${user_deposit_req.currency}`;
+                        const get_user_balance = await _readDB('cash_balances',user_cash_id);
+                        let updateUserBalance;
+
+                        if(typeof get_user_balance=="object" 
+                            && typeof get_user_balance.cash_balance==="number"
+                        ) {
+                            get_user_balance.cash_balance += amount_deposited;
+                            updateUserBalance = await _updateinDB("cash_balances", get_user_balance);
+
+                        } else {
+                            let cash_obj = {
+                                cash_balance: amount_deposited,
+                                currency: user_deposit_req.currency,
+                                id: user_cash_id,
+                                trader_flo_address: user_deposit_req.trader_flo_address,
+                            }
+                            updateUserBalance = await _updateinDB("cash_balances", cash_obj);
+                        }
+
+                        // Delete data from deposits
+                        if (typeof updateUserBalance!=="object" && updateUserBalance==null) 
+                            throw new Error(`Error: Failed to update balance of User Cash Id: ${user_cash_id}.`);
+                        
+                        _removeinDB("cash_deposits", params.deposit_id);    
+                                            
+                        // Broadcast deposit and cash balances datastore data to backups
+                        let update_cash_balance_obj = {
+                            depositor_cash_data: updateUserBalance,
+                            deposit_req_id: params.deposit_id
+                        }
+                        let update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
+                        let update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
+                        let update_cash_balance_sign =
+                            RM_WALLET
+                            .sign(update_cash_balance_hash,
+                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                            );
+
+                        update_cash_balance_obj.publicKey =
+                            localbitcoinplusplus.wallets.my_local_flo_public_key;
+                        update_cash_balance_obj.sign = update_cash_balance_sign;
+                        update_cash_balance_obj.hash = update_cash_balance_hash;
+                        update_cash_balance_obj.trader_flo_address 
+                            = user_deposit_req.trader_flo_address;
+
+                        RM_RPC
+                            .send_rpc
+                            .call(this,
+                                "update_all_deposit_success",
+                                update_cash_balance_obj)
+                            .then(update_cash_balance_req=>
+                        doSend(update_cash_balance_req));
+
+                    } catch (error) {
+                        throw new Error(error);
                     }
-
-                    // Delete data from deposits
-                    if (typeof updateUserBalance!=="object" && updateUserBalance==null) 
-                        throw new Error(`Error: Failed to update balance of User Cash Id: ${user_cash_id}.`);
-                    
-                    removeinDB("cash_deposits", params.deposit_id);    
-                                         
-                    // Broadcast deposit and cash balances datastore data to backups
-                    let update_cash_balance_obj = {
-                        depositor_cash_data: updateUserBalance,
-                        deposit_req_id: params.deposit_id
-                    }
-                    let update_cash_balance_str = JSON.stringify(update_cash_balance_obj);
-                    let update_cash_balance_hash = Crypto.SHA256(update_cash_balance_str);
-                    let update_cash_balance_sign =
-                        RM_WALLET
-                        .sign(update_cash_balance_hash,
-                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                        );
-
-                    update_cash_balance_obj.publicKey =
-                        localbitcoinplusplus.wallets.my_local_flo_public_key;
-                    update_cash_balance_obj.sign = update_cash_balance_sign;
-                    update_cash_balance_obj.hash = update_cash_balance_hash;
-                    update_cash_balance_obj.trader_flo_address 
-                        = user_deposit_req.trader_flo_address;
-
-                    RM_RPC
-                        .send_rpc
-                        .call(this,
-                            "update_all_deposit_success",
-                            update_cash_balance_obj)
-                        .then(update_cash_balance_req=>
-                    doSend(update_cash_balance_req));
-
-                  } catch (error) {
-                      throw new Error(error);
-                  }
+                  })()
 
                 break;
 
               case "cashier_confirms_user_cash_withdraw":
 
-                try {
-                    if (typeof params.withdraw_id!=="string"
-                    || params.withdraw_id.length<1
-                    || typeof params.upi_txid!=="string"
-                    || params.upi_txid.length<1)
-                    throw new Error(`Error: Invalid/Incomplete message sent by cashier.`);
-    
-                    // Fetch and update withdraw request from db
-                    // #todo 
-                    // Note: Remove withdraw requests older than 1 week using 
-                    // window.requestIdleCallback function
-    
-                    const withdraw_req = await readDB('withdraw_cash', params.withdraw_id);
-                    if(typeof withdraw_req!=="object" 
-                    || withdraw_req.id.length<=0) return;
-    
-                    withdraw_req.upi_txid = params.upi_txid;
-                    withdraw_req.status = 2; // Cashier sent money to Withdrawer
-                    const updated_withdraw_req = await updateinDB('withdraw_cash', withdraw_req, withdraw_req.id);
+                (async function() {
+                    try {
+                        if (typeof params.withdraw_id!=="string"
+                        || params.withdraw_id.length<1
+                        || typeof params.upi_txid!=="string"
+                        || params.upi_txid.length<1)
+                        throw new Error(`Error: Invalid/Incomplete message sent by cashier.`);
+        
+                        // Fetch and update withdraw request from db
+                        // #todo 
+                        // Note: Remove withdraw requests older than 1 week using 
+                        // window.requestIdleCallback function
 
-                    if(typeof updated_withdraw_req.id !=="string") 
-                        throw new Error(`Error: Failed to update "cashier_confirms_user_cash_withdraw" data.`);
-                    
-                    // Broadcast to backups
-                    RM_RPC
-                        .send_rpc
-                        .call(this,
-                            "record_upi_tx_of_successfull_withdraw",
-                            updated_withdraw_req)
-                        .then(resp=> doSend(resp));
-                    
-                } catch (error) {
-                    throw new Error(error);
-                }
+                        if(localbitcoinplusplus.wallets.my_local_flo_address!==params.receiver_flo_address) return;
+
+                        let _readDB = readDB;
+                        let _updateinDB = updateinDB;
+                        let _removeinDB = removeinDB;
+
+                        const parent_supernode = params.parent_supernode;
+
+                        if (localbitcoinplusplus.wallets.my_local_flo_address!==parent_supernode &&
+                            typeof localbitcoinplusplus.newBackupDatabase.db[parent_supernode] ==
+                            "object"
+                        ) {
+                            const foreign_db =
+                                localbitcoinplusplus.newBackupDatabase.db[parent_supernode];
+                            _readDB = foreign_db.backup_readDB.bind(foreign_db);
+                            _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                            _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                        }
+        
+                        const withdraw_req = await _readDB('withdraw_cash', params.withdraw_id);
+                        if(typeof withdraw_req!=="object" 
+                        || withdraw_req.id.length<=0) return;
+        
+                        withdraw_req.upi_txid = params.upi_txid;
+                        withdraw_req.status = 2; // Cashier sent money to Withdrawer
+                        const updated_withdraw_req = await _updateinDB('withdraw_cash', withdraw_req, withdraw_req.id);
+
+                        if(typeof updated_withdraw_req.id !=="string") 
+                            throw new Error(`Error: Failed to update "cashier_confirms_user_cash_withdraw" data.`);
+                        
+                        // Broadcast to backups
+                        RM_RPC
+                            .send_rpc
+                            .call(this,
+                                "record_upi_tx_of_successfull_withdraw",
+                                updated_withdraw_req)
+                            .then(resp=> doSend(resp));
+                        
+                    } catch (error) {
+                        throw new Error(error);
+                    }
+                })() 
+
                 break;
 
               default:
@@ -29550,7 +29626,7 @@
           }
           let asset_type = assetTypeInput.value;
           let tradeAmount = Number(tradeAmountSelect.value);
-          let fiatCurrency = currencySelect.value;
+          let fiatCurrency = assetTypeInput.value;
           if (
             typeof userFLOaddress == undefined ||
             userFLOaddress.trim().length < 1
