@@ -18468,13 +18468,10 @@
 
                     try {
 
-                        const cash_deposited_by_user = Number(params.cash_deposited);   
                         if (params.flo_txid===null
                             || params.flo_txid.length<1
                             || params.deposit_id==null
                             || params.deposit_id.length<1
-                            || typeof cash_deposited_by_user == NaN
-                            || cash_deposited_by_user < 1
                         ) {
                             throw new Error(`Error: Incomplete or invalid data received for Cash Deposit Id: ${params.deposit_id}`);
                         }      
@@ -18504,9 +18501,8 @@
 
                         // Validate Flo txid
                         const validate_flo_txid = await helper_functions
-                            .ajaxGet(`${flo_api_testnet}/api/v1.0/getTransactionDetails/${params.flo_txid}`);
-
-                        /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/ 
+                            .ajaxGet(`${localbitcoinplusplus.server
+                            .flo_api_testnet}/api/v1.0/getTransactionDetails/${params.flo_txid}`);
                         
                         if(typeof validate_flo_txid !== "object"
                         || typeof validate_flo_txid.transactionDetails !== "object"
@@ -18514,14 +18510,13 @@
                         || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
                         ) throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
 
-                        let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
-                        
-                        // if(typeof amount_deposited !== "number" || amount_deposited < 1 || amount_deposited===NaN) {
-                        //     amount_deposited = cash_deposited_by_user;
-                        // }
+                        /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/ 
+                        const cashiers_pub_keys = Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers));
+                        const cashiers_flo_keys = Object.keys(cashiers_pub_keys).map(m=>bitjs["FLO_TEST"].pubkey2address(m));
+                        if(!cashiers_flo_keys.includes(validate_flo_txid.transactionDetails.vin[0].addr)) return;
 
-                        amount_deposited = Number(amount_deposited);
-                        
+                        let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
+                                        
                         // Update balances datastore
                         const user_cash_id = `${user_deposit_req.trader_flo_address}_${user_deposit_req.currency}`;
                         const get_user_balance = await _readDB('cash_balances',user_cash_id);
