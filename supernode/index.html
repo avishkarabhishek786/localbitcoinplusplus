@@ -15681,12 +15681,10 @@
                           const cashiersList = JSON.parse(
                             localbitcoinplusplus.master_configurations.cashiers
                           );
-                          const getAPaymentHandler = randomNoRepeats(
-                            Object.keys(cashiersList)
-                          )();
+                          const cashiersPubKeysArray = Object.keys(cashiersList);
+                          const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
 
-                          if (
-                            !Object.keys(cashiersList).includes(
+                          if (!cashiersPubKeysArray.includes(
                               getAPaymentHandler
                             )
                           ) {
@@ -16010,15 +16008,14 @@
                                 localbitcoinplusplus.master_configurations
                                   .cashiers
                               );
-                              const getAPaymentHandler = randomNoRepeats(
-                                Object.keys(cashiersList)
-                              )();
+                              
+                              const cashiersPubKeysArray = Object.keys(cashiersList);
+                              const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
                               const cashierFloAddr = bitjs.FLO_TEST.pubkey2address(
                                 getAPaymentHandler
                               );
 
-                              if (
-                                !Object.keys(cashiersList).includes(
+                              if (!cashiersPubKeysArray.includes(
                                   getAPaymentHandler
                                 )
                               ) {
@@ -16037,7 +16034,8 @@
                                 token_transfer_currency = "rupee";
                               }
 
-                              const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${params.trader_flo_address}.`;
+                              //const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${params.trader_flo_address}.`;
+                              const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${cashierFloAddr} for ${params.trader_flo_address}.`;
 
                               // Add it to cash withdrawal table
                               let withdraw_request_db_object = {
@@ -16102,20 +16100,17 @@
                                               res.txid.length > 0
                                             ) {
                                               resp_obj = JSON.parse(res.txid);
-                                              resp_txid =
-                                                resp_obj.txid.result ||
-                                                resp_obj.txid;
+                                              resp_txid = resp_obj.txid.result || resp_obj.txid;
                                               msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
                                             } else if (
                                               res.signedTxHash.length > 0
                                             ) {
-                                              msg = `INFO: We could not broadcast your transaction. Please broadcast 
-                                                                                    this Signed Raw Tx manually yourself: ${res.signedTxHash}`;
+                                              showMessage(`INFO: Failed to broadcast the transaction.
+                                                     Signed Raw Tx : ${res.signedTxHash}`);
+                                              throw new Error(`ERROR: Failed to broadcast the transaction.`);  
                                             } else {
                                               console.log(res);
-                                              throw new Errror(
-                                                `ERROR: Failed to make transaction.`
-                                              );
+                                              throw new Errror(`ERROR: Failed to make transaction.`);
                                               return false;
                                             }
 
@@ -16163,8 +16158,7 @@
                                                 );
 
                                               //add the request to supernode db
-                                              withdraw_request_db_object.token_transfer_txid =
-                                                resp_txid || res.signedTxHash;
+                                              withdraw_request_db_object.token_transfer_txid = resp_txid;
 
                                               // Add record in Db
                                               const withdraw_request_db_object_res = await addDB(
@@ -17615,15 +17609,13 @@
                                   localbitcoinplusplus.master_configurations
                                     .cashiers
                                 );
-                                const getAPaymentHandler = randomNoRepeats(
-                                  Object.keys(cashiersList)
-                                )();
+                                const cashiersPubKeysArray = Object.keys(cashiersList);
+                                const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
                                 const cashierFloAddr = bitjs.FLO_TEST.pubkey2address(
                                   getAPaymentHandler
                                 );
 
-                                if (
-                                  !Object.keys(cashiersList).includes(
+                                if (!cashiersPubKeysArray.includes(
                                     getAPaymentHandler
                                   )
                                 ) {
@@ -18431,7 +18423,7 @@
                 (async function() {
                     let _readDBbyIndex = readDBbyIndex;
                     if(typeof params.parent_supernode==="string" 
-                    && params.string.length
+                    && params.parent_supernode.length
                     && localbitcoinplusplus.wallets.my_local_flo_address 
                         !== params.parent_supernode ) {
                             return false;
@@ -18512,7 +18504,7 @@
 
                         /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/ 
                         const cashiers_pub_keys = Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers));
-                        const cashiers_flo_keys = Object.keys(cashiers_pub_keys).map(m=>bitjs["FLO_TEST"].pubkey2address(m));
+                        const cashiers_flo_keys = Object.values(cashiers_pub_keys).map(m=>bitjs["FLO_TEST"].pubkey2address(m));
                         if(!cashiers_flo_keys.includes(validate_flo_txid.transactionDetails.vin[0].addr)) return;
 
                         let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
@@ -18613,6 +18605,8 @@
                             typeof localbitcoinplusplus.newBackupDatabase.db[parent_supernode] ==
                             "object"
                         ) {
+                            // Cash Withdraw or deposit not allowed in backup mode
+                            return;
                             const foreign_db =
                                 localbitcoinplusplus.newBackupDatabase.db[parent_supernode];
                             _readDB = foreign_db.backup_readDB.bind(foreign_db);
@@ -19564,6 +19558,7 @@
             .then(utxo_list => {
               if (utxo_list.length > 0) {
                 try {
+                  utxo_list.sort((a,b)=>b.confirmations - a.confirmations);  
                   let btc_eq_receiving_amount = Number(receiving_amount);
                   btc_eq_receiving_amount = Number(
                     btc_eq_receiving_amount.toFixed(8)
@@ -19573,7 +19568,7 @@
                   let sum = 0;
 
                   for (var key in utxo_list) {
-                    if (utxo_list[key].confirmations !== 0) {
+                    if (utxo_list[key].confirmations > 0) {
                       var obj = utxo_list[key];
                       sum += obj.amount;
 
@@ -21539,7 +21534,7 @@
                           typeof user == "object" &&
                           user.myLocalFLOAddress == resp.data.trader_flo_address
                         ) {
-                          let counterTraderAccountAddress = `Please pay the amount to following UPI ID: 
+                          let counterTraderAccountAddress = `Please pay ${resp.data.currency} ${resp.data.depositing_amount} to following UPI ID: 
                                                     ${resp.msg}`;
                           showMessage(counterTraderAccountAddress);
                           modalWindow(counterTraderAccountAddress);
