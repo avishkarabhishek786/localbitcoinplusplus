@@ -12935,7 +12935,7 @@
             }
 
             try {
-              if (flo_addr.length < 0) {
+              if (flo_addr.length !== 34) {
                 showMessage(
                   `WARNING: No Flo Id provided to determine closest Supenode.`
                 );
@@ -15087,7 +15087,7 @@
               ) {
                 if (typeof flo_id !== null || typeof flo_id !== "undefined") {
                   localbitcoinplusplus.kademlia
-                    .determineClosestSupernode(flo_id, 4)
+                    .determineClosestSupernode('', '', '', flo_id)
                     .then(my_closest_su => {
                       if (user_keys.address === my_closest_su[0].data.id) {
                         return callback(true);
@@ -22840,15 +22840,20 @@
                   ) {
                     (async function() {
                       let su_db_data = res_obj.params[0];
+                      const primarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(
+                        localbitcoinplusplus.wallets.my_local_flo_address);
+
                       const MCS = await localbitcoinplusplus.kademlia.determineClosestSupernode(
-                        localbitcoinplusplus.wallets.my_local_flo_address,
-                        10
-                      );
+                        "",
+                        localbitcoinplusplus.master_configurations.supernodesPubKeys.length,
+                        supernodeKBucket,
+                        primarySuObj[0].data.id
+                      );  
 
                       // If user is already connected to primary return back
                       if (
                         localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS ==
-                        MCS[0].data.id
+                        primarySuObj[0].data.id
                       )
                         return;
 
@@ -24642,7 +24647,7 @@
 
                             let getNextClosestSuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(
                               "",
-                              3,
+                              localbitcoinplusplus.master_configurations.MaxBackups,
                               supernodeKBucket,
                               req_dt.leaving_supernode_flo_id
                             );
@@ -24728,7 +24733,7 @@
 
                         let getSupernodeClosestSuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(
                           "",
-                          3,
+                          localbitcoinplusplus.master_configurations.MaxBackups,
                           supernodeKBucket,
                           primarySuFloId
                         );
@@ -24871,10 +24876,15 @@
                   ) {
                     (async function() {
                       let su_db_data = res_obj.params[0];
+                      const primarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(
+                        localbitcoinplusplus.wallets.my_local_flo_address);
+
                       const MCS = await localbitcoinplusplus.kademlia.determineClosestSupernode(
-                        localbitcoinplusplus.wallets.my_local_flo_address,
-                        10
-                      );
+                        "",
+                        localbitcoinplusplus.master_configurations.supernodesPubKeys.length,
+                        supernodeKBucket,
+                        primarySuObj[0].data.id
+                      );  
 
                       // If user is already connected to primary return back
                       if (
@@ -26490,8 +26500,7 @@
 
                     localbitcoinplusplus.kademlia
                       .determineClosestSupernode(
-                        res_obj.params[0].trader_flo_address,
-                        localbitcoinplusplus.master_configurations.supernodesPubKeys.length
+                        res_obj.params[0].trader_flo_address
                       )
                       .then(async subject_floId_closest_su_list => {
                         const primarySupernodeOfThisUser = subject_floId_closest_su_list[0].data.id;
@@ -28666,7 +28675,8 @@
 
                             modifiedRecord.is_deletable = true;
 
-                            this.request.objectStore(tablename).put(modifiedRecord);
+                            this.db.transaction([tablename], "readwrite")
+                            .objectStore(tablename).put(modifiedRecord);
                             return resolve(id);
                         }                
                         reject(false);
