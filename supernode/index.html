@@ -15087,7 +15087,7 @@
               ) {
                 if (typeof flo_id !== null || typeof flo_id !== "undefined") {
                   localbitcoinplusplus.kademlia
-                    .determineClosestSupernode('', '', '', flo_id)
+                    .determineClosestSupernode(flo_id)
                     .then(my_closest_su => {
                       if (user_keys.address === my_closest_su[0].data.id) {
                         return callback(true);
@@ -21947,9 +21947,14 @@
                         withdraw_success_response.hash &&
                       update_cash_balance_obj_res_verification == true
                     ) {
+                      // Since this is a response from Supernode update and increase
+                      // data by vectorClock is false  
                       updateinDB(
                         "cash_balances",
-                        withdraw_success_response.withdrawer_cash_data
+                        withdraw_success_response.withdrawer_cash_data,
+                        withdraw_success_response.withdrawer_cash_data.id,
+                        false, 
+                        false
                       );
 
                       // Update balances
@@ -22168,7 +22173,10 @@
                     if (isBalanceLegit) {
                       updateinDB(
                         "crypto_balances",
-                        updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject
+                        updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
+                        updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject.id,
+                        false,
+                        false
                       );
                       if (
                         localbitcoinplusplus.wallets.my_local_flo_address ==
@@ -22177,7 +22185,7 @@
                         displayBalances(
                           updateUserCryptoBalanceResponseObject.trader_flo_address
                         );
-                        showMessage(`INFO: Your balance is updated.`);
+                        showMessage(`INFO: Your Crypto balance is updated.`);
                       }
                       return true;
                     } else {
@@ -22209,7 +22217,10 @@
                     if (isBalanceLegit) {
                       updateinDB(
                         "deposit",
-                        updateUserDepositsResponseObject.updatedTraderDepositObject
+                        updateUserDepositsResponseObject.updatedTraderDepositObject,
+                        updateUserDepositsResponseObject.updatedTraderDepositObject.id,
+                        false,
+                        false
                       );
                       if (
                         localbitcoinplusplus.wallets.my_local_flo_address ==
@@ -23951,7 +23962,10 @@
                     ) {
                       updateinDB(
                         "cash_balances",
-                        withdraw_success_response.withdrawer_cash_data
+                        withdraw_success_response.withdrawer_cash_data,
+                        withdraw_success_response.withdrawer_cash_data.id,
+                        false, 
+                        false
                       );
                       // Update balances
                       displayBalances(
@@ -24239,7 +24253,9 @@
                       updateinDB(
                         "crypto_balances",
                         updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
-                        updateUserCryptoBalanceResponseObject.trader_flo_address
+                        updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject.id,
+                        false,
+                        false
                       );
                       if (
                         localbitcoinplusplus.wallets.my_local_flo_address ==
@@ -24281,7 +24297,10 @@
                     if (isBalanceLegit) {
                       updateinDB(
                         "deposit",
-                        updateUserDepositsResponseObject.updatedTraderDepositObject
+                        updateUserDepositsResponseObject.updatedTraderDepositObject,
+                        updateUserDepositsResponseObject.updatedTraderDepositObject.id,
+                        false,
+                        false
                       );
                       if (
                         localbitcoinplusplus.wallets.my_local_flo_address ==
@@ -25769,7 +25788,10 @@
 
                           backup_server_db_instance.backup_updateinDB(
                             "cash_balances",
-                            withdraw_success_response.withdrawer_cash_data
+                            withdraw_success_response.withdrawer_cash_data,
+                            withdraw_success_response.withdrawer_cash_data.id,
+                            true, 
+                            false
                           );
 
                           return true;
@@ -26220,7 +26242,10 @@
                           if (isBalanceLegit) {
                             backup_server_db_instance.backup_updateinDB(
                               "crypto_balances",
-                              updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject
+                              updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject,
+                              updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject.id,
+                              true,
+                              false
                             );
                             if (
                               localbitcoinplusplus.wallets
@@ -26286,7 +26311,10 @@
                         if (isBalanceLegit) {
                           backup_server_db_instance.backup_updateinDB(
                             "deposit",
-                            updateUserDepositsResponseObject.updatedTraderDepositObject
+                            updateUserDepositsResponseObject.updatedTraderDepositObject,
+                            updateUserDepositsResponseObject.updatedTraderDepositObject.id,
+                            true,
+                            false
                           );
                           if (
                             localbitcoinplusplus.wallets.my_local_flo_address ==
@@ -26323,8 +26351,7 @@
                     localbitcoinplusplus.kademlia
                       .determineClosestSupernode(subjectuser)
                       .then(my_closest_su_list => {
-                        const primarySupernodeOfThisUser =
-                          my_closest_su_list[0].data.id;
+                        const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
                         backup_server_db_instance =
                           localbitcoinplusplus.newBackupDatabase.db[
                             primarySupernodeOfThisUser
@@ -26355,15 +26382,6 @@
                             true,
                             false
                           );
-                          if (
-                            localbitcoinplusplus.wallets.my_local_flo_address ==
-                            updateUserReservesResponseObject.trader_flo_address
-                          ) {
-                            displayBalances(
-                              updateUserReservesResponseObject.trader_flo_address
-                            );
-                            showMessage(`INFO: Your balance is updated.`);
-                          }
                           return true;
                         } else {
                           showMessage(
@@ -27078,7 +27096,8 @@
 
                             _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
 
-                            _updateinDB('withdraw_cash', successfull_withdraw_resp);
+                            _updateinDB('withdraw_cash', successfull_withdraw_resp, 
+                                successfull_withdraw_resp.id, true, false);
                         });
                     }
 
@@ -30010,7 +30029,7 @@
                 }
 
                 trader_deposits.status = 2;
-                _updateinDB(
+                const trader_deposit_updated = await _updateinDB(
                   "deposit",
                   trader_deposits,
                   trader_deposits.trader_flo_address
@@ -30073,7 +30092,7 @@
                       );
 
                       const traderDepositsObjectString = JSON.stringify(
-                        trader_deposits
+                        trader_deposit_updated
                       );
                       const traderDepositsObjectStringHash = Crypto.SHA256(
                         traderDepositsObjectString
@@ -30085,10 +30104,10 @@
                       );
 
                       const updatedDepositObject = {
-                        updatedTraderDepositObject: trader_deposits,
+                        updatedTraderDepositObject: trader_deposit_updated,
                         updatedDepositsObjectSign: traderDepositsObjectSign,
-                        trader_flo_address: trader_deposits.trader_flo_address,
-                        receiver_flo_address: trader_deposits.trader_flo_address
+                        trader_flo_address: trader_deposit_updated.trader_flo_address,
+                        receiver_flo_address: trader_deposit_updated.trader_flo_address
                       };
 
                       RM_RPC.send_rpc(
