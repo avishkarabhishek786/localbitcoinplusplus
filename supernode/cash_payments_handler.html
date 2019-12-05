@@ -129,18 +129,10 @@
         <div class="collapse navbar-collapse" id="navbarCollapse">
           <ul class="navbar-nav mr-auto">
             <li class="nav-item active">
-              <a class="nav-link" href="#"
-                >Home <span class="sr-only">(current)</span></a
-              >
-            </li>
             <li class="nav-item">
-              <a class="nav-link" href="#">Link</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="#">Disabled</a>
+              <a class="nav-link" href="#" id="flo_keys_reset">Reset Account</a>
             </li>
           </ul>
-          <div id="conn_info"></div>
         </div>
       </nav>
     </header>
@@ -174,72 +166,91 @@
         This page is to be used by <code>Localbitcoinplusplus Cashiers</code> as a tool
         to manage cash deposits and withdraws.
       </p>
+      
+      <div class="card" id="manual_token_transfer_div">
+          <div class="card-body">
+                <h4 class="alert alert-light" role="alert">
+                    Manual Token Transfer 
+                </h4>
+                <p><label for="token_receiver">Receiver Flo Address </label>
+                <input type="text" id="token_receiver"></p>
+                <p><label for="token_name">Choose Token: </label>
+                <input type="radio" id="token_name" name="transfer_token_name" value="rupee"> Rupee </p>
+                <p><label for="token_amount">Amount of Tokens to transfer: </label>
+                <input type="number" id="token_amount"></p>
+                <p><input type="button" class="btn btn-outline-primary" id="send_tokens_btn" value="Send Tokens"></p>
+          </div>
+      </div>
 
-      <div class="row" id="supernode_seeds_div"></div>
-      <div class="row" id="flo_keys_div"></div>
-      <div class="row" id="pending_deposits_list"></div>
+      <!-- <div class="card">
+          <div class="card-body" id="pending_deposits_list"></div>
+      </div> -->
 
       <!-- Pending Deposits -->
-      <div class="row">
-        <h4 class="alert alert-light" role="alert">
-          Cash Deposit Requests List
-        </h4>
-        <input
-          type="text"
-          id="searchbar_deposits"
-          class="myInput"
-          onkeyup="search_deposits()"
-          placeholder="Search anything"
-        />
-        <button
-          type="button"
-          class="btn btn-outline-primary"
-          id="fetch_deposits"
-        >
-          Load Pending Cash Deposits
-        </button>
-
-        <table id="deposits_list" class="myTable">
-          <tr class="header">
-            <th>User UPI Id</th>
-            <th>User FLO Id</th>
-            <th>Depositing Amount</th>
-            <th>Currency</th>
-            <th>Action</th>
-          </tr>
-        </table>
+      <div class="card">
+        <div class="card-body">
+            <h4 class="alert alert-light" role="alert">
+              Cash Deposit Requests List
+            </h4>
+            <input
+              type="text"
+              id="searchbar_deposits"
+              class="myInput"
+              onkeyup="search_deposits()"
+              placeholder="Search anything"
+            />
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="fetch_deposits"
+            >
+              Load Pending Cash Deposits
+            </button>
+    
+            <table id="deposits_list" class="myTable">
+              <tr class="header">
+                <th>User UPI Id</th>
+                <th>User FLO Id</th>
+                <th>Depositing Amount</th>
+                <th>Currency</th>
+                <th>Action</th>
+              </tr>
+            </table>
+        </div>  
       </div>
 
       <!-- Pending Withdrawals -->
-      <div class="row">
-        <h4 class="alert alert-light" role="alert">
-          Cash Withdrawals Requests List
-        </h4>
-        <input
-          type="text"
-          id="searchbar_withdraws"
-          class="myInput"
-          onkeyup="search_withdraws()"
-          placeholder="Search anything"
-        />
-        <button
-          type="button"
-          class="btn btn-outline-primary"
-          id="fetch_withdraws"
-        >
-          Load Pending Cash Withdrawals
-        </button>
-
-        <table id="withdraws_list" class="myTable">
-          <tr class="header">
-            <th>User UPI Id</th>
-            <th>User FLO Id</th>
-            <th>Withdrawal Amount</th>
-            <th>Currency</th>
-            <th>Txid</th>
-            <th>Action</th>
-          </tr>
-        </table>
+      <div class="card">
+        <div class="card-body">
+            <h4 class="alert alert-light" role="alert">
+              Cash Withdrawals Requests List
+            </h4>
+            <input
+              type="text"
+              id="searchbar_withdraws"
+              class="myInput"
+              onkeyup="search_withdraws()"
+              placeholder="Search anything"
+            />
+            <button
+              type="button"
+              class="btn btn-outline-primary"
+              id="fetch_withdraws"
+            >
+              Load Pending Cash Withdrawals
+            </button>
+    
+            <table id="withdraws_list" class="myTable">
+              <tr class="header">
+                <th>User UPI Id</th>
+                <th>User FLO Id</th>
+                <th>Withdrawal Amount</th>
+                <th>Currency</th>
+                <th>Txid</th>
+                <th>Action</th>
+              </tr>
+            </table>
+        </div>
       </div>
     </main>
 
@@ -13815,18 +13826,68 @@
             });
         }
 
+        async function transferTokensManually() {
+            try {                    
+                const token_sender = localbitcoinplusplus.wallets.my_local_flo_address;
+                const token_balance_url = `${localbitcoinplusplus.server.flo_api_testnet}/api/v1.0/getFloAddressBalance?token=${token_name}&floAddress=${token_sender}`;
+                const sender_token_balance = await helper_functions.ajaxGet(token_balance_url);
+                const token_receiver = document.getElementById('token_receiver').value;
+                const send_tokens_btn = document.getElementById('send_tokens_btn');
+                const token_amount = Number(document.getElementById('token_amount').value);
+                const token_name = document.querySelector('input[name="transfer_token_name"]:checked').value;            
+                const flo_comment = `transfer ${token_amount} ${token_name}# to ${token_receiver}`;
+                
+                let err_msg = '';
+
+                if(typeof sender_token_balance!=="object" 
+                || typeof sender_token_balance.balance!=="number"
+                || sender_token_balance.balance<token_amount) {
+                    err_msg = `INFO: Sender has insufficient ${token_name} balance.`;
+                    showMessage(err_msg);
+                    return false;
+                }
+
+                send_tokens_btn.onclick = function() {
+                    return new Promise(async (resolve, reject)=>{
+                        let flo_txid = '';
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+                        const flo_tx = await RM_WALLET.sendTransaction(
+                            localbitcoinplusplus.assets.FLO,
+                            localbitcoinplusplus.wallets.my_local_flo_address,
+                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY,
+                            token_receiver,
+                            token_amount,
+                            localbitcoinplusplus.wallets.my_local_flo_address,
+                            flo_comment
+                        );
+                        if (typeof flo_tx.txid == "string" &&
+                            flo_tx.txid.length > 0
+                        ) {
+                            resp_obj = JSON.parse(flo_tx.txid);
+                            flo_txid = resp_obj.txid.result || resp_obj.txid;
+                        }
+                        if (typeof flo_txid!=="string" || flo_txid.length < 1) {
+                            err_msg = `Error: Failed to broadcast token transfer transaction.`; 
+                            showMessage(err_msg);
+                            reject(err_msg);
+                        } else {
+                            showMessage(`INFO: Successful token transfer txid: ${flo_txid}`);
+                            showMessage(`INFO: ${token_amount} ${token_name} transferred to ${token_receiver}.`);
+                            resolve(flo_txid);
+                        }
+                    })
+                }
+
+            } catch (error) {
+                throw new Error(error);
+            }
+        }
+
         // Reset Flo Id
         function loadResetFloBtnUi() {
           // RESET KEYS
-          const reset_flo_keys_div = document.getElementById("flo_keys_div");
-          const reset_flo_keys_btn = document.createElement("button");
-          reset_flo_keys_btn.className += ` button bg-purple mg-5 `;
-          const reset_flo_keys_btn_text = document.createTextNode(
-            `Reset FLO Keys`
-          );
-          reset_flo_keys_btn.appendChild(reset_flo_keys_btn_text);
-          reset_flo_keys_div.appendChild(reset_flo_keys_btn);
-
+          const reset_flo_keys_btn = document.getElementById("flo_keys_reset");
+          
           reset_flo_keys_btn.onclick = function() {
             if (
               confirm(
@@ -13848,9 +13909,6 @@
         // paymentsHandlerDetails Database
         const dataBaseUIOperations = async function() {
           localbitcoinplusplus.is_ui_loaded = true;
-
-          //const RM_WALLET = new localbitcoinplusplus.wallets();
-          //const RM_RPC = new localbitcoinplusplus.rpc();
 
           try {
             readDB("paymentsHandlerDetails", "00-01").then(async function(
@@ -13966,6 +14024,9 @@
                     dataBaseUIOperations();
                   }
 
+                  // load token transfer ui
+                  transferTokensManually();
+
                   resolve(true);
                   return;
                 } else {
@@ -14017,6 +14078,9 @@
               ) {
                 dataBaseUIOperations();
               }
+
+              // load token transfer ui
+              transferTokensManually();
 
               resolve(true);
             });
