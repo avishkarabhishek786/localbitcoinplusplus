@@ -8349,13 +8349,34 @@
         // 52 characters base58
         ECKey.isCompressedWalletImportFormat = function(key) {
           key = key.toString();
-          return ECKey.privateKeyPrefix == 0x80
-            ? /^[LK][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
-                key
-              )
-            : /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
-                key
-              );
+        //   return ECKey.privateKeyPrefix == 0x80
+        //     ? /^[LK][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
+        //         key
+        //       )
+        //     : /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
+        //         key
+        //       );
+            switch (ECKey.currentBlockchain) {
+              case "BTC":
+                  return /^[LK][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
+                        key
+                    )
+                  break;              
+              case "BTC_TEST":
+                  return /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
+                        key
+                    );   
+                  break;
+              case "FLO":
+                  return /^R[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(key);
+                  break;              
+              case "FLO_TEST":
+                  return /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(key);
+                  break;
+          
+              default:
+                  break;
+          }
         };
 
         // 44 characters
@@ -12066,9 +12087,11 @@
               );
             // changesMadeByAbhishek: Change private key prefix before initing key
             Bitcoin.ECKey.privateKeyPrefix = privKeyPrefix;
+            Bitcoin.ECKey.currentBlockchain = crypto;
             var key = new Bitcoin.ECKey(privateKey);
 
-            key.setCompressed(true);
+            if(key.compressed!==true) key.setCompressed(true);  
+
             var privateKeyHex = key.getBitcoinHexFormat();
             var privateKeyWIF = key.getBitcoinWalletImportFormat();
 
@@ -12087,7 +12110,7 @@
               address
             };
           },
-          sign: function(msg, privateKeyHex) {
+          sign: function(msg, privateKeyHex, crypto = "FLO_TEST") {
             if (crypto == "BTC") {
               privKeyPrefix = 0x80; //mainnet 0x80, testnet: 0xEF
               networkVersion = 0x00; //mainnet 0x23, testnet: 0x6F
