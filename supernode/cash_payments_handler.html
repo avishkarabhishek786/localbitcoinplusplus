@@ -13637,6 +13637,12 @@
           };
         }
 
+        function delay(t, v) {
+          return new Promise(function(resolve) {
+            setTimeout(resolve.bind(null, v), t);
+          });
+        }
+
         function duplicatesInArray(arr) {
           arr.reduce(function(acc, el, i, arr) {
             if (arr.indexOf(el) !== i && acc.indexOf(el) < 0) acc.push(el);
@@ -13771,6 +13777,9 @@
                 const confirmTx = confirm(token_transfer_statement);
                 if(!confirmTx) return;
 
+                const websocket_conn = localbitcoinplusplus.supernode_conns[requesting_supernode];
+                if(typeof websocket_conn!=="object") return;
+
                 let flo_txid = '';
 
                 const flo_tx = await RM_WALLET.sendTransaction(
@@ -13801,12 +13810,28 @@
                     parent_supernode: websocket_name,
                 }
 
-                const websocket_conn = localbitcoinplusplus.supernode_conns[requesting_supernode];
-                if(typeof websocket_conn!=="object") return;
+                const txidUrlDeposit = `${localbitcoinplusplus.server
+                    .flo_api_testnet}/api/v1.0/getTransactionDetails/${flo_txid}`;
+                let n=1;
+                (async function validateTxidInBlockchain() {
+                    // Validate Flo txid
+                    await delay(120000); 
+                    const validate_flo_txid = await helper_functions.ajaxGet(txidUrlDeposit);
+                    console.log(validate_flo_txid);
+                    if(typeof validate_flo_txid == "object"
+                    && typeof validate_flo_txid.transactionDetails == "object"
+                    && typeof validate_flo_txid.transactionDetails.floData == "string"
+                    && validate_flo_txid.transactionDetails.floData.length > 5 // without ':text'
+                    ) {
+                        RM_RPC.send_rpc
+                        .call(this, "cashier_confirms_user_cash_deposit", req_body)
+                        .then(resp => doSend(websocket_conn, resp));
+                    } else if(n<=10) {
+                        validateTxidInBlockchain();
+                        n++;
+                    } else throw new Error(`Failed to inform Supernode of cash deposit: ${flo_txid}`);
+                })()
 
-                RM_RPC.send_rpc
-                .call(this, "cashier_confirms_user_cash_deposit", req_body)
-                .then(resp => doSend(websocket_conn, resp));
             });
             });
         
@@ -13851,27 +13876,26 @@
 
         async function transferTokensManually() {
             try {                    
-                const token_sender = localbitcoinplusplus.wallets.my_local_flo_address;
-                const token_balance_url = `${localbitcoinplusplus.server.flo_api_testnet}/api/v1.0/getFloAddressBalance?token=${token_name}&floAddress=${token_sender}`;
-                const sender_token_balance = await helper_functions.ajaxGet(token_balance_url);
-                const token_receiver = document.getElementById('token_receiver').value;
-                const send_tokens_btn = document.getElementById('send_tokens_btn');
-                const token_amount = Number(document.getElementById('token_amount').value);
-                const token_name = document.querySelector('input[name="transfer_token_name"]:checked').value;            
-                const flo_comment = `transfer ${token_amount} ${token_name}# to ${token_receiver}`;
-                
-                let err_msg = '';
-
-                if(typeof sender_token_balance!=="object" 
-                || typeof sender_token_balance.balance!=="number"
-                || sender_token_balance.balance<token_amount) {
-                    err_msg = `INFO: Sender has insufficient ${token_name} balance.`;
-                    showMessage(err_msg);
-                    return false;
-                }
-
                 send_tokens_btn.onclick = function() {
                     return new Promise(async (resolve, reject)=>{
+                        const token_sender = localbitcoinplusplus.wallets.my_local_flo_address;
+                        const token_receiver = document.getElementById('token_receiver').value;
+                        const send_tokens_btn = document.getElementById('send_tokens_btn');
+                        const token_amount = Number(document.getElementById('token_amount').value);
+                        const token_name_radio = document.querySelector('input[name="transfer_token_name"]:checked').value;            
+                        
+                        const flo_comment = `transfer ${token_amount} ${token_name}# to ${token_receiver}`;                
+                        const token_balance_url = `${localbitcoinplusplus.server.flo_api_testnet}/api/v1.0/getFloAddressBalance?token=${token_name}&floAddress=${token_sender}`;
+                        const sender_token_balance = await helper_functions.ajaxGet(token_balance_url);
+                        let err_msg = '';
+
+                        if(typeof sender_token_balance!=="object" 
+                        || typeof sender_token_balance.balance!=="number"
+                        || sender_token_balance.balance<token_amount) {
+                            err_msg = `INFO: Sender has insufficient ${token_name} balance.`;
+                            showMessage(err_msg);
+                            return false;
+                        }
                         let flo_txid = '';
                         const RM_WALLET = new localbitcoinplusplus.wallets;
                         const flo_tx = await RM_WALLET.sendTransaction(

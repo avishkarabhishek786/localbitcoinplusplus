@@ -8749,13 +8749,7 @@
         // 52 characters base58
         ECKey.isCompressedWalletImportFormat = function(key) {
           key = key.toString();
-        //   return ECKey.privateKeyPrefix == 0x80
-        //     ? /^[LK][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
-        //         key
-        //       )
-        //     : /^c[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
-        //         key
-        //       );
+
           switch (ECKey.currentBlockchain) {
               case "BTC":
                   return /^[LK][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{51}$/.test(
@@ -18516,19 +18510,21 @@
                         // Validate deposit_id
                         const user_deposit_req = await _readDB("cash_deposits", params.deposit_id);
                         if (typeof user_deposit_req!=="object" 
-                            || user_deposit_req===null) return;                  
+                            || user_deposit_req===null) return;       
+
+                        const txidUrlDeposit = `${localbitcoinplusplus.server
+                            .flo_api_testnet}/api/v1.0/getTransactionDetails/${params.flo_txid}`;
 
                         // Validate Flo txid
-                        const validate_flo_txid = await helper_functions
-                            .ajaxGet(`${localbitcoinplusplus.server
-                            .flo_api_testnet}/api/v1.0/getTransactionDetails/${params.flo_txid}`);
+                        const validate_flo_txid = await helper_functions.ajaxGet(txidUrlDeposit);
                         
                         if(typeof validate_flo_txid !== "object"
                         || typeof validate_flo_txid.transactionDetails !== "object"
                         || typeof validate_flo_txid.transactionDetails.floData !== "string"
                         || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
-                        ) throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
-
+                        )
+                        throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
+                    
                         /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/ 
                         const cashiers_pub_keys = Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers));
                         const cashiers_flo_keys = Object.values(cashiers_pub_keys).map(m=>bitjs["FLO_TEST"].pubkey2address(m));
