@@ -11549,6 +11549,13 @@
         enumerable: true
       });
 
+      Object.defineProperty(localbitcoinplusplus, "BASE_BLOCKCHAIN", {
+        value: "FLO",
+        writable: false,
+        configurable: false,
+        enumerable: true
+      });
+
       localbitcoinplusplus.privateKey = {
         isPrivateKey: function(key) {
           return (
@@ -12605,7 +12612,7 @@
             const allUsersData = await readAllDB("userPublicData");
 
             const supernodesFloList = localbitcoinplusplus.master_configurations.supernodesPubKeys
-            .map(s => bitjs.FLO_TEST.pubkey2address(s));
+            .map(s => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(s));
 
             for (let f = 0; f < allUsersData.length; f++) {
               let closestSu = await localbitcoinplusplus.kademlia.determineClosestSupernode(
@@ -12634,7 +12641,7 @@
                     .then(server_sync_response => doSend(server_sync_response));
 
                   // Delete this user from kBucketStore datastore and Kbucket
-                  const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId('FLO_TEST', closestSu[0].data.id);
+                  const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId(localbitcoinplusplus.BASE_BLOCKCHAIN, closestSu[0].data.id);
                   await removeinDB('kBucketStore', UintID);
                   KBucket.remove(UintID);  
                 }
@@ -12667,7 +12674,7 @@
           return new Promise((resolve, reject) => {
             try {
               const KBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                "FLO_TEST",
+                localbitcoinplusplus.BASE_BLOCKCHAIN,
                 flo_id
               );
               const kbOptions = { localNodeId: KBucketId };
@@ -12675,12 +12682,12 @@
 
               const master_flo_pubKey =
                 localbitcoinplusplus.master_configurations.masterFLOPubKey;
-              const master_flo_addr = bitjs.FLO_TEST.pubkey2address(
+              const master_flo_addr = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                 master_flo_pubKey
               );
               if (typeof master_flo_addr !== "string") return reject(false);
               const SuKBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                "FLO_TEST",
+                localbitcoinplusplus.BASE_BLOCKCHAIN,
                 master_flo_addr
               );
               const SukbOptions = { localNodeId: SuKBucketId };
@@ -12697,10 +12704,10 @@
             pubKey => {
               return new Promise((resolve, reject) => {
                 try {
-                  let flo_id = bitjs.FLO_TEST.pubkey2address(pubKey);
+                  let flo_id = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(pubKey);
                   let kname = `SKBucket_${pubKey}`;
                   const KBucketId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                    "FLO_TEST",
+                    localbitcoinplusplus.BASE_BLOCKCHAIN,
                     flo_id
                   );
                   const kbOptions = { localNodeId: KBucketId };
@@ -12742,7 +12749,7 @@
           KB = KBucket
         ) {
           let closestSupernodePubKey = localbitcoinplusplus.master_configurations.supernodesPubKeys.filter(
-            j => bitjs.FLO_TEST.pubkey2address(j) == data.id
+            j => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(j) == data.id
           );
 
           let kbuck = this.addNewUserNodeInKbucket(
@@ -12777,7 +12784,7 @@
           let userKBId = "";
           let isFloIdUint8 = full_data.id instanceof Uint8Array;
           if (!isFloIdUint8) {
-            userKBId = this.floIdToKbucketId("FLO_TEST", full_data.data.id);
+            userKBId = this.floIdToKbucketId(localbitcoinplusplus.BASE_BLOCKCHAIN, full_data.data.id);
             this.addContact(userKBId, full_data.data, KB);
             full_data.id = userKBId;
           } else {
@@ -12816,14 +12823,14 @@
         },
         restoreKbucket: function(
           flo_addr,
-          blockchain = "FLO_TEST",
+          blockchain = localbitcoinplusplus.BASE_BLOCKCHAIN,
           KB = KBucket
         ) {
           return new Promise((resolve, reject) => {
             readAllDB("kBucketStore").then(dbObject => {
               if (typeof dbObject == "object") {
                 let su_flo_addr_array = localbitcoinplusplus.master_configurations.supernodesPubKeys.map(
-                  pubk => bitjs.FLO_TEST.pubkey2address(pubk)
+                  pubk => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(pubk)
                 );
                 // Prevent supernode to re-added in kbucket
                 dbObject
@@ -12853,7 +12860,7 @@
 
             Object.entries(supernodeSeedsObj).map(seedObj => {
               let kbuck = this.addNewUserNodeInKbucket(
-                "FLO_TEST",
+                localbitcoinplusplus.BASE_BLOCKCHAIN,
                 seedObj[1].kbucketId,
                 { id: seedObj[1].kbucketId },
                 supernodeKBucket
@@ -12963,8 +12970,8 @@
               let isFloIdUint8 = flo_addr instanceof Uint8Array;
               if (!isFloIdUint8) {
                 flo_addr = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                  "FLO_TEST",
-                  flo_addr
+                    localbitcoinplusplus.BASE_BLOCKCHAIN,
+                    flo_addr
                 );
               }
               const closestSupernode = supernodeKBucket.closest(flo_addr, n);
@@ -12988,7 +12995,7 @@
             Object.entries(supernodeSeedsObj).map(seedObj => {
               console.log(seedObj);
               localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
-                "FLO_TEST",
+                localbitcoinplusplus.BASE_BLOCKCHAIN,
                 seedObj[1].kbucketId,
                 { id: seedObj[1].kbucketId }
               );
@@ -13259,7 +13266,7 @@
       reactor.registerEvent("informRightSuperNode");
   
       reactor.addEventListener("fireNodeWelcomeBackEvent", function(evt) {
-        let getFLOId = bitjs.FLO_TEST.pubkey2address(evt.flo_public_key);
+        let getFLOId = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(evt.flo_public_key);
 
         // ReadyState was 3 when this node disconnected. Re-initiate the
         // WS connection to be able to send/receive messages
@@ -14332,7 +14339,7 @@
     
       reactor.addEventListener("informLeftSuperNode", async function(msg_obj={}, n=0) {
         const pubkey = localbitcoinplusplus.wallets.my_local_flo_public_key|| msg_obj.su_pubKey;
-        const usrAddr = localbitcoinplusplus.wallets.my_local_flo_address || bitjs.FLO_TEST.pubkey2address(pubkey);
+        const usrAddr = localbitcoinplusplus.wallets.my_local_flo_address || bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(pubkey);
         if (localbitcoinplusplus.master_configurations.supernodesPubKeys
         .includes(pubkey)) {
             let m = localbitcoinplusplus.master_configurations.MaxBackups;
@@ -14573,7 +14580,7 @@
 
       wallets.prototype = {
         ecparams: EllipticCurve.getSECCurveByName("secp256k1"),
-        generateFloKeys: function(pk, crypto = "FLO_TEST") {
+        generateFloKeys: function(pk, crypto = localbitcoinplusplus.BASE_BLOCKCHAIN) {
           if (crypto == "BTC") {
             privKeyPrefix = 0x80; //mainnet 0x80, testnet: 0xEF
             networkVersion = 0x00; //mainnet 0x23, testnet: 0x6F
@@ -14621,7 +14628,7 @@
             address
           };
         },
-        sign: function(msg, privateKeyHex, crypto = "FLO_TEST") {
+        sign: function(msg, privateKeyHex, crypto = localbitcoinplusplus.BASE_BLOCKCHAIN) {
           if (crypto == "BTC") {
             privKeyPrefix = 0x80; //mainnet 0x80, testnet: 0xEF
             networkVersion = 0x00; //mainnet 0x23, testnet: 0x6F
@@ -14898,7 +14905,7 @@
         },
         getSupernodePublicKeyFromFloId: function(flo_id = "") {
           let su_arr = localbitcoinplusplus.master_configurations.supernodesPubKeys
-            .map(s => [s, bitjs.FLO_TEST.pubkey2address(s)])
+            .map(s => [s, bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(s)])
             .filter(f => f[1] == flo_id);
 
           return su_arr[0];
@@ -16004,7 +16011,7 @@
                               
                               const cashiersPubKeysArray = Object.keys(cashiersList);
                               const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
-                              const cashierFloAddr = bitjs.FLO_TEST.pubkey2address(
+                              const cashierFloAddr = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                                 getAPaymentHandler
                               );
 
@@ -16073,7 +16080,7 @@
                                   try {
                                     // Transfer Token
                                     RM_TRADE.sendTransaction(
-                                      "FLO_TEST",
+                                        localbitcoinplusplus.BASE_BLOCKCHAIN,
                                       localbitcoinplusplus.wallets
                                         .my_local_flo_address,
                                       localbitcoinplusplus.wallets
@@ -17595,7 +17602,7 @@
                                 );
                                 const cashiersPubKeysArray = Object.keys(cashiersList);
                                 const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
-                                const cashierFloAddr = bitjs.FLO_TEST.pubkey2address(
+                                const cashierFloAddr = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                                   getAPaymentHandler
                                 );
 
@@ -17664,7 +17671,7 @@
                                       try {
                                         // Transfer Token
                                         RM_TRADE.sendTransaction(
-                                          "FLO_TEST",
+                                            localbitcoinplusplus.BASE_BLOCKCHAIN,
                                           localbitcoinplusplus.wallets
                                             .my_local_flo_address,
                                           localbitcoinplusplus.wallets
@@ -18490,7 +18497,7 @@
                     
                         /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/ 
                         const cashiers_pub_keys = Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers));
-                        const cashiers_flo_keys = Object.values(cashiers_pub_keys).map(m=>bitjs["FLO_TEST"].pubkey2address(m));
+                        const cashiers_flo_keys = Object.values(cashiers_pub_keys).map(m=>bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(m));
                         if(!cashiers_flo_keys.includes(validate_flo_txid.transactionDetails.vin[0].addr)) return;
 
                         let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
@@ -20297,6 +20304,7 @@
                 throw new Error(error)
             }
         },
+        // https://stackoverflow.com/a/9232092/5348972
         truncateDecimals: (num, digits=8)=> {
             var numS = num.toString(),
                 decPos = numS.indexOf('.'),
@@ -20561,7 +20569,7 @@
                 // Add close supernodes to KBucket
                 wsUri.map(d => {
                   localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
-                    "FLO_TEST",
+                    localbitcoinplusplus.BASE_BLOCKCHAIN,
                     d.trader_flo_address,
                     { id: d.trader_flo_address }
                   );
@@ -20682,7 +20690,7 @@
             // Add close supernodes to KBucket
             wsUri.map(d => {
               localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
-                "FLO_TEST",
+                localbitcoinplusplus.BASE_BLOCKCHAIN,
                 d.trader_flo_address,
                 { id: d.trader_flo_address }
               );
@@ -22025,7 +22033,7 @@
                       ) {
                         let req_data = res_obj.params[0];
                         try {
-                          let flo_address = bitjs.FLO_TEST.pubkey2address(
+                          let flo_address = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                             req_data.trader_flo_pubKey
                           );
 
@@ -22315,7 +22323,7 @@
                           );
 
                           localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
-                            "FLO_TEST",
+                            localbitcoinplusplus.BASE_BLOCKCHAIN,
                             newKbucketObject_idu8,
                             newKbucketObject.data
                           );
@@ -22355,8 +22363,8 @@
                     const kmsg = kBucketQuery.query.msg;
 
                     buckId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                      "FLO_TEST",
-                      kto
+                        localbitcoinplusplus.BASE_BLOCKCHAIN,
+                        kto
                     );
                     const getItem = KBucket.get(buckId);
                     const getData = getItem.data;
@@ -22373,7 +22381,7 @@
                     const req_params = res_obj.params[0];
                     if (typeof req_params.requesters_pub_key !== "string")
                       return;
-                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(
+                    let flo_addr_for_pubkey = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                       req_params.requesters_pub_key
                     );
                     if (typeof flo_addr_for_pubkey !== "string") return;
@@ -22406,7 +22414,7 @@
                     const req_params = res_obj.params[0];
                     if (typeof req_params.requesters_pub_key !== "string")
                       return;
-                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(
+                    let flo_addr_for_pubkey = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                       req_params.requesters_pub_key
                     );
                     if (typeof flo_addr_for_pubkey !== "string") return;
@@ -24044,7 +24052,7 @@
                       ) {
                         let req_data = res_obj.params[0];
                         try {
-                          let flo_address = bitjs.FLO_TEST.pubkey2address(
+                          let flo_address = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                             req_data.trader_flo_pubKey
                           );
 
@@ -24421,7 +24429,7 @@
                           );
 
                           localbitcoinplusplus.kademlia.addNewUserNodeInKbucket(
-                            "FLO_TEST",
+                            localbitcoinplusplus.BASE_BLOCKCHAIN,
                             newKbucketObject_idu8,
                             newKbucketObject.data,
                             primaryKBOfTheUser
@@ -24462,8 +24470,8 @@
                     const kmsg = kBucketQuery.query.msg;
 
                     buckId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                      "FLO_TEST",
-                      kto
+                        localbitcoinplusplus.BASE_BLOCKCHAIN,
+                        kto
                     );
                     const getItem = KBucket.get(buckId);
                     const getData = getItem.data;
@@ -24480,7 +24488,7 @@
                     const req_params = res_obj.params[0];
                     if (typeof req_params.requesters_pub_key !== "string")
                       return;
-                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(
+                    let flo_addr_for_pubkey = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                       req_params.requesters_pub_key
                     );
                     if (typeof flo_addr_for_pubkey !== "string") return;
@@ -24513,7 +24521,7 @@
                     const req_params = res_obj.params[0];
                     if (typeof req_params.requesters_pub_key !== "string")
                       return;
-                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(
+                    let flo_addr_for_pubkey = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                       req_params.requesters_pub_key
                     );
                     if (typeof flo_addr_for_pubkey !== "string") return;
@@ -25952,7 +25960,7 @@
                     const req_params = res_obj.params[0];
                     if (typeof req_params.requesters_pub_key !== "string")
                       return;
-                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(
+                    let flo_addr_for_pubkey = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                       req_params.requesters_pub_key
                     );
                     if (typeof flo_addr_for_pubkey !== "string") return;
@@ -25984,7 +25992,7 @@
                     const req_params = res_obj.params[0];
                     if (typeof req_params.requesters_pub_key !== "string")
                       return;
-                    let flo_addr_for_pubkey = bitjs.FLO_TEST.pubkey2address(
+                    let flo_addr_for_pubkey = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                       req_params.requesters_pub_key
                     );
                     if (typeof flo_addr_for_pubkey !== "string") return;
@@ -26016,7 +26024,7 @@
                       ) {
                         let req_data = res_obj.params[0];
                         try {
-                          let flo_address = bitjs.FLO_TEST.pubkey2address(
+                          let flo_address = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                             req_data.trader_flo_pubKey
                           );
 
@@ -26084,7 +26092,7 @@
                       ) {
                         let req_data = res_obj.params[0];
                         try {
-                          let flo_address = bitjs.FLO_TEST.pubkey2address(
+                          let flo_address = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
                             req_data.trader_flo_pubKey
                           );
 
@@ -27435,7 +27443,7 @@
 
             if (request_array.includes(msgObj.method)) return resolve(true);
 
-            const getFloId = bitjs.FLO_TEST.pubkey2address(msgObj.nodePubKey);
+            const getFloId = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(msgObj.nodePubKey);
 
             // Check if the public key belongs to real sender
             if (getFloId !== msgObj.globalParams.senderFloId) {
@@ -29010,7 +29018,7 @@
             // restore k-bucket
             const dbObj = await localbitcoinplusplus.kademlia.restoreKbucket(
               MY_LOCAL_FLO_ADDRESS,
-              "FLO_TEST",
+              localbitcoinplusplus.BASE_BLOCKCHAIN,
               KBucket
             );
 
@@ -29036,13 +29044,13 @@
               )
             ) {
               let kbuck = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                "FLO_TEST",
+                localbitcoinplusplus.BASE_BLOCKCHAIN,
                 MY_LOCAL_FLO_ADDRESS
               );
               readDB("kBucketStore", kbuck).then(async userKBData => {
                 if (typeof userKBData == "undefined") {
                   userKBData = await localbitcoinplusplus.kademlia.addNewUserNodeInKbucketAndDB(
-                    "FLO_TEST",
+                    localbitcoinplusplus.BASE_BLOCKCHAIN,
                     MY_LOCAL_FLO_ADDRESS,
                     { id: MY_LOCAL_FLO_ADDRESS },
                     (KB = KBucket)
