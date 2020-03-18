@@ -14081,10 +14081,10 @@
                 const myClosestSusList = myClosestSus.map(
                     m => m.trader_flo_address
                 );
-                if (
-                    myClosestSusList.indexOf(conn_su_flo_id) >
-                    localbitcoinplusplus.master_configurations.MaxBackups
-                ) {
+                // if (
+                //     myClosestSusList.indexOf(conn_su_flo_id) >
+                //     localbitcoinplusplus.master_configurations.MaxBackups
+                // ) {
                     // Ask conn_su_flo_id to ask you your DB data
                     const RM_RPC = new localbitcoinplusplus.rpc();
                     RM_RPC.send_rpc.call(this, "request_me_db_data", {
@@ -14094,7 +14094,7 @@
                         db_inst: localbitcoinplusplus.wallets.my_local_flo_address
                     })
                         .then(req => doSend(req));
-                }
+                //}
 
                 // Check if the number of backup ws connections satisfy max baxkup master
                 // config condition. If false, request ws connection to next backup supernode.
@@ -18526,8 +18526,6 @@
                         } else {
                             _removeinDB("cash_deposits", params.deposit_id);    
                         }
-
-                        return;
                                             
                         // Broadcast deposit and cash balances datastore data to backups
                         let update_cash_balance_obj = {
@@ -20299,6 +20297,15 @@
                 throw new Error(error)
             }
         },
+        truncateDecimals: (num, digits=8)=> {
+            var numS = num.toString(),
+                decPos = numS.indexOf('.'),
+                substrLength = decPos == -1 ? numS.length : 1 + decPos + digits,
+                trimmedResult = numS.substr(0, substrLength),
+                finalResult = isNaN(trimmedResult) ? 0 : trimmedResult;
+
+            return Number(finalResult);
+        }
       };
     </script>
 
@@ -21717,28 +21724,28 @@
 
                         // Update balances in clients DB
                         try {
-                          updateinDB(
+                          let p1 = updateinDB(
                             "cash_balances",
                             trade_balance_res.buyer_cash_data,
                             trade_balance_res.trade_infos.buyer_flo_id,
                             true,
                             false
                           );
-                          updateinDB(
+                          let p2 = updateinDB(
                             "cash_balances",
                             trade_balance_res.seller_cash_data,
                             trade_balance_res.trade_infos.seller_flo_id,
                             true,
                             false
                           );
-                          updateinDB(
+                          let p3 = updateinDB(
                             "crypto_balances",
                             trade_balance_res.buyer_btc_data,
                             trade_balance_res.trade_infos.buyer_flo_id,
                             true,
                             false
                           );
-                          updateinDB(
+                          let p4 = updateinDB(
                             "crypto_balances",
                             trade_balance_res.seller_btc_data,
                             trade_balance_res.trade_infos.seller_flo_id,
@@ -21746,10 +21753,14 @@
                             false
                           );
 
-                          // Update balances
-                          displayBalances(
-                            localbitcoinplusplus.wallets.my_local_flo_address
-                          );
+                          Promise.all([p1,p2,p3,p4]).then(()=>{
+                              // Update balances
+                                displayBalances(
+                                    localbitcoinplusplus.wallets.my_local_flo_address
+                                );
+                          })
+                          .catch(e => {throw new Error(e)});
+                          
                         } catch (error) {
                           callback(false);
                           throw new Error(error);
@@ -21987,12 +21998,13 @@
                         withdraw_success_response.withdrawer_cash_data.id,
                         false, 
                         false
-                      );
+                      ).then(()=>{
+                        // Update balances
+                        displayBalances(
+                            localbitcoinplusplus.wallets.my_local_flo_address
+                        );
+                      })
 
-                      // Update balances
-                      displayBalances(
-                        localbitcoinplusplus.wallets.my_local_flo_address
-                      );
                       return true;
                     }
                     return false;
@@ -22209,17 +22221,18 @@
                         updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject.id,
                         false,
                         false
-                      );
-                      if (
-                        localbitcoinplusplus.wallets.my_local_flo_address ==
-                        updateUserCryptoBalanceResponseObject.trader_flo_address
-                      ) {
-                        displayBalances(
-                          updateUserCryptoBalanceResponseObject.trader_flo_address
-                        );
-                        showMessage(`INFO: Your Crypto balance is updated.`);
-                      }
-                      return true;
+                      ).then(()=>{
+                        if (
+                            localbitcoinplusplus.wallets.my_local_flo_address ==
+                            updateUserCryptoBalanceResponseObject.trader_flo_address
+                        ) {
+                            displayBalances(
+                            updateUserCryptoBalanceResponseObject.trader_flo_address
+                            );
+                            showMessage(`INFO: Your Crypto balance is updated.`);
+                        }
+                        return true;
+                      });
                     } else {
                       showMessage(
                         `WARNING: Failed to update balance in your DB. Please refresh.`
@@ -22253,17 +22266,18 @@
                         updateUserDepositsResponseObject.updatedTraderDepositObject.id,
                         false,
                         false
-                      );
-                      if (
-                        localbitcoinplusplus.wallets.my_local_flo_address ==
-                        updateUserDepositsResponseObject.trader_flo_address
-                      ) {
-                        displayBalances(
-                          updateUserDepositsResponseObject.trader_flo_address
-                        );
-                        showMessage(`INFO: Your balance is updated.`);
-                      }
-                      return true;
+                      ).then(()=>{
+                        if (
+                            localbitcoinplusplus.wallets.my_local_flo_address ==
+                            updateUserDepositsResponseObject.trader_flo_address
+                        ) {
+                            displayBalances(
+                            updateUserDepositsResponseObject.trader_flo_address
+                            );
+                            showMessage(`INFO: Your balance is updated.`);
+                        }
+                        return true;
+                      })
                     } else {
                       showMessage(
                         `WARNING: Failed to update balance in your DB. Please refresh.`
@@ -23675,28 +23689,28 @@
 
                       // Update balances in clients DB
                       try {
-                        updateinDB(
+                        let pr1 = updateinDB(
                           "cash_balances",
                           trade_balance_res.buyer_cash_data,
                           trade_balance_res.trade_infos.buyer_flo_id,
                           true,
                           false
                         );
-                        updateinDB(
+                        let pr2 = updateinDB(
                           "cash_balances",
                           trade_balance_res.seller_cash_data,
                           trade_balance_res.trade_infos.seller_flo_id,
                           true,
                           false
                         );
-                        updateinDB(
+                        let pr3 = updateinDB(
                           "crypto_balances",
                           trade_balance_res.buyer_btc_data,
                           trade_balance_res.trade_infos.buyer_flo_id,
                           true,
                           false
                         );
-                        updateinDB(
+                        let pr4 = updateinDB(
                           "crypto_balances",
                           trade_balance_res.seller_btc_data,
                           trade_balance_res.trade_infos.seller_flo_id,
@@ -23704,10 +23718,14 @@
                           false
                         );
 
-                        // Update balances
-                        displayBalances(
-                          localbitcoinplusplus.wallets.my_local_flo_address
-                        );
+                        Promise.all([pr1,pr2,pr3,pr4]).then(()=>{
+                              // Update balances
+                                displayBalances(
+                                    localbitcoinplusplus.wallets.my_local_flo_address
+                                );
+                          })
+                          .catch(e => {throw new Error(e)});
+
                       } catch (error) {
                         callback(false);
                         throw new Error(error);
@@ -24000,12 +24018,13 @@
                         withdraw_success_response.withdrawer_cash_data.id,
                         false, 
                         false
-                      );
-                      // Update balances
-                      displayBalances(
-                        localbitcoinplusplus.wallets.my_local_flo_address
-                      );
-                      return true;
+                      ).then(()=>{
+                        // Update balances
+                        displayBalances(
+                            localbitcoinplusplus.wallets.my_local_flo_address
+                        );
+                        return true;
+                      })
                     }
                     return false;
                   }
@@ -24290,17 +24309,18 @@
                         updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject.id,
                         false,
                         false
-                      );
-                      if (
-                        localbitcoinplusplus.wallets.my_local_flo_address ==
-                        updateUserCryptoBalanceResponseObject.trader_flo_address
-                      ) {
-                        displayBalances(
-                          updateUserCryptoBalanceResponseObject.trader_flo_address
-                        );
-                        showMessage(`INFO: Your balance is updated.`);
-                      }
-                      return true;
+                      ).then(()=>{
+                        if (
+                            localbitcoinplusplus.wallets.my_local_flo_address ==
+                            updateUserCryptoBalanceResponseObject.trader_flo_address
+                        ) {
+                            displayBalances(
+                            updateUserCryptoBalanceResponseObject.trader_flo_address
+                            );
+                            showMessage(`INFO: Your balance is updated.`);
+                        }
+                        return true;
+                      })
                     } else {
                       showMessage(
                         `WARNING: Failed to update balance in your DB. Please refresh.`
@@ -24335,17 +24355,18 @@
                         updateUserDepositsResponseObject.updatedTraderDepositObject.id,
                         false,
                         false
-                      );
-                      if (
-                        localbitcoinplusplus.wallets.my_local_flo_address ==
-                        updateUserDepositsResponseObject.trader_flo_address
-                      ) {
-                        displayBalances(
-                          updateUserDepositsResponseObject.trader_flo_address
-                        );
-                        showMessage(`INFO: Your balance is updated.`);
-                      }
-                      return true;
+                      ).then(()=>{
+                        if (
+                            localbitcoinplusplus.wallets.my_local_flo_address ==
+                            updateUserDepositsResponseObject.trader_flo_address
+                        ) {
+                            displayBalances(
+                            updateUserDepositsResponseObject.trader_flo_address
+                            );
+                            showMessage(`INFO: Your balance is updated.`);
+                        }
+                        return true;
+                      })
                     } else {
                       showMessage(
                         `WARNING: Failed to update balance in your DB. Please refresh.`
@@ -25723,28 +25744,28 @@
 
                             // Update balances in clients DB
                             try {
-                              backup_server_db_instance.backup_updateinDB(
+                              let b1 = backup_server_db_instance.backup_updateinDB(
                                 "cash_balances",
                                 trade_balance_res.buyer_cash_data,
                                 trade_balance_res.trade_infos.buyer_flo_id,
                                 true,
                                 false
                               );
-                              backup_server_db_instance.backup_updateinDB(
+                              let b2 = backup_server_db_instance.backup_updateinDB(
                                 "cash_balances",
                                 trade_balance_res.seller_cash_data,
                                 trade_balance_res.trade_infos.seller_flo_id,
                                 true,
                                 false
                               );
-                              backup_server_db_instance.backup_updateinDB(
+                              let b3 = backup_server_db_instance.backup_updateinDB(
                                 "crypto_balances",
                                 trade_balance_res.buyer_btc_data,
                                 trade_balance_res.trade_infos.buyer_flo_id,
                                 true,
                                 false
                               );
-                              backup_server_db_instance.backup_updateinDB(
+                              let b4 = backup_server_db_instance.backup_updateinDB(
                                 "crypto_balances",
                                 trade_balance_res.seller_btc_data,
                                 trade_balance_res.trade_infos.seller_flo_id,
@@ -25752,11 +25773,14 @@
                                 false
                               );
 
+                              Promise.all([b1,b2,b3,b4]).then(()=>{
                               // Update balances
-                              displayBalances(
-                                localbitcoinplusplus.wallets
-                                  .my_local_flo_address
-                              );
+                                displayBalances(
+                                    localbitcoinplusplus.wallets.my_local_flo_address
+                                );
+                              })
+                                .catch(e => {throw new Error(e)});
+
                             } catch (error) {
                               callback(false);
                               throw new Error(error);
@@ -26280,18 +26304,18 @@
                               updateUserCryptoBalanceResponseObject.updatedBTCBalanceObject.id,
                               true,
                               false
-                            );
-                            if (
-                              localbitcoinplusplus.wallets
-                                .my_local_flo_address ==
-                              updateUserCryptoBalanceResponseObject.trader_flo_address
-                            ) {
-                              displayBalances(
+                            ).then(()=>{
+                                if (
+                                localbitcoinplusplus.wallets.my_local_flo_address ==
                                 updateUserCryptoBalanceResponseObject.trader_flo_address
-                              );
-                              showMessage(`INFO: Your balance is updated.`);
-                            }
-                            return true;
+                                ) {
+                                displayBalances(
+                                    updateUserCryptoBalanceResponseObject.trader_flo_address
+                                );
+                                showMessage(`INFO: Your balance is updated.`);
+                                }
+                                return true;
+                            })
                           } else {
                             showMessage(
                               `WARNING: Failed to update balance in your DB. Please refresh.`
@@ -26349,17 +26373,18 @@
                             updateUserDepositsResponseObject.updatedTraderDepositObject.id,
                             true,
                             false
-                          );
-                          if (
-                            localbitcoinplusplus.wallets.my_local_flo_address ==
-                            updateUserDepositsResponseObject.trader_flo_address
-                          ) {
-                            displayBalances(
-                              updateUserDepositsResponseObject.trader_flo_address
-                            );
-                            showMessage(`INFO: Your balance is updated.`);
-                          }
-                          return true;
+                          ).then(()=>{
+                            if (
+                                localbitcoinplusplus.wallets.my_local_flo_address ==
+                                updateUserDepositsResponseObject.trader_flo_address
+                            ) {
+                                displayBalances(
+                                updateUserDepositsResponseObject.trader_flo_address
+                                );
+                                showMessage(`INFO: Your balance is updated.`);
+                            }
+                            return true;
+                          })
                         } else {
                           showMessage(
                             `WARNING: Failed to update balance in your DB. Please refresh.`
@@ -29267,10 +29292,8 @@
             all_balances.map(user_balance_data => {
               let code =
                 user_balance_data.crypto_currency || user_balance_data.currency;
-              let value =
-                user_balance_data.crypto_balance ||
-                user_balance_data.cash_balance;
-              t += `<span>${code}:${value}</span> &nbsp;`;
+              let value = user_balance_data.crypto_balance || user_balance_data.cash_balance;
+              t += `<span>${code}:${helper_functions.truncateDecimals(value)}</span> &nbsp;`;
             });
             balances_div.innerHTML = t;
           }
