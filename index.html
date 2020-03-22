@@ -12694,6 +12694,43 @@
           }
         },
 
+        refresh_live_status_of_supernodes: async function() {
+            try {
+                promises = [];
+                for (const mcs in localbitcoinplusplus.myClosestSupernodes) {
+                    let wsUri = `ws://${localbitcoinplusplus.myClosestSupernodes[mcs].ip}`;
+                    promises.push(new Promise((resolve, reject) => {
+                        temp_ws = new WebSocket(wsUri);
+                        temp_ws.onopen = async function(evt) {
+                            resolve(`${wsUri}->1`);
+                            await localbitcoinplusplus.actions.delay(5000);
+                            temp_ws.close();
+                        };
+                        temp_ws.onclose = function(evt) {
+                            if(!evt.wasClean) {
+                                resolve(`${wsUri}->0`);
+                            }
+                        };
+                    }));
+                }
+
+                let supernodesCurrentStatus = await Promise.all(promises)
+                
+                const switchMyWS = new backupSupernodesWebSocketObject();
+                for(currentwsurl of supernodesCurrentStatus) {
+                    let split_response = currentwsurl.split('->');
+                    let wsurl = split_response[0];
+                    let status = split_response[1]==1 ? true:false;
+                    await switchMyWS.updateSupernodeAvailabilityStatus(
+                        wsurl,
+                        status
+                    );
+                }
+            } catch(e) {
+                throw new Error(e)
+            }
+        },
+
       };
 
       /*Modified functions from https://github.com/tristanls/k-bucket */
@@ -13624,25 +13661,42 @@
         }
       });
 
-      reactor.addEventListener("get_node_status_request", function() {
-        readAllDB("myClosestSupernodes").then(nearestSupernodeAddresslist => {
-          const RM_RPC = new localbitcoinplusplus.rpc();
-          nearestSupernodeAddresslist.map(f => {
-            if (
-              f.trader_flo_address !==
-              localbitcoinplusplus.wallets.my_local_flo_address
-            ) {
-              RM_RPC.send_rpc
-                .call(this, "is_node_alive_request", {
-                  JOB: "ARE_YOU_ALIVE",
-                  trader_flo_address:
-                    localbitcoinplusplus.wallets.my_local_flo_address,
-                  receiver_flo_address: f.trader_flo_address
-                })
-                .then(req => doSend(req));
-            }
-          });
-        });
+    //   reactor.addEventListener("get_node_status_request", function() {
+    //     readAllDB("myClosestSupernodes").then(nearestSupernodeAddresslist => {
+    //       const RM_RPC = new localbitcoinplusplus.rpc();
+    //       nearestSupernodeAddresslist.map(f => {
+    //         if (
+    //           f.trader_flo_address !==
+    //           localbitcoinplusplus.wallets.my_local_flo_address
+    //         ) {
+    //           RM_RPC.send_rpc
+    //             .call(this, "is_node_alive_request", {
+    //               JOB: "ARE_YOU_ALIVE",
+    //               trader_flo_address:
+    //                 localbitcoinplusplus.wallets.my_local_flo_address,
+    //               receiver_flo_address: f.trader_flo_address
+    //             })
+    //             .then(req => doSend(req));
+    //         }
+    //       });
+    //     });
+    //   });
+
+    reactor.addEventListener("get_node_status_request", function() {
+
+        const msg_obj = {};
+            msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+            msg_obj.event = 'refresh_all_supernodes_status';
+            msg_obj.data = {request: "RESOLVE_BACKUP_WS_CONNS"};
+            msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
+            msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+            msg_obj.hash = Crypto.SHA256(msg_obj);
+            msg_obj.sign = RM_WALLET.sign(
+                msg_obj.hash,
+                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+        );
+
+        reactor.dispatchEvent('informAllSuperNode', msg_obj);
       });
 
       reactor.addEventListener("sync_primary_and_backup_db", async function() {
@@ -13837,7 +13891,8 @@
                 }
             }
             // Only if a nearer Supernode than any connected Supernode can pass through
-            if(reqFloIdIndex>=highestIndexOfConnectedSupernode) return;
+            if(reqFloIdIndex>=highestIndexOfConnectedSupernode
+            && currenctBackupWsList.length>=localbitcoinplusplus.master_configurations.MaxBackups) return;
         }
 
         if (
@@ -13888,6 +13943,10 @@
           return;
 
         try {
+
+          // Refresh Supernodes live status
+          await localbitcoinplusplus.actions.refresh_live_status_of_supernodes();   
+
           // Get list of neighbour supernodes
           const myClosestSups = await readAllDB("myClosestSupernodes");
           const myClosestSupsFloList = myClosestSups.map(
@@ -14987,7 +15046,8 @@
               const all_receivers_methods = [
                 "do_you_have_latest_data_for_this_supernode",
                 "sync_backup_supernode_from_backup_supernode",
-                "sync_backup_supernode_from_backup_supernode_response"
+                "sync_backup_supernode_from_backup_supernode_response",
+                "get_node_status_request"
               ];
 
               if (
@@ -21170,6 +21230,7 @@
 
                 if(isValidMsg!==true) return;
                 
+                debugger;
                 switch (res_obj.event) {
                     case "supernode_went_down":
                         // This should be run by only 1 Supernode who is the reciever
@@ -21236,6 +21297,9 @@
                         !== res_obj.receiverFloAddress) return;
                         reactor.dispatchEvent('resolve_backup_ws_connections');
                         break;
+
+                    case "refresh_all_supernodes_status":
+                        reactor.dispatchEvent('resolve_backup_ws_connections');
                 
                     default:
                         break;
