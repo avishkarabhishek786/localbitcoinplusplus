@@ -11544,8 +11544,9 @@
         enumerable: false
       });
 
-      const ENVR = 'TEST'; // LIVE, TEST  
-      const WS = 'ws';
+      const ENVR = 'LIVE'; // LIVE, TEST  
+      const WS = 'wss';
+      const DBName = "localbitcoinDBRemote";
 
       if(ENVR === 'LIVE') {
 
@@ -12119,26 +12120,7 @@
 
       localbitcoinplusplus.actions = {
         parse_flo_comments: async function(callback) {
-            text = `masterFLOPubKey=03EA5E2CAB18DA585400D6EC569438D415FAF200528E05D0E2B9BEAA2B5C3DCA90
-            #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
-            #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
-            #!#MaxBackups=1
-            #!#miners_fee={"btc":0.0003, "flo":0.0003}
-            #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
-            03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
-            03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
-            026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
-            #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
-            #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
-            "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
-            #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
-            "ranchimall2":{"ip":"127.0.0.1:9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
-            "ranchimall3":{"ip":"127.0.0.1:9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
-            "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
-            "ranchimall5":{"ip":"127.0.0.1:9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
-            "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
-            return callback(text);
-           
+                       
            let master_data = '';
            
            if(ENVR==='LIVE') {
@@ -12698,12 +12680,13 @@
             try {
                 promises = [];
                 for (const mcs in localbitcoinplusplus.myClosestSupernodes) {
-                    let wsUri = `ws://${localbitcoinplusplus.myClosestSupernodes[mcs].ip}`;
+                    if(mcs===localbitcoinplusplus.wallets.my_local_flo_address) continue;
+                    let wsUri = `${WS}://${localbitcoinplusplus.myClosestSupernodes[mcs].ip}`;
                     promises.push(new Promise((resolve, reject) => {
                         temp_ws = new WebSocket(wsUri);
                         temp_ws.onopen = async function(evt) {
                             resolve(`${wsUri}->1`);
-                            await localbitcoinplusplus.actions.delay(5000);
+                            await localbitcoinplusplus.actions.delay(10000);
                             temp_ws.close();
                         };
                         temp_ws.onclose = function(evt) {
@@ -13661,29 +13644,9 @@
         }
       });
 
-    //   reactor.addEventListener("get_node_status_request", function() {
-    //     readAllDB("myClosestSupernodes").then(nearestSupernodeAddresslist => {
-    //       const RM_RPC = new localbitcoinplusplus.rpc();
-    //       nearestSupernodeAddresslist.map(f => {
-    //         if (
-    //           f.trader_flo_address !==
-    //           localbitcoinplusplus.wallets.my_local_flo_address
-    //         ) {
-    //           RM_RPC.send_rpc
-    //             .call(this, "is_node_alive_request", {
-    //               JOB: "ARE_YOU_ALIVE",
-    //               trader_flo_address:
-    //                 localbitcoinplusplus.wallets.my_local_flo_address,
-    //               receiver_flo_address: f.trader_flo_address
-    //             })
-    //             .then(req => doSend(req));
-    //         }
-    //       });
-    //     });
-    //   });
-
     reactor.addEventListener("get_node_status_request", function() {
 
+        const RM_WALLET = new localbitcoinplusplus.wallets;
         const msg_obj = {};
             msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
             msg_obj.event = 'refresh_all_supernodes_status';
@@ -14292,10 +14255,9 @@
             for(let sn in localbitcoinplusplus.myClosestSupernodes) {
                 (function() {
                     if((sn!==localbitcoinplusplus.wallets.my_local_flo_address
-                    || sn!==msg_obj.subject_flo_id)
+                    && sn!==msg_obj.subject_flo_id)
                     && websocket.readyState===1) {
 
-                        //const url = `ws://${localbitcoinplusplus.myClosestSupernodes[sn].ip}:${localbitcoinplusplus.myClosestSupernodes[sn].port}`;
                         const url = `${WS}://${localbitcoinplusplus.myClosestSupernodes[sn].ip}`;
                         
                         tempWS[sn] = new WebSocket(url);
@@ -19361,19 +19323,19 @@
           return new Promise((resolve, reject) => {
             helper_functions
               .ajaxGet(
-                "http://apilayer.net/api/live?access_key=3abc51aa522420e4e185ac22733b0f30"
+                "https://ranchimallflo.duckdns.org/api/v1.0/getPrices"
               )
               .then(res => {
                 if (
                   typeof res == "object" &&
-                  typeof res.quotes.USDINR == "number"
+                  typeof res.prices.USDINR == "number"
                 ) {
                   Object.defineProperty(
                     localbitcoinplusplus.trade,
                     `current_USD_price_in_${currency_code}`,
                     {
                       value: {
-                        rate: res.quotes.USDINR,
+                        rate: res.prices.USDINR,
                         timestamp: +new Date()
                       },
                       writable: true,
@@ -19395,6 +19357,11 @@
         },
         // This function should be run periodically maybe through cron job
         update_fiat_to_crypto_exchange_rate(crypto_code = "", fiat = "") {
+            if(crypto_code=="BTC_TEST") {
+                crypto_code = "BTC";
+            } else if(crypto_code == "FLO_TEST") {
+                crypto_code = "FLO";
+            } 
           this.fiat_to_crypto_exchange_rate_from_API(crypto_code, fiat)
             .then(new_price => {
               console.log(new_price);
@@ -19444,21 +19411,19 @@
         },
         fiat_to_crypto_exchange_rate_from_API(crypto_code = "", fiat = "") {
           return new Promise((resolve, reject) => {
-            if (crypto_code == "BTC") {
-              helper_functions
-                .ajaxGet(`https://api.coindesk.com/v1/bpi/currentprice.json`)
+            if(crypto_code=="BTC_TEST") {
+                crypto_code = "BTC";
+            } else if(crypto_code == "FLO_TEST") {
+                crypto_code = "FLO";
+            } 
+            helper_functions
+                .ajaxGet(`https://ranchimallflo.duckdns.org/api/v1.0/getPrices`)
                 .then(async res => {
                   if (
                     typeof res == "object" &&
-                    typeof res.bpi.USD.rate_float == "number"
+                    typeof res.prices == "object"
                   ) {
-                    let new_price = res.bpi.USD.rate_float;
-                    if (fiat == "INR") {
-                      let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(
-                        fiat
-                      );
-                      new_price = Number(new_price * usd_to_fiat_price);
-                    }
+                    let new_price = res.prices[`${crypto_code}${fiat}`];
                     resolve(new_price);
                     return;
                   } else {
@@ -19469,44 +19434,16 @@
                   console.error(e);
                   reject(false);
                 });
-            } else if (crypto_code == "FLO") {
-              helper_functions
-                .ajaxGet(
-                  "https://min-api.cryptocompare.com/data/histoday?fsym=FLO&tsym=USD&limit=1&aggregate=3&e=CCCAGG"
-                )
-                .then(async res => {
-                  if (
-                    typeof res == "object" &&
-                    typeof res.Data[0].close == "number"
-                  ) {
-                    let new_price = res.Data[0].close;
-                    if (fiat == "INR") {
-                      let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(
-                        fiat
-                      );
-                      new_price = Number(new_price * usd_to_fiat_price);
-                    }
-                    resolve(new_price);
-                    return;
-                  } else {
-                    let new_price = 0.08;
-                    if (fiat == "INR") {
-                      let usd_to_fiat_price = await this.usd_to_fiat_exchange_rate(
-                        fiat
-                      );
-                      new_price = Number(new_price * usd_to_fiat_price);
-                    }
-                    resolve(new_price);
-                    return;
-                  }
-                  reject(false);
-                });
-            }
           });
         },
         fiat_to_crypto_exchange_rate(crypto_code = "", fiat = "") {
           return new Promise((resolve, reject) => {
             try {
+                if(crypto_code=="BTC_TEST") {
+                    crypto_code = "BTC";
+                } else if(crypto_code == "FLO_TEST") {
+                    crypto_code = "FLO";
+                } 
               let id = `${crypto_code}_${fiat}`;
               readDB("crypto_fiat_rates", id).then(res => {
                 if (typeof res == "object") {
@@ -21230,7 +21167,6 @@
 
                 if(isValidMsg!==true) return;
                 
-                debugger;
                 switch (res_obj.event) {
                     case "supernode_went_down":
                         // This should be run by only 1 Supernode who is the reciever
@@ -27740,7 +27676,6 @@
       };
 
       var db;
-      const DBName = "localbitcoinDB";
       const request = window.indexedDB.open(DBName, 2);
 
       request.onerror = function(event) {
