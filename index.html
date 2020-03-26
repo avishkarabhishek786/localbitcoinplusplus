@@ -580,8 +580,7 @@
       </div>
       <div class="center-div">
         <span>
-          Lorem ipsum dolor sit amet, consectetur adipisicing elit. Aliquam,
-          ipsum recusandae voluptatibus mollitia quidem.
+          
         </span>
       </div>
     </div>
@@ -11544,9 +11543,9 @@
         enumerable: false
       });
 
-      const ENVR = 'LIVE'; // LIVE, TEST  
-      const WS = 'wss';
-      const DBName = "localbitcoinDBRemote";
+      const ENVR = 'TEST'; // LIVE, TEST  
+      const WS = 'ws';
+      const DBName = "localbitcoinDB";
 
       if(ENVR === 'LIVE') {
 
@@ -12120,7 +12119,26 @@
 
       localbitcoinplusplus.actions = {
         parse_flo_comments: async function(callback) {
-                       
+            text = `masterFLOPubKey=03EA5E2CAB18DA585400D6EC569438D415FAF200528E05D0E2B9BEAA2B5C3DCA90
+            #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
+            #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
+            #!#MaxBackups=1
+            #!#miners_fee={"btc":0.0003, "flo":0.0003}
+            #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
+            03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
+            03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
+            026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
+            #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
+            #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
+            "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
+            #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
+            "ranchimall2":{"ip":"127.0.0.1:9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
+            "ranchimall3":{"ip":"127.0.0.1:9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
+            "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
+            "ranchimall5":{"ip":"127.0.0.1:9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
+            "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
+            return callback(text);
+           
            let master_data = '';
            
            if(ENVR==='LIVE') {
@@ -12954,14 +12972,10 @@
         },
         getSupernodeSeed: function(flo_addr) {
           return new Promise(async (resolve, reject) => {
-            let nearestSupernodeAddresslist = await readAllDB(
-              "myClosestSupernodes"
-            );
-            if (nearestSupernodeAddresslist.length < 1) {
-              nearestSupernodeAddresslist = await this.updateClosestSupernodeSeeds(
+            nearestSupernodeAddresslist = await this.updateClosestSupernodeSeeds(
                 flo_addr
-              );
-            }
+            );
+        
             resolve(nearestSupernodeAddresslist);
           });
         },
@@ -13320,6 +13334,7 @@
       reactor.registerEvent("informAllSuperNode");
       reactor.registerEvent("informLeftSuperNode");
       reactor.registerEvent("informRightSuperNode");
+      reactor.registerEvent("message_for_user");
   
       reactor.addEventListener("fireNodeWelcomeBackEvent", function(evt) {
         let getFLOId = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(evt.flo_public_key);
@@ -13644,7 +13659,7 @@
         }
       });
 
-    reactor.addEventListener("get_node_status_request", function() {
+      reactor.addEventListener("get_node_status_request", function() {
 
         const RM_WALLET = new localbitcoinplusplus.wallets;
         const msg_obj = {};
@@ -14276,6 +14291,22 @@
         }
       });  
       
+      /* Send user a message */   
+      reactor.addEventListener("message_for_user", function(response={}) {
+        
+        if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return;
+
+        const RM_RPC = new localbitcoinplusplus.rpc();
+        RM_RPC.send_rpc
+            .call(this, "supernode_message", {
+                trader_flo_address: response.user_flo_addr,
+                receiver_flo_address: response.user_flo_addr,
+                server_msg: response.msg
+            })
+            .then(server_response => doSend(server_response));
+      });
+
       async function getPrevSupernode(flo_id='') {
         try {
             let prevSupernodeObj = null;
@@ -15268,12 +15299,11 @@
                     "withdraw_btc",
                     "crypto_balances",
                     "cash_balances",
-                    "userPublicData",
                     "buyOrders",
                     "sellOrders"
                   ];
                   localbitcoinplusplus.actions
-                    .get_sharable_db_data(tableArray)
+                    .get_sharable_db_data_for_single_user(tableArray)
                     .then(function(su_db_data) {
                       if (typeof su_db_data == "object") {
                         su_db_data.trader_flo_address =
@@ -15378,12 +15408,20 @@
                         );
                       } else {
                         err_msg = `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
-                        showMessage(err_msg);
+                        err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                      reactor.dispatchEvent('message_for_user', err_response);
                         throw new Error(err_msg);
                       }
                     } else {
                       err_msg = "Invalid trade margin figures.";
-                      showMessage(err_msg);
+                      err_response = {
+                        user_flo_addr: params.trader_flo_address,
+                        msg: err_msg
+                      }
+                      reactor.dispatchEvent('message_for_user', err_response);
                       throw new Error(err_msg);
                     }
                   }
@@ -15412,23 +15450,30 @@
                         params.currency,
                         params.product
                       );
-                      // If margin is > 2% discontinue the trade
-                      const diffPercent = Math.floor(((eqCrypto- trade_margin.remaining_crypto_credit)
-                                                /trade_margin.remaining_crypto_credit)*100);
-                      console.log(trade_margin.remaining_crypto_credit, eqCrypto);
-                      console.info(diffPercent);
-                     
-                      if(diffPercent<=2) {
-                        eqCrypto = trade_margin.remaining_crypto_credit;
-                      }  else {
-                        console.info(`Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}`);  
-                        return;
-                      }
 
                       if (
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
                       ) {
+
+                        // If margin is > 2% discontinue the trade
+                        const diffPercent = Math.floor(((trade_margin.remaining_crypto_credit-eqCrypto)
+                                                    /trade_margin.remaining_crypto_credit)*100);
+                        console.log(trade_margin.remaining_crypto_credit, eqCrypto);
+                        console.info(diffPercent);
+                        
+                        if(diffPercent<=2) {
+                            eqCrypto = trade_margin.remaining_crypto_credit;
+                        }  else {
+                            err_msg = `Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}`;  
+                            err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
+                            return;
+                        }  
+
                         request.response = RM_TRADE.trade_sell.call(
                           this,
                           ...request.params,
@@ -15453,15 +15498,24 @@
                           }
                         );
                       } else {
-                        err_msg = `WARNING: Trade Margin Check Failed: 
-                                        You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
+                        err_msg = `WARNING: Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
 
-                        showMessage(err_msg);
+                        err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
+                        
                         throw new Error(err_msg);
                       }
                     } else {
                       err_msg = "Invalid trade margin figures.";
-                      showMessage(err_msg);
+                      err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
+                        
                       throw new Error(err_msg);
                     }
                   }
@@ -15524,12 +15578,6 @@
                             params.id = helper_functions.unique_id();
                             params.status = 1;
                             params.btc_address = generate_btc_keys_for_requester.address;
-
-                            // params.bitcoinToBePaid = RM_TRADE.calculateCryptoEquivalentOfCash(
-                            //   params.depositing_amount,
-                            //   params.currency,
-                            //   params.product
-                            // );
 
                             params.bitcoinToBePaid = Number(params.depositing_amount);
 
@@ -15758,9 +15806,14 @@
                               getAPaymentHandler
                             )
                           ) {
-                            throw new Error(
-                              `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`
-                            );
+                            err_msg = `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`;  
+                            err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
+                            
+                            throw new Error(err_msg);
                           }
 
                           receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler];
@@ -15828,13 +15881,13 @@
                       const get_requester_primary_supernode = await localbitcoinplusplus.kademlia.determineClosestSupernode(
                         params.trader_flo_address
                       );
-                      const primarySupernodeForThisUser =
-                        get_requester_primary_supernode[0].data.id;
+                      const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
 
                       await RM_TRADE.resolve_current_crypto_price_in_fiat(
                         params.product,
                         params.currency
                       );
+
                       let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
                         params.trader_flo_address,
                         params.product,
@@ -15858,7 +15911,11 @@
                             eqBTC
                         ) {
                           err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`;
-                          showMessage(err_msg);
+                          err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                           throw new Error(err_msg);
                         }
 
@@ -15950,10 +16007,15 @@
                                             deposit_arr.btc_address,
                                           timestamp: +new Date()
                                         };
-                                        addDB(
-                                          "withdraw_btc",
-                                          withdraw_btc_order_object
-                                        );
+                                        
+                                        addDB("withdraw_btc", withdraw_btc_order_object);
+                                        
+                                        // Delete the withdraw crypto order after 30 mins anyway
+                                        localbitcoinplusplus.actions.delay(1800000)
+                                            .then(()=>{
+                                                removeinDB("withdraw_btc", withdraw_id)
+                                            });
+
                                         return {
                                           withdraw_id: withdraw_id,
                                           deposited_btc_address:
@@ -15993,30 +16055,22 @@
                                   }
                                 });
                               } else {
-                                err_msg = `Withdrawal request failed: You are trying to withdraw more Bitcoins than you have.`;
-                                showMessage(err_msg);
+                                err_msg = `Withdrawal request failed: You are trying to withdraw more ${params.product} than you have.`;
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                                 throw new Error(err_msg);
-
-                                // Return error to the requester
-                                return {
-                                  error: true,
-                                  method: "withdrawal_request_response",
-                                  data:
-                                    "Withdrawal request failed: You are trying to withdraw more Bitcoins than you have."
-                                };
                               }
                             } else {
-                              err_msg = `Withdrawal request failed: You don't seem to have any Bitcoin balance in the system yet.
-                                                        Please buy some Bitcoins to withdraw.`;
-                              showMessage(err_msg);
-
-                              // Return error to the requester
-                              return {
-                                error: true,
-                                method: "withdrawal_request_response",
-                                data: `Withdrawal request failed: You don't seem to have any Bitcoin balance in the system yet.
-                                                        Please buy some Bitcoins to withdraw.`
-                              };
+                              err_msg = `Withdrawal request failed: You don't seem to have any ${params.product} balance in the system yet.
+                                         Please buy some ${params.product} to withdraw.`;
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                             }
                           }
                         );
@@ -16032,7 +16086,11 @@
                             params.withdrawing_amount
                         ) {
                           err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
-                          showMessage(err_msg);
+                          err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                           throw new Error(err_msg);
                         }
                         // Check if there's no already a withdraw cash order of this user
@@ -16080,9 +16138,13 @@
                                   getAPaymentHandler
                                 )
                               ) {
-                                throw new Error(
-                                  `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`
-                                );
+                                err_msg = `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`;  
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
+                                throw new Error(err_msg);
                               }
 
                               const encoded_bank_details = localbitcoinplusplus.encrypt.encryptMessage(
@@ -16163,15 +16225,14 @@
                                               resp_obj = JSON.parse(res.txid);
                                               resp_txid = resp_obj.txid.result || resp_obj.txid;
                                               msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
-                                            } else if (
-                                              res.signedTxHash.length > 0
-                                            ) {
-                                              showMessage(`INFO: Failed to broadcast the transaction.
-                                                     Signed Raw Tx : ${res.signedTxHash}`);
-                                              throw new Error(`ERROR: Failed to broadcast the transaction.`);  
                                             } else {
                                               console.log(res);
-                                              throw new Errror(`ERROR: Failed to make transaction.`);
+                                              err_response = {
+                                                    user_flo_addr: cashierFloAddr,
+                                                    msg: `Failed to transfer token for withdraw order ${withdraw_request_db_object.id}`
+                                                }
+                                                reactor.dispatchEvent('message_for_user', err_response);
+                                              throw new Errror(`ERROR: Failed to transfer token for withdraw order ${withdraw_request_db_object.id}.`);
                                               return false;
                                             }
 
@@ -16266,14 +16327,22 @@
                               // Return error to the requester
                               err_msg =
                                 "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account.";
-                              showMessage(err_msg);
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                               throw new Error(err_msg);
                             }
                           }
                         });
                       } else {
-                        err_msg = "withdraw request error";
-                        showMessage(err_msg);
+                        err_msg = "Unknown asset withdraw request error.";
+                        err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
                         throw new Error(err_msg);
                       }
                     }
@@ -16454,6 +16523,12 @@
                                           });
                                         });
                                       } catch (error) {
+                                        // Do not delete these data instantly as the data
+                                        // may be required by a follow-up withdraw request
+                                        localbitcoinplusplus.actions
+                                        .delay(900000)
+                                        .then(() => removeinDB("withdraw_btc", withdraw_id));
+
                                         console.warn(error);
                                         showMessage(error);
                                       }
@@ -16797,13 +16872,12 @@
                       "withdraw_btc",
                       "crypto_balances",
                       "cash_balances",
-                      "userPublicData",
                       "buyOrders",
                       "sellOrders"
                     ];
 
                     localbitcoinplusplus.actions
-                      .get_sharable_db_data(
+                      .get_sharable_db_data_for_single_user(
                         tableArray,
                         primarySupernodeOfThisUser
                       )
@@ -16946,12 +17020,20 @@
                         );
                       } else {
                         err_msg = `Trade Margin Check Failed: You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
-                        showMessage(err_msg);
+                        err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
                         throw new Error(err_msg);
                       }
                     } else {
                       err_msg = "Invalid trade margin figures.";
-                      showMessage(err_msg);
+                      err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
                       throw new Error(err_msg);
                     }
                   }
@@ -16969,8 +17051,7 @@
                     const get_requester_primary_supernode = await localbitcoinplusplus.kademlia.determineClosestSupernode(
                       params.trader_flo_address
                     );
-                    const primarySupernodeForThisUser =
-                      get_requester_primary_supernode[0].data.id;
+                    const primarySupernodeForThisUser = get_requester_primary_supernode[0].data.id;
                     let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
                       params.trader_flo_address,
                       params.product,
@@ -16986,20 +17067,27 @@
                         params.currency,
                         params.product
                       );
-                      const diffPercent = Math.floor(((eqCrypto- trade_margin.remaining_crypto_credit)
-                                                /trade_margin.remaining_crypto_credit)*100);
-
-                      if(diffPercent<=2) {
-                        eqCrypto=trade_margin.remaining_crypto_credit;
-                      } else {
-                        console.info(`Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}`);  
-                        return;
-                      } 
 
                       if (
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
                       ) {
+                        // If margin is > 2% discontinue the trade
+                        const diffPercent = Math.floor(((trade_margin.remaining_crypto_credit-eqCrypto)
+                                                    /trade_margin.remaining_crypto_credit)*100);
+                        console.log(trade_margin.remaining_crypto_credit, eqCrypto);
+                        console.info(diffPercent);
+                        
+                        if(diffPercent<=2) {
+                            eqCrypto = trade_margin.remaining_crypto_credit;
+                        }  else {
+                            err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: `Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}` 
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
+                            return;
+                        }
                         request.response = RM_TRADE.trade_sell.call(
                           this,
                           ...request.params,
@@ -17031,12 +17119,20 @@
                         err_msg = `WARNING: Trade Margin Check Failed: 
                                         You can only trade upto ${params.currency} ${trade_margin.remaining_fiat_credit}.`;
 
-                        showMessage(err_msg);
+                        err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
                         throw new Error(err_msg);
                       }
                     } else {
                       err_msg = "Invalid trade margin figures.";
-                      showMessage(err_msg);
+                      err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: err_msg
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
                       throw new Error(err_msg);
                     }
                   }
@@ -17073,8 +17169,12 @@
                             requester_public_key == null ||
                             requester_public_key.length < 1
                           ) {
-                            err_msg = "Failed to get public key of the user.";
-                            showMessage(err_msg);
+                            err_msg = "Failed to get your public key. Please refresh and try again.";
+                            err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                             throw new Error(err_msg);
                           }
                           params.depositor_public_key = requester_public_key;
@@ -17100,12 +17200,6 @@
                         params.status = 1;
                         params.btc_address =
                           generate_btc_keys_for_requester.address;
-
-                        // params.bitcoinToBePaid = RM_TRADE.calculateCryptoEquivalentOfCash(
-                        //   params.depositing_amount,
-                        //   params.currency,
-                        //   params.product
-                        // );
 
                         params.bitcoinToBePaid = Number(params.depositing_amount);
 
@@ -17367,7 +17461,8 @@
                       let trade_margin = await RM_TRADE.getAssetTradeAndWithdrawLimit(
                         params.trader_flo_address,
                         params.product,
-                        params.currency
+                        params.currency,
+                        primarySupernodeForThisUser
                       );
 
                       if (
@@ -17381,8 +17476,12 @@
                           trade_margin.remaining_crypto_credit <
                             params.withdrawing_amount
                         ) {
-                          err_msg = `Insufficient crypto balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`;
-                          showMessage(err_msg);
+                          err_msg = `Insufficient ${params.product} balance to withdraw. You can withdraw upto: ${params.product} ${trade_margin.remaining_crypto_credit}`;
+                          err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                           throw new Error(err_msg);
                         }
                       } else {
@@ -17392,8 +17491,12 @@
                           trade_margin.remaining_fiat_credit <
                             params.withdrawing_amount
                         ) {
-                          err_msg = `Insufficient fiat balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
-                          showMessage(err_msg);
+                          err_msg = `Insufficient cash balance to withdraw. You can withdraw upto: ${params.currency} ${trade_margin.remaining_fiat_credit}`;
+                          err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                           throw new Error(err_msg);
                         }
                       }
@@ -17500,6 +17603,9 @@
                                             "withdraw_btc",
                                             withdraw_btc_order_object
                                           );
+                                          localbitcoinplusplus.actions.delay(1800000)
+                                                .then(()=>backup_server_db_instance
+                                                .backup_removeinDB("withdraw_btc", withdraw_id));
                                           return {
                                             withdraw_id: withdraw_id,
                                             deposited_btc_address:
@@ -17541,30 +17647,22 @@
                                     }
                                   });
                               } else {
-                                err_msg = `Withdrawal request failed: You are trying to withdraw more Bitcoins than you have.`;
-                                showMessage(err_msg);
+                                err_msg = `Withdrawal request failed: You are trying to withdraw more ${params.product} than you have.`;
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                                 throw new Error(err_msg);
-
-                                // Return error to the requester
-                                return {
-                                  error: true,
-                                  method: "withdrawal_request_response",
-                                  data:
-                                    "Withdrawal request failed: You are trying to withdraw more Bitcoins than you have."
-                                };
                               }
                             } else {
-                              err_msg = `Withdrawal request failed: You don't seem to have any Bitcoin balance in the system yet.
-                                                        Please buy some Bitcoins to withdraw.`;
-                              showMessage(err_msg);
-
-                              // Return error to the requester
-                              return {
-                                error: true,
-                                method: "withdrawal_request_response",
-                                data: `Withdrawal request failed: You don't seem to have any Bitcoin balance in the system yet.
-                                                        Please buy some Bitcoins to withdraw.`
-                              };
+                              err_msg = `Withdrawal request failed: You don't seem to have any ${params.product} balance in the system yet.
+                                        Please buy some Bitcoins to withdraw.`;
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                             }
                           });
                       } else if (
@@ -17572,8 +17670,6 @@
                           params.product
                         )
                       ) {
-
-
                         /***********************************************
                         * WITHDRAW OF CASH IS PROHIBITED IN BACKUP MODE*
                         ************************************************/
@@ -17622,7 +17718,11 @@
                           )
                         ) {
                           err_msg = `Withdrawal request failed: Please enter valid fiat amount.`;
-                          showMessage(err_msg);
+                          err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: err_msg
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                           throw new Error(err_msg);
                         }
                         // Check if there's no already a withdraw cash order of this user
@@ -17758,13 +17858,12 @@
                                                     resp_obj.txid.result ||
                                                     resp_obj.txid;
                                                   msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
-                                                } else if (
-                                                  res.signedTxHash.length > 0
-                                                ) {
-                                                  msg = `INFO: We could not broadcast your transaction. Please broadcast 
-                                                                                    this Signed Raw Tx manually yourself: ${res.signedTxHash}`;
                                                 } else {
-                                                  console.log(res);
+                                                    err_response = {
+                                                        user_flo_addr: cashierFloAddr,
+                                                        msg: `Failed to transfer token for withdraw id ${withdraw_request_db_object.id}`
+                                                    }
+                                                    reactor.dispatchEvent('message_for_user', err_response);
                                                   throw new Errror(
                                                     `ERROR: Failed to make transaction.`
                                                   );
@@ -17866,7 +17965,11 @@
                                 // Return error to the requester
                                 err_msg =
                                   "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account.";
-                                showMessage(err_msg);
+                                  err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: err_msg
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                                 throw new Error(err_msg);
                               }
                             }
@@ -17991,13 +18094,13 @@
                                                 resp_obj.txid.result ||
                                                 resp_obj.txid;
                                               msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
-                                            } else if (
-                                              res.signedTxHash.length > 0
-                                            ) {
-                                              msg = `INFO: We could not broadcast your transaction. Please broadcast 
-                                                                            this Signed Raw Tx manually yourself: ${res.signedTxHash}`;
                                             } else {
                                               console.log(res);
+                                              err_response = {
+                                                    user_flo_addr: params.trader_flo_address,
+                                                    msg: `Withdraw crypto request failed. Please try again later.`
+                                                }
+                                                reactor.dispatchEvent('message_for_user', err_response);
                                               throw new Errror(
                                                 `ERROR: Failed to make transaction.`
                                               );
@@ -20217,6 +20320,8 @@
                 sell_order_crypto_equivalent -
                 withdraw_crypto_equivalent;
 
+              if(remaining_crypto_credit<0) remaining_crypto_credit = 0;  
+
               let total_buy_orders_cash = 0;
               user_buy_orders.map(
                 buy_order => (total_buy_orders_cash += buy_order.buy_price)
@@ -20231,6 +20336,8 @@
                 user_cash_balance_value -
                 total_buy_orders_cash -
                 withdraw_cash_equivalent;
+
+              if(remaining_fiat_credit<0) remaining_fiat_credit = 0; 
 
               return {
                 remaining_crypto_credit: remaining_crypto_credit,
@@ -20353,6 +20460,8 @@
                 substrLength = decPos == -1 ? numS.length : 1 + decPos + digits,
                 trimmedResult = numS.substr(0, substrLength),
                 finalResult = isNaN(trimmedResult) ? 0 : trimmedResult;
+
+            if(finalResult>100000000000) return NaN;
 
             return Number(finalResult);
         }
@@ -20620,7 +20729,6 @@
                   );
                 });
 
-                //await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
                 await startWebSocket(`${WS}://${wsUri[0].ip}`);
 
                 RM_WALLET.distributeShamirsSecretShares(newKeys.privateKeyWIF)
@@ -20669,9 +20777,6 @@
                       BACKUP_DB[uri.trader_flo_address].createNewDB();
                     }
                   });
-
-                  // Connect to nearest live backup nodes
-                  //reactor.dispatchEvent("resolve_backup_ws_connections");
                 }
 
                 localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS =
@@ -20743,7 +20848,6 @@
             });
 
             // Connect with primary supernodes
-            //await startWebSocket(`ws://${wsUri[0].ip}:${wsUri[0].port}`);
             await startWebSocket(`${WS}://${wsUri[0].ip}`);
 
             // rebuild private key
@@ -20793,8 +20897,6 @@
                 }
               });
 
-              // Connect to nearest live backup nodes
-              //reactor.dispatchEvent("resolve_backup_ws_connections");
             }
 
             resolve(true);
@@ -20814,6 +20916,7 @@
           const switchMyWS = new backupSupernodesWebSocketObject();
           this.ws_connection.onopen = async function(evt) {
             await reactor.dispatchEvent("backup_supernode_up", evt.srcElement.url);
+            await reactor.dispatchEvent("sync_primary_and_backup_db");
             await reactor.dispatchEvent("remove_extra_backup_connections");
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
@@ -21263,7 +21366,6 @@
               return;
 
             const isIncomingMessageValid = await validateIncomingMessage(res);
-            console.log("isIncomingMessageValid: ", isIncomingMessageValid);
 
             if (!isIncomingMessageValid) return;
 
@@ -21365,6 +21467,8 @@
               switch (res_obj.method) {
                 case "supernode_message":
                   if (
+                    localbitcoinplusplus.master_configurations.supernodesPubKeys
+                    .includes(nodePubKey) &&  
                     typeof res_obj.params == "object" &&
                     typeof res_obj.params[0] == "object"
                   ) {
@@ -21534,8 +21638,6 @@
                           let obj = su_db_data[tableStoreName];
                           if (
                             [
-                              "crypto_balances",
-                              "cash_balances",
                               "userPublicData"
                             ].includes(tableStoreName)
                           ) {
@@ -21683,19 +21785,6 @@
                   ) {
                     let cancel_request = res_obj.params[0];
                     if (cancel_request.job == "cancel_trade_request") {
-                      readDB(
-                        "userPublicData",
-                        cancel_request.trader_flo_address
-                      ).then(trader_data => {
-                        if (
-                          typeof trader_data.trader_flo_address !== "string" ||
-                          typeof trader_data.trader_flo_pubKey !== "string"
-                        ) {
-                          err_msg =
-                            "ERROR: Failed to cancel the trade. User is unknown.";
-                          showMessage(err_msg);
-                          throw new Error(err_msg);
-                        }
                         tradeDB =
                           cancel_request.trade_type == "buy"
                             ? "buyOrders"
@@ -21704,18 +21793,25 @@
                           RM_WALLET.verify(
                             cancel_request.trade_id,
                             cancel_request.signed_trade_id,
-                            trader_data.trader_flo_pubKey
+                            res_obj.nodePubKey
                           )
                         ) {
                           removeinDB(tradeDB, cancel_request.trade_id).then(
-                            id => showMessage(`Trade Id ${id} deleted.`)
+                            id => {
+                                msg_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: `Failed to verify trade for trade id ${cancel_request.trade_id}`
+                            }
+                                reactor.dispatchEvent('message_for_user', msg_response);
+                            }
                           );
                         } else {
-                          showMessage(
-                            `Failed to verify trade for trade id ${cancel_request.trade_id}`
-                          );
+                          err_response = {
+                                user_flo_addr: params.trader_flo_address,
+                                msg: `Failed to verify trade for trade id ${cancel_request.trade_id}`
+                            }
+                            reactor.dispatchEvent('message_for_user', err_response);
                         }
-                      });
                     } else {
                       showMessage("Failed to cancel trade.");
                     }
@@ -21816,6 +21912,7 @@
                                 displayBalances(
                                     localbitcoinplusplus.wallets.my_local_flo_address
                                 );
+                                showMessage("Balances updated.")
                           })
                           .catch(e => {throw new Error(e)});
                           
@@ -22061,6 +22158,7 @@
                         displayBalances(
                             localbitcoinplusplus.wallets.my_local_flo_address
                         );
+                        showMessage('Balances updated.')
                       })
 
                       return true;
@@ -23459,8 +23557,6 @@
                           let obj = su_db_data[tableStoreName];
                           if (
                             [
-                              "crypto_balances",
-                              "cash_balances",
                               "userPublicData"
                             ].includes(tableStoreName)
                           ) {
@@ -23674,17 +23770,30 @@
                                     cancel_request.trade_id
                                   )
                                   .then(id =>
-                                    showMessage(`Trade Id ${id} deleted.`)
+                                    {
+                                        err_response = {
+                                            user_flo_addr: params.trader_flo_address,
+                                            msg: `Trade Id ${id} deleted.`
+                                        }
+                                        reactor.dispatchEvent('message_for_user', err_response);
+                                    }
+                                    
                                   );
                               } else {
-                                showMessage(
-                                  `Failed to verify trade for trade id ${cancel_request.trade_id}`
-                                );
+                                err_response = {
+                                    user_flo_addr: params.trader_flo_address,
+                                    msg: `Failed to verify trade for trade id ${cancel_request.trade_id}`
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
                               }
                             });
                         });
                     } else {
-                      showMessage("Failed to cancel trade.");
+                      err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: `Failed to cancel trade for trade id ${cancel_request.trade_id}`
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
                     }
                   }
                   break;
@@ -25345,8 +25454,6 @@
                             let obj = su_backup_db_data[tableStoreName];
                             if (
                               [
-                                "crypto_balances",
-                                "cash_balances",
                                 "userPublicData"
                               ].includes(tableStoreName)
                             ) {
@@ -28212,7 +28319,18 @@
                 reject(event);
                 return new Error(error);
             }
-        });  
+        });
+        
+        async function formatIDB() {
+            db.close();
+    
+            for(su in localbitcoinplusplus.newBackupDatabase.db) {
+                localbitcoinplusplus.newBackupDatabase.db[su].db.close();
+            }
+
+            const dbs = await window.indexedDB.databases()
+            dbs.forEach(db => { window.indexedDB.deleteDatabase(db.name) })
+        }
       }
     </script>
 
@@ -29216,26 +29334,23 @@
             const closestSuList = await readAllDB("myClosestSupernodes");
 
             // If you are a supernode ask if you want to sync primary and secondary backup
-            if (
-              localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                localbitcoinplusplus.wallets.my_local_flo_public_key
-              )
-            ) {
-              const wannaSync = confirm(
-                `Do you want to sync Primary and Backup Databases?`
-              );
-              if (wannaSync == true) {
-                reactor.dispatchEvent("sync_primary_and_backup_db");
-                showMessage(
-                  `INFO: You need to update serve to true to start serving as Primary Supernode.`
-                );
-              } else {
-                localbitcoinplusplus.services[
-                  `can_serve_${localbitcoinplusplus.wallets.my_local_flo_address}`
-                ] = true;
-                reactor.dispatchEvent("remove_extra_backup_connections");
-              }
-            }
+            // if (
+            //   localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+            //     localbitcoinplusplus.wallets.my_local_flo_public_key
+            //   )
+            // ) {
+            //   const wannaSync = confirm(
+            //     `Do you want to sync Primary and Backup Databases?`
+            //   );
+            //   if (wannaSync == true) {
+            //     reactor.dispatchEvent("sync_primary_and_backup_db");
+            //   } else {
+            //     localbitcoinplusplus.services[
+            //       `can_serve_${localbitcoinplusplus.wallets.my_local_flo_address}`
+            //     ] = true;
+            //     reactor.dispatchEvent("remove_extra_backup_connections");
+            //   }
+            // }
 
             if (!closestSuList[0].is_live) {
               const switchMyWS = new backupSupernodesWebSocketObject();
