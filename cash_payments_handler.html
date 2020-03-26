@@ -11394,8 +11394,8 @@
             enumerable: false
         });
 
-        const ENVR = 'LIVE'; // LIVE, TEST  
-        const WS = 'wss';
+        const ENVR = 'TEST'; // LIVE, TEST  
+        const WS = 'ws';
         const DBName = "paymentsHandlerDBRemote";
 
       if(ENVR === 'LIVE') {
@@ -12004,8 +12004,28 @@
           }
         };
 
-        localbitcoinplusplus.actions = {
+        localbitcoinplusplus.actions =   {
             parse_flo_comments: async function(callback) {
+
+                text = `masterFLOPubKey=03EA5E2CAB18DA585400D6EC569438D415FAF200528E05D0E2B9BEAA2B5C3DCA90
+                #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
+                #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
+                #!#MaxBackups=1
+                #!#miners_fee={"btc":0.0003, "flo":0.0003}
+                #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
+                03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
+                03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
+                026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
+                #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
+                #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
+                "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
+                #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
+                "ranchimall2":{"ip":"127.0.0.1:9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
+                "ranchimall3":{"ip":"127.0.0.1:9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
+                "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
+                "ranchimall5":{"ip":"127.0.0.1:9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
+                "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
+                return callback(text);
 
                 if(ENVR==='LIVE') {
                     master_data = await helper_functions
@@ -13387,12 +13407,14 @@
                         let failed_confirms_in_deposits = await readAllDB('failed_deposit_confirms');
                         let failed_confirms_in_deposits_ids = failed_confirms_in_deposits.map(m=>m.deposit_id);
                         console.log(failed_confirms_in_deposits_ids);
+                        if(failed_confirms_in_deposits_ids.length>0) {
+                            alert("There are some failed deposit requests in DB. Please contact the admin.");
+                        }
                         let t = ``;
                         let deposits_table = document.getElementById("deposits_list");
+                        deposits_table.innerHTML = '';
                         for (const m of responseData.responseData.data) {
-                            // This deposit, token transfer was done but supernode was not informed
-                            if(failed_confirms_in_deposits_ids.includes(m.id)) continue;
-
+                            
                             let su_res = await localbitcoinplusplus.kademlia.determineClosestSupernode(m.trader_flo_address);
                             let closestSupernode = su_res[0].data.id;
                             t += `<tr id='tr_${m.id}'>`;
@@ -13400,9 +13422,21 @@
                             t += `<td> ${m.trader_flo_address} </td>`;
                             t += `<td> ${m.depositing_amount} </td>`;
                             t += `<td> ${m.currency} </td>`;
-                            t += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_deposits">Deposit Received!</button> 
-                                <input type="hidden" id="depositSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
+                            if(m.status===1) {
+                                // This deposit, token transfer was done but supernode was not informed
+                                if(failed_confirms_in_deposits_ids.includes(m.id)) {
+                                    t += `<td> <button type="button" value="${m.id}" class="btn btn-danger">Failed to inform Supernode!</button> 
+                                        </td>`;
+                                } else {
+                                    t += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_deposits">Deposit Received!</button> 
+                                        <input type="hidden" id="depositSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
+                                        </td>`;
+                                }
+
+                            } else if(m.status===2) {
+                                t += `<td> <button type="button" value="${m.id}" class="btn btn-success">Success!</button> 
                                 </td>`;
+                            }
                             t += `</tr>`;
                         }
                         deposits_table.insertAdjacentHTML("beforeend", t);
@@ -13414,6 +13448,7 @@
                     (async function() {
                         let v = ``;
                         const withdraws_table = document.getElementById("withdraws_list");
+                        withdraws_table.innerHTML = '';
                         for (const m of responseData.responseData.data) {
                             const user_upi = localbitcoinplusplus.encrypt.decryptMessage(
                                 m.receivinAddress.secret,
@@ -13428,9 +13463,14 @@
                             v += `<td> ${m.withdraw_amount} </td>`;
                             v += `<td> ${m.currency} </td>`;
                             v += `<td> ${m.token_transfer_txid} </td>`;
-                            v += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_withdrawal">Money Transferred!</button> 
-                                <input type="hidden" id="withdrawSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
-                                </td>`;
+                            if(m.status===1) {
+                                v += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_withdrawal">Money Transferred!</button> 
+                                    <input type="hidden" id="withdrawSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
+                                    </td>`;
+                            } else if(m.status===2) {
+                                v += `<td> <button type="button" value="${m.id}" class="btn btn-success">Success!</button> 
+                                    </td>`;
+                            }
                             v += `</tr>`;
                         }
                         withdraws_table.insertAdjacentHTML("beforeend", v);
@@ -13875,12 +13915,26 @@
                         RM_RPC.send_rpc
                         .call(this, "cashier_confirms_user_cash_deposit", req_body)
                         .then(resp => doSend(websocket_conn, resp));
-                    } else if(n<=10) {
+
+                        this.classList.remove('cnf_deposits');
+                        this.classList.remove('btn-info');
+                        this.classList.add('btn-success');
+                        this.innerText = "Success";
+
+                        return true;
+
+                    } else if(n<=20) {
                         validateTxidInBlockchain();
                         n++;
                     } else {
                         // Failed to validate token transfer. Save in local db
                         await addDB('failed_deposit_confirms', req_body, req_body.flo_txid);
+                        
+                        this.classList.remove('cnf_deposits');
+                        this.classList.remove('btn-info');
+                        this.classList.add('btn-danger');
+                        this.innerText = "Failed to inform Supernode. Please contact the Admin.";
+
                         throw new Error(`Failed to inform Supernode of cash deposit: ${flo_txid}`);
                     }
                 })()
@@ -13923,6 +13977,14 @@
                       parent_supernode: websocket_name,
                     })
                     .then(resp => doSend(websocket_conn, resp));
+
+                    this.classList.remove('cnf_withdrawal');
+                    this.classList.remove('btn-info');
+                    this.classList.add('btn-success');
+                    this.innerText = "Success";
+
+                    return true;
+                    
                 });
             });
         }
