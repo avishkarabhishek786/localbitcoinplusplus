@@ -15524,10 +15524,19 @@
                   let last_updated = localStorage.getItem(`refresh_reserved_cryptos_prices_time_${su[0].data.id}`);
                   let today = new Date().getTime();
                   var yesterday = new Date(new Date().getTime() - (24 * 60 * 60 * 1000));
-                if(last_updated==null
-                || (today - last_updated > (24 * 60 * 60 * 1000))) {
-                    reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
-                }
+                  
+                  readDBbyIndex("withdraw_btc", 'trader_flo_address', params.trader_flo_address).then(withdraw_response=>{
+                    for (const withdraw_res of withdraw_response) {
+                        if(today-withdraw_res.timestamp>60 * 60 * 1000) {
+                            removeinDB("withdraw_btc", withdraw_res.id);
+                        }
+                    }   
+                  })
+                  
+                  if(last_updated==null
+                    || (today - last_updated > (24 * 60 * 60 * 1000))) {
+                        reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
+                    }
               });
             }
 
@@ -16727,20 +16736,36 @@
                                             ).then(
                                               updateUserCryptoBalanceRequestObject =>
                                                 doSend(
-                                                  updateUserCryptoBalanceRequestObject
+                                                    updateUserCryptoBalanceRequestObject
                                                 )
                                             );
                                           });
                                         });
                                       } catch (error) {
+                                        console.warn(error);
                                         // Do not delete these data instantly as the data
                                         // may be required by a follow-up withdraw request
                                         localbitcoinplusplus.actions
                                         .delay(900000)
-                                        .then(() => removeinDB("withdraw_btc", withdraw_id));
+                                        .then(() => {
+                                            removeinDB("withdraw_btc", withdraw_id);
+                                            // update deposits status back to 2 in db
+                                            readDBbyIndex(
+                                                "deposit",
+                                                "btc_address",
+                                                withdraw_res.utxo_addr
+                                            ).then(deposit_arr_resp => {
+                                                if (typeof deposit_arr_resp[0] == "object") {
+                                                    deposit_arr_resp[0].status = 2; // UTXO ready to be used again
+                                                    updateinDB(
+                                                        "deposit",
+                                                        deposit_arr_resp[0],
+                                                        deposit_arr_resp[0].id
+                                                    );
+                                                }
+                                            });
+                                        });
 
-                                        console.warn(error);
-                                        showMessage(error);
                                       }
                                     }
 
@@ -17110,6 +17135,17 @@ x
                         let last_updated = localStorage.getItem(`refresh_reserved_cryptos_prices_time_${su[0].data.id}`);
                         let today = new Date().getTime();
                         var yesterday = new Date(new Date().getTime() - (24 * 60 * 60 * 1000));
+                        let backup_db = calbitcoinplusplus.newBackupDatabase.db[su[0].data.id];
+                        backup_db.backup_readDBbyIndex("withdraw_btc", 'trader_flo_address', params.trader_flo_address).then(withdraw_response=>{
+                            for (const withdraw_res of withdraw_response) {
+                                if(typeof withdraw_res=="object") {                        
+                                    if(today-withdraw_res.timestamp>60 * 60 * 1000) {
+                                        backup_db.backup_removeinDB("withdraw_btc", withdraw_res.id);
+                                    }
+                                }
+                            }
+                        });
+                        
                         if(last_updated==null
                         || (today - last_updated > (24 * 60 * 60 * 1000))) {
                             reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
@@ -18402,7 +18438,31 @@ x
                                               });
                                           } catch (error) {
                                             console.warn(error);
-                                            showMessage(error);
+                                            // Do not delete these data instantly as the data
+                                            // may be required by a follow-up withdraw request
+                                            localbitcoinplusplus.actions
+                                            .delay(900000)
+                                            .then(() => {
+                                                backup_server_db_instance
+                                                  .backup_removeinDB("withdraw_btc", withdraw_id);
+                                                // update deposits status back to 2 in db
+                                                backup_server_db_instance
+                                                  .backup_readDBbyIndex(
+                                                    "deposit",
+                                                    "btc_address",
+                                                    withdraw_res.utxo_addr
+                                                ).then(deposit_arr_resp => {
+                                                    if (typeof deposit_arr_resp[0] == "object") {
+                                                        deposit_arr_resp[0].status = 2; // UTXO ready to be used again
+                                                        backup_server_db_instance
+                                                        .backup_updateinDB(
+                                                            "deposit",
+                                                            deposit_arr_resp[0],
+                                                            deposit_arr_resp[0].id
+                                                        );
+                                                    }
+                                                });
+                                            });
                                           }
                                         }
 
