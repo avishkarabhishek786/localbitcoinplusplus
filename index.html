@@ -519,7 +519,7 @@
 
       .sidenav {
         position: fixed;
-        z-index: 1;
+        z-index: 2;
         top: 20px;
         left: 10px;
         background: #eee;
@@ -532,6 +532,26 @@
         left: 10px;
         background: #eee;
         overflow-x: hidden;
+      }
+
+      #trading_prices_div {
+        display: flex;
+        /* align-items: flex-end; */
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        position: fixed;
+        top: 0px;
+        /* left: 25px;
+        right: 25px; */
+        width: 90%;
+        z-index: 1;
+        /* max-height: 5em; */
+        font-family: monospace;
+        font-size: 1em;
+        padding: 2px 5px;
+        color: #ffffff;
+        margin: 0 25px 0 25px;
+        white-space: pre-line;
       }
     </style>
   </head>
@@ -554,6 +574,8 @@
         0
       </div>
     </div>
+
+    <div id="trading_prices_div">Loading live trading prices...</div>
 
     <div class="box bg-purple">
       <div class="center-div">
@@ -12792,6 +12814,22 @@
             }
         },
 
+        request_live_prices_from_server: function() {
+            try {
+                let RM_RPC = new localbitcoinplusplus.rpc;  
+                RM_RPC.send_rpc(
+                    "live_prices_request",
+                    {
+                        trader_flo_address: localbitcoinplusplus.wallets.my_local_flo_address
+                    }
+                ).then(delRequestObject =>
+                    doSend(delRequestObject)
+                );
+            } catch (error) {
+                showMessage('Failed to request live prices from server. Please try later.')
+            }
+        },
+
       };
 
       /*Modified functions from https://github.com/tristanls/k-bucket */
@@ -15490,7 +15528,8 @@
                   is_valid_request === true &&
                   params.job == "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB" &&
                   params.trader_flo_address.length > 0
-                ) {
+                ) {  
+
                   const tableArray = [
                     "deposit",
                     "cash_deposits",
@@ -15539,6 +15578,37 @@
                         reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
                     }
               });
+            }
+
+            if(method=="live_prices_request") {
+                RM_RPC.filter_legit_requests(params.trader_flo_address, function(
+                is_valid_request
+              ) {
+                if (
+                  is_valid_request === true &&
+                  params.trader_flo_address.length > 0
+                ) {
+                    let live_trading_prices = {};
+                    localbitcoinplusplus.master_configurations.tradableAsset1.forEach(
+                        function(asset1) {
+                            localbitcoinplusplus.master_configurations.tradableAsset2.forEach(
+                                async function(asset2) {
+                                    live_trading_prices[`${asset1}_${asset2}`] = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`];
+                                }
+                            );
+                        }
+                    );
+                    let live_trading_prices_response_object = {
+                        live_trading_prices: live_trading_prices,
+                        receiver_flo_address: params.trader_flo_address
+                    }
+                    RM_RPC.send_rpc
+                        .call(this, "live_trading_prices_response", live_trading_prices_response_object)
+                        .then(response => doSend(response)
+                    );
+                }
+              });  
+              return true;
             }
 
             RM_RPC.filter_legit_requests(
@@ -23452,6 +23522,33 @@
                   }
                   break;  
 
+                  case "live_prices_request":
+                    response_from_sever = RM_RPC.receive_rpc_response.call(
+                        this,
+                        JSON.stringify(res_obj)
+                    );
+                    break;
+
+                  case "live_trading_prices_response":
+                        if(typeof res_obj.params[0]=="object") {
+                            const server_live_trading_prices = res_obj.params[0];
+                            if(server_live_trading_prices.receiver_flo_address===localbitcoinplusplus.wallets.my_local_flo_address) {
+                                console.log(server_live_trading_prices);
+
+                                const trading_prices_div = document.getElementById('trading_prices_div')
+                                let t = ``;
+                                
+                                for(commodity of Object.values(server_live_trading_prices.live_trading_prices)) {
+                                    t += `<div> 1 ${commodity.crypto_code}<=>${commodity.currency_code} ${commodity.rate} &nbsp  </div>`;
+                                }
+
+                                trading_prices_div.innerHTML = t;
+                            }
+                        } else {
+                            showMessage('Failed to fetch live trading prices.')
+                        }
+                    break;  
+
                 default:
                   break;
               }
@@ -29454,6 +29551,9 @@
               idbData.myLocalFLOAddress);
             const MY_LOCAL_FLO_PUBLIC_KEY = (localbitcoinplusplus.wallets.my_local_flo_public_key =
               idbData.myLocalFLOPublicKey);
+
+            // Get live trading prices
+            localbitcoinplusplus.actions.request_live_prices_from_server();  
 
             // Send request to others to link your flo id to your local ip
             linkMyLocalIPToMyFloId();
