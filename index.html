@@ -519,7 +519,7 @@
 
       .sidenav {
         position: fixed;
-        z-index: 2;
+        z-index: 1;
         top: 20px;
         left: 10px;
         background: #eee;
@@ -15744,25 +15744,7 @@
                       if (
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
-                      ) {
-
-                        // If margin is > 2% discontinue the trade
-                        const diffPercent = Math.floor(((trade_margin.remaining_crypto_credit-eqCrypto)
-                                                    /trade_margin.remaining_crypto_credit)*100);
-                        console.log(trade_margin.remaining_crypto_credit, eqCrypto);
-                        console.info(diffPercent);
-                        
-                        if(diffPercent<=2) {
-                            eqCrypto = trade_margin.remaining_crypto_credit;
-                        }  else {
-                            err_msg = `Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}`;  
-                            err_response = {
-                                user_flo_addr: params.trader_flo_address,
-                                msg: err_msg
-                            }
-                            reactor.dispatchEvent('message_for_user', err_response);
-                            return;
-                        }  
+                      ) {  
 
                         request.response = RM_TRADE.trade_sell.call(
                           this,
@@ -16697,6 +16679,51 @@
                                     reactor.dispatchEvent('message_for_user', err_response);
                                     return false;
                                 }
+
+                                let explorer;
+                                let decimal = 100000000;
+                                switch (withdraw_res.product) {
+                                    case "BTC":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .btc_mainnet;
+                                        break;
+                                    case "BTC_TEST":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .btc_testnet;
+                                        break;
+                                    case "FLO":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .flo_mainnet;
+                                        decimal = 1;
+                                        break;
+                                    case "FLO_TEST":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .flo_testnet;
+                                        decimal = 1;
+                                        break;
+                                    default:
+                                        break;
+                                }
+
+                                if (typeof explorer !== "string") {
+                                    throw new Error(
+                                        `WARNING: Invalid product value: ${withdraw_res.product}.`
+                                    );
+                                    return false;
+                                }
+
+                                const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
+                                console.log(bal_url);
+
+                                // Get the balance before sending the tx. It is important to get balance before
+                                // tx than to after because fetching balance after can return older or newer balance 
+                                // on random events
+                                let current_balance = await helper_functions.ajaxGet(bal_url);
+                                
                                 const btc_reserves = await readDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
                                 if (typeof btc_reserves == "object") {
                                     // Ideally this line should never run.
@@ -16764,6 +16791,8 @@
                                                                 );
 
                                                             withdrawer_crypto_bal_response.crypto_balance -= EqCryptoWd;
+                                                            withdrawer_crypto_bal_response.crypto_balance = 
+                                                                helper_functions.truncateDecimals(withdrawer_crypto_bal_response.crypto_balance);
                                                             const updated_crypto_balance = await updateinDB(
                                                                 "crypto_balances",
                                                                 withdrawer_crypto_bal_response,
@@ -16802,49 +16831,8 @@
                                                                 "btc_address",
                                                                 withdraw_res.utxo_addr
                                                             );
-                                                            if (typeof deposit_arr_resp == "object") {
-                                                                deposit_arr_resp.map(
-                                                                    async deposit_arr => {
-                                                                        let explorer;
-                                                                        let decimal = 100000000;
-                                                                        switch (deposit_arr.product) {
-                                                                            case "BTC":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus.server
-                                                                                        .btc_mainnet;
-                                                                                break;
-                                                                            case "BTC_TEST":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus.server
-                                                                                        .btc_testnet;
-                                                                                break;
-                                                                            case "FLO":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus.server
-                                                                                        .flo_mainnet;
-                                                                                decimal = 1;
-                                                                                break;
-                                                                            case "FLO_TEST":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus.server
-                                                                                        .flo_testnet;
-                                                                                decimal = 1;
-                                                                                break;
-                                                                            default:
-                                                                                break;
-                                                                        }
-
-                                                                        if (typeof explorer !== "string") {
-                                                                            throw new Error(
-                                                                                `WARNING: Invalid product value: ${deposit_arr.product}.`
-                                                                            );
-                                                                            return false;
-                                                                        }
-
-                                                                        const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
-                                                                        console.log(bal_url);
-
-                                                                        let current_balance = await helper_functions.ajaxGet(bal_url);
+                                                            if (typeof deposit_arr_resp[0] == "object") {
+                                                                        const deposit_arr = deposit_arr_resp[0];
                                                                         if (
                                                                             !isNaN(current_balance) &&
                                                                             parseFloat(current_balance) > 0
@@ -16857,8 +16845,8 @@
                                                                         if (
                                                                             typeof current_balance == "number"
                                                                         ) {
-                                                                            deposit_arr.bitcoinToBePaid = current_balance;
-                                                                            btc_reserves.balance = current_balance;
+                                                                            deposit_arr.bitcoinToBePaid = current_balance-EqCryptoWd;
+                                                                            btc_reserves.balance = current_balance-EqCryptoWd;
                                                                         } else {
                                                                             deposit_arr.bitcoinToBePaid -= EqCryptoWd;
                                                                             btc_reserves.balance -= EqCryptoWd;
@@ -16867,6 +16855,9 @@
                                                                                 reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address)
                                                                             );
                                                                         }
+
+                                                                        deposit_arr.bitcoinToBePaid = helper_functions.truncateDecimals(deposit_arr.bitcoinToBePaid);
+                                                                        btc_reserves.balance = helper_functions.truncateDecimals(btc_reserves.balance);
 
                                                                         if (
                                                                             deposit_arr.bitcoinToBePaid > 0
@@ -16944,8 +16935,7 @@
                                                                             );
 
                                                                         }
-                                                                    }
-                                                                );
+                                                                    
                                                                 return true;
                                                             }
 
@@ -16966,7 +16956,6 @@
                                                         // may be required by a follow-up withdraw request
                                                         await localbitcoinplusplus.actions.delay(180000);
 
-                                                        await removeinDB("withdraw_btc", withdraw_id);
                                                         // update deposits status back to 2 in db
                                                         const deposit_arr_resp = await readDBbyIndex(
                                                             "deposit",
@@ -16981,6 +16970,7 @@
                                                                 deposit_arr_resp[0].id
                                                             );
                                                         }
+                                                        await removeinDB("withdraw_btc", withdraw_id);
 
                                                     }
                                                 }
@@ -16992,6 +16982,23 @@
                             }
 
                         } catch (error) {
+                            
+                            const withdraw_res = await readDB("withdraw_btc", withdraw_id);
+                            // update deposits status back to 2 in db
+                            const deposit_arr_resp = await readDBbyIndex(
+                                "deposit",
+                                "btc_address",
+                                withdraw_res.utxo_addr
+                            )
+                            if (typeof deposit_arr_resp[0] == "object") {
+                                deposit_arr_resp[0].status = 2; // UTXO ready to be used again
+                                await updateinDB(
+                                    "deposit",
+                                    deposit_arr_resp[0],
+                                    deposit_arr_resp[0].id
+                                );
+                            }
+                            await removeinDB("withdraw_btc", withdraw_id);
                             throw new Error(error);
                         }
                     }
@@ -17372,22 +17379,6 @@
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
                       ) {
-                        // If margin is > 2% discontinue the trade
-                        const diffPercent = Math.floor(((trade_margin.remaining_crypto_credit-eqCrypto)
-                                                    /trade_margin.remaining_crypto_credit)*100);
-                        console.log(trade_margin.remaining_crypto_credit, eqCrypto);
-                        console.info(diffPercent);
-                        
-                        if(diffPercent<=2) {
-                            eqCrypto = trade_margin.remaining_crypto_credit;
-                        }  else {
-                            err_response = {
-                                user_flo_addr: params.trader_flo_address,
-                                msg: `Info: Difference between Crypto balance and trading amount is too high: ${diffPercent}` 
-                            }
-                            reactor.dispatchEvent('message_for_user', err_response);
-                            return;
-                        }
                         request.response = RM_TRADE.trade_sell.call(
                           this,
                           ...request.params,
@@ -18352,6 +18343,50 @@
                                     return false;
                                 }
 
+                                let explorer;
+                                let decimal = 100000000;
+                                switch (withdraw_res.product) {
+                                    case "BTC":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .btc_mainnet;
+                                        break;
+                                    case "BTC_TEST":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .btc_testnet;
+                                        break;
+                                    case "FLO":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .flo_mainnet;
+                                        decimal = 1;
+                                        break;
+                                    case "FLO_TEST":
+                                        explorer =
+                                            localbitcoinplusplus.server
+                                                .flo_testnet;
+                                        decimal = 1;
+                                        break;
+                                    default:
+                                        break;
+                                }
+
+                                if (typeof explorer !== "string") {
+                                    throw new Error(
+                                        `WARNING: Invalid product value: ${withdraw_res.product}.`
+                                    );
+                                    return false;
+                                }
+
+                                const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
+                                console.log(bal_url);
+
+                                // Get the balance before sending the tx. It is important to get balance before
+                                // tx than to after because fetching balance after can return older or newer balance 
+                                // on random events
+                                let current_balance = await helper_functions.ajaxGet(bal_url);
+
                                 const btc_reserves = await backup_server_db_instance
                                     .backup_readDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
 
@@ -18431,6 +18466,9 @@
                                                             let withdrawer_crypto_bal_id = `${withdraw_res.trader_flo_address}_${withdraw_res.product}`;
 
                                                             withdrawer_crypto_bal_response.crypto_balance -= EqCryptoWd;
+                                                            withdrawer_crypto_bal_response.crypto_balance = 
+                                                                helper_functions.truncateDecimals(withdrawer_crypto_bal_response.crypto_balance);
+                                                                            
                                                             const updated_crypto_balance = await backup_server_db_instance
                                                                 .backup_updateinDB(
                                                                     "crypto_balances",
@@ -18483,52 +18521,7 @@
                                                                 typeof deposit_arr_resp ==
                                                                 "object"
                                                             ) {
-                                                                deposit_arr_resp.map(
-                                                                    async deposit_arr => {
-                                                                        let explorer;
-                                                                        let decimal = 100000000;
-                                                                        switch (deposit_arr.product) {
-                                                                            case "BTC":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus
-                                                                                        .server.btc_mainnet;
-                                                                                break;
-                                                                            case "BTC_TEST":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus
-                                                                                        .server.btc_testnet;
-                                                                                break;
-                                                                            case "FLO":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus
-                                                                                        .server.flo_mainnet;
-                                                                                decimal = 1;
-                                                                                break;
-                                                                            case "FLO_TEST":
-                                                                                explorer =
-                                                                                    localbitcoinplusplus
-                                                                                        .server.flo_testnet;
-                                                                                decimal = 1;
-                                                                                break;
-                                                                            default:
-                                                                                break;
-                                                                        }
-
-                                                                        if (
-                                                                            typeof explorer !== "string"
-                                                                        ) {
-                                                                            throw new Error(
-                                                                                `WARNING: Invalid product value: ${deposit_arr.product}.`
-                                                                            );
-                                                                            return false;
-                                                                        }
-
-                                                                        const bal_url = `${explorer}/api/addr/${withdraw_res.utxo_addr}/balance`;
-                                                                        console.log(bal_url);
-
-                                                                        let current_balance = await helper_functions.ajaxGet(
-                                                                            bal_url
-                                                                        );
+                                                                const deposit_arr = deposit_arr_resp[0];
                                                                         if (
                                                                             !isNaN(current_balance) &&
                                                                             parseFloat(
@@ -18544,8 +18537,8 @@
                                                                             typeof current_balance ==
                                                                             "number"
                                                                         ) {
-                                                                            deposit_arr.bitcoinToBePaid = current_balance;
-                                                                            btc_reserves.balance = current_balance;
+                                                                            deposit_arr.bitcoinToBePaid = current_balance-EqCryptoWd;
+                                                                            btc_reserves.balance = current_balance-EqCryptoWd;
                                                                         } else {
                                                                             deposit_arr.bitcoinToBePaid -= EqCryptoWd;
                                                                             btc_reserves.balance -= EqCryptoWd;
@@ -18554,6 +18547,9 @@
                                                                                 reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address)
                                                                             );
                                                                         }
+
+                                                                        deposit_arr.bitcoinToBePaid = helper_functions.truncateDecimals(deposit_arr.bitcoinToBePaid);
+                                                                        btc_reserves.balance = helper_functions.truncateDecimals(btc_reserves.balance);
 
                                                                         if (
                                                                             deposit_arr.bitcoinToBePaid >
@@ -18652,8 +18648,8 @@
                                                                             );
 
                                                                         }
-                                                                    }
-                                                                );
+                                                                    
+                                                                
                                                                 return true;
                                                             }
 
@@ -18706,10 +18702,32 @@
                             }
 
                         } catch (error) {
+                                                    
+                            const withdraw_res = await backup_server_db_instance
+                            .backup_readDB("withdraw_btc", withdraw_id);
+                            // update deposits status back to 2 in db
+                            const deposit_arr_resp = await backup_server_db_instance
+                            .backup_readDBbyIndex(
+                                "deposit",
+                                "btc_address",
+                                withdraw_res.utxo_addr
+                            )
+                            if (typeof deposit_arr_resp[0] == "object") {
+                                deposit_arr_resp[0].status = 2; // UTXO ready to be used again
+                                await backup_server_db_instance
+                                .backup_updateinDB(
+                                    "deposit",
+                                    deposit_arr_resp[0],
+                                    deposit_arr_resp[0].id
+                                );
+                            }
+                            await backup_server_db_instance
+                            .backup_removeinDB("withdraw_btc", withdraw_id);
                             throw new Error(error);
                         }
                     }
-                );
+                )
+
                 break;
 
               case "superNodeSignedAddUserPublicData":
@@ -22131,21 +22149,19 @@
                           removeinDB(tradeDB, cancel_request.trade_id).then(
                             id => {
                                 msg_response = {
-                                user_flo_addr: params.trader_flo_address,
-                                msg: `Failed to verify order for order id ${cancel_request.trade_id}`
+                                user_flo_addr: cancel_request.trader_flo_address,
+                                msg: `Order id ${cancel_request.trade_id} is deleted.`
                             }
                                 reactor.dispatchEvent('message_for_user', msg_response);
                             }
                           );
                         } else {
                           err_response = {
-                                user_flo_addr: params.trader_flo_address,
+                                user_flo_addr: cancel_request.trader_flo_address,
                                 msg: `Failed to verify order for order id ${cancel_request.trade_id}`
                             }
                             reactor.dispatchEvent('message_for_user', err_response);
                         }
-                    } else {
-                      showMessage("Failed to cancel order.");
                     }
                   }
                   break;
@@ -24094,24 +24110,6 @@
                             showMessage(backup_db_error_msg);
                             throw new Error(backup_db_error_msg);
                           }
-
-                          backup_server_db_instance
-                            .backup_readDB(
-                              "userPublicData",
-                              cancel_request.trader_flo_address
-                            )
-                            .then(trader_data => {
-                              if (
-                                typeof trader_data.trader_flo_address !==
-                                  "string" ||
-                                typeof trader_data.trader_flo_pubKey !==
-                                  "string"
-                              ) {
-                                err_msg =
-                                  "ERROR: Failed to cancel the order. User is unknown.";
-                                showMessage(err_msg);
-                                throw new Error(err_msg);
-                              }
                               tradeDB =
                                 cancel_request.trade_type == "buy"
                                   ? "buyOrders"
@@ -24120,7 +24118,7 @@
                                 RM_WALLET.verify(
                                   cancel_request.trade_id,
                                   cancel_request.signed_trade_id,
-                                  trader_data.trader_flo_pubKey
+                                  nodePubKey.trader_flo_pubKey
                                 )
                               ) {
                                 backup_server_db_instance
@@ -24131,7 +24129,7 @@
                                   .then(id =>
                                     {
                                         err_response = {
-                                            user_flo_addr: params.trader_flo_address,
+                                            user_flo_addr: cancel_request.trader_flo_address,
                                             msg: `Order Id ${id} deleted.`
                                         }
                                         reactor.dispatchEvent('message_for_user', err_response);
@@ -24140,12 +24138,12 @@
                                   );
                               } else {
                                 err_response = {
-                                    user_flo_addr: params.trader_flo_address,
+                                    user_flo_addr: cancel_request.trader_flo_address,
                                     msg: `Failed to verify order for order id ${cancel_request.trade_id}`
                                 }
                                 reactor.dispatchEvent('message_for_user', err_response);
                               }
-                            });
+                            
                         });
                     } else {
                       err_response = {
@@ -26134,24 +26132,6 @@
                             showMessage(backup_db_error_msg);
                             throw new Error(backup_db_error_msg);
                           }
-
-                          backup_server_db_instance
-                            .backup_readDB(
-                              "userPublicData",
-                              cancel_request.trader_flo_address
-                            )
-                            .then(trader_data => {
-                              if (
-                                typeof trader_data.trader_flo_address !==
-                                  "string" ||
-                                typeof trader_data.trader_flo_pubKey !==
-                                  "string"
-                              ) {
-                                err_msg =
-                                  "ERROR: Failed to cancel the order. User is unknown.";
-                                showMessage(err_msg);
-                                throw new Error(err_msg);
-                              }
                               tradeDB =
                                 cancel_request.trade_type == "buy"
                                   ? "buyOrders"
@@ -26160,7 +26140,7 @@
                                 RM_WALLET.verify(
                                   cancel_request.trade_id,
                                   cancel_request.signed_trade_id,
-                                  trader_data.trader_flo_pubKey
+                                  nodePubKey.trader_flo_pubKey
                                 )
                               ) {
                                 backup_server_db_instance
@@ -26169,16 +26149,22 @@
                                     cancel_request.trade_id
                                   )
                                   .then(id =>
-                                    showMessage(`Order Id ${id} deleted.`)
+                                    {
+                                        err_response = {
+                                            user_flo_addr: cancel_request.trader_flo_address,
+                                            msg: `Order Id ${id} is deleted.`
+                                        }
+                                        reactor.dispatchEvent('message_for_user', err_response);
+                                    }
                                   );
                               } else {
-                                showMessage(
-                                  `Failed to verify order for order id ${cancel_request.trade_id}`
-                                );
-                              }
-                            });
-                        } else {
-                          showMessage("Failed to cancel order.");
+                                err_response = {
+                                        user_flo_addr: cancel_request.trader_flo_address,
+                                        msg: `Failed to verify order for order id ${cancel_request.trade_id}`
+                                    }
+                                    reactor.dispatchEvent('message_for_user', err_response);
+                                }
+                              
                         }
                       }
                     }
