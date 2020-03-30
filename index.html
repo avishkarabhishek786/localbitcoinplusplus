@@ -25977,7 +25977,9 @@
                             backup_server_db_instance.backup_updateinDB(
                               "withdraw_cash",
                               resp.withdrawer_data,
-                              resp.withdrawer_data.trader_flo_address
+                              resp.withdrawer_data.trader_flo_address,
+                              true,
+                              false
                             );
                           }
                           backup_server_db_instance
@@ -26717,14 +26719,10 @@
                     let seen_chunk_id_list = [];
 
                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
-                    //   return seen_chunk_id_list.hasOwnProperty(
-                    //     item.private_key_chunk.id
-                    //   )
-                    //     ? false
-                    //     : seen_chunk_id_list.push(item.private_key_chunk.id);
-                        if(!seen_chunk_id_list.hasOwnProperty(
+                        if(typeof item.private_key_chunk.id=="string" &&
+                            !seen_chunk_id_list.hasOwnProperty(
                             item.private_key_chunk.id
-                        ) && typeof item.private_key_chunk.id=="string") {
+                        ) ) {
                             return seen_chunk_id_list.push(item.private_key_chunk.id);
                         }
 
@@ -28389,6 +28387,46 @@
         }
       };
 
+      const exception_datastores = ['localbitcoinUser', 'ipTable', 'kBucketStore', 'myClosestSupernodes'];
+
+      function signDBData(objectdata) {
+          try {
+              if(!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) return objectdata;
+              
+              const RM_WALLET = new localbitcoinplusplus.wallets;
+              let objectdata_copy = JSON.parse(JSON.stringify(objectdata));
+              if(typeof objectdata_copy.db_sign=="string")  delete objectdata_copy.db_sign;
+              if(typeof objectdata_copy.db_signer=="string") delete objectdata_copy.db_signer;
+              objectdata_copy.db_sign = RM_WALLET.sign(JSON.stringify(objectdata_copy), localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY);
+              objectdata_copy.db_signer = localbitcoinplusplus.wallets.my_local_flo_public_key;
+              return objectdata_copy;
+          } catch (error) {
+              throw new Error(error);
+          }
+      }
+
+      function verifyDBData(objectdata) {
+          try {
+              if(!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                .includes(objectdata.db_signer)) return false;
+              const RM_WALLET = new localbitcoinplusplus.wallets;    
+              let objectdata_copy = JSON.parse(JSON.stringify(objectdata));
+              delete objectdata_copy.db_sign;
+              delete objectdata_copy.db_signer;
+              //return RM_WALLET.verify(JSON.stringify(objectdata_copy), objectdata.db_sign, objectdata.db_signer);
+                if(RM_WALLET.verify(JSON.stringify(objectdata_copy), objectdata.db_sign, objectdata.db_signer)) {
+                    return true;         
+                } else {
+                    console.error('verification failed');
+                    console.trace(objectdata);
+                    return false;
+                }
+          } catch(error) {
+              throw new Error(error);
+          } 
+      }
+
       function readDB(tablename, id, filter_deletables = true) {
         return new Promise((resolve, reject) => {
           var transaction = db.transaction([tablename]);
@@ -28401,15 +28439,19 @@
 
           request.onsuccess = function(event) {
             if (request.result) {
-              if (filter_deletables == true) {
-                if (typeof request.result.is_deletable == "undefined") {
-                  resolve(request.result);
-                } else {
-                  resolve();
+                if(!exception_datastores.includes(tablename)) {
+                    if(!verifyDBData(request.result)) return resolve();
                 }
-              } else {
-                resolve(request.result);
-              }
+                if (filter_deletables == true) {
+                    if (typeof request.result.is_deletable == "undefined") {
+                     resolve(request.result);
+                    } else {
+                        resolve();
+                    }
+                } else {
+                    resolve(request.result);
+                }
+            
             } else {
               resolve();
             }
@@ -28417,42 +28459,7 @@
         });
       }
 
-    //   function readDBbyIndex(
-    //     tablename,
-    //     index,
-    //     indexValue,
-    //     filter_deletables = true
-    //   ) {
-    //     return new Promise((resolve, reject) => {
-    //       var transaction = db.transaction([tablename]);
-    //       var objectStore = transaction.objectStore(tablename);
-    //       let response = [];
-    //       var myIndex = objectStore.index(index);
-    //       myIndex.openCursor().onerror = function(event) {
-    //         console.error("Error fetching data");
-    //         reject(event);
-    //       };
-    //       myIndex.openCursor().onsuccess = function(event) {
-    //         let cursor = event.target.result;
-    //         if (cursor) {
-    //           if (cursor.value[index] == indexValue) {
-    //             if (filter_deletables == true) {
-    //               if (typeof cursor.value.is_deletable == "undefined") {
-    //                 response.push(cursor.value);
-    //               }
-    //             } else {
-    //               response.push(cursor.value);
-    //             }
-    //           }
-    //           cursor.continue();
-    //         } else {
-    //           resolve(response);
-    //         }
-    //       };
-    //     });
-    //   }
-
-    function readDBbyIndex(
+      function readDBbyIndex(
         tablename,
         index,
         indexValue,
@@ -28470,13 +28477,25 @@
             let cursor = event.target.result;
             if (cursor) {
               if (cursor.value[index] == indexValue) {
-                if (filter_deletables == true) {
-                  if (typeof cursor.value.is_deletable == "undefined") {
-                    response.push(cursor.value);
+                if(!exception_datastores.includes(tablename)) {
+                    if(verifyDBData(cursor.value)) {
+                        if (filter_deletables == true) {
+                            if (typeof cursor.value.is_deletable == "undefined") {
+                                response.push(cursor.value);
+                            }
+                        } else {
+                            response.push(cursor.value);
+                        }
+                    }
+                  } else {
+                    if (filter_deletables == true) {
+                        if (typeof cursor.value.is_deletable == "undefined") {
+                            response.push(cursor.value);
+                        }
+                    } else {
+                        response.push(cursor.value);
+                    }
                   }
-                } else {
-                  response.push(cursor.value);
-                }
               }
               cursor.continue();
             } else {
@@ -28491,29 +28510,40 @@
           let response = [];
           var objectStore = db.transaction(tablename).objectStore(tablename);
           
-          if ('getAll' in objectStore) {
-            // IDBObjectStore.getAll() will return the full set of items in our store.
-            objectStore.getAll().onsuccess = function(event) {
-                resolve(event.target.result);
-            };
-          } else {                
+        //   if ('getAll' in objectStore) {
+        //     // IDBObjectStore.getAll() will return the full set of items in our store.
+        //     objectStore.getAll().onsuccess = function(event) {
+        //         resolve(event.target.result);
+        //     };
+        //   } else {                
             objectStore.openCursor().onsuccess = function(event) {
                 let cursor = event.target.result;
                 if (cursor) {
-                if (filter_deletables == true) {
-                    if (typeof cursor.value.is_deletable == "undefined") {
-                    response.push(cursor.value);
+                    if(!exception_datastores.includes(tablename)) {
+                        if(verifyDBData(cursor.value)) {
+                            if (filter_deletables == true) {
+                                if (typeof cursor.value.is_deletable == "undefined") {
+                                response.push(cursor.value);
+                                }
+                            } else {
+                                response.push(cursor.value);
+                            }
+                        }
+                    } else {
+                        if (filter_deletables == true) {
+                            if (typeof cursor.value.is_deletable == "undefined") {
+                            response.push(cursor.value);
+                            }
+                        } else {
+                            response.push(cursor.value);
+                        }
                     }
+                    cursor.continue();
                 } else {
-                    response.push(cursor.value);
-                }
-
-                cursor.continue();
-                } else {
-                resolve(response);
+                    resolve(response);
                 }
             };
-          }
+        //   }
           
         });
       }
@@ -28525,6 +28555,11 @@
                     dbObject.vectorClock = 0;
                 if (typeof dbObject.timestamp == "undefined")
                     dbObject.timestamp = +new Date();
+                
+                if(!exception_datastores.includes(tablename)) {
+                    dbObject = signDBData(dbObject); 
+                }   
+                
                 let request = db.transaction([tablename], "readwrite")
                                 .objectStore(tablename)
                                 .add(dbObject);
@@ -28580,9 +28615,15 @@
                         if (typeof myRecord !== "object") {
                             Obj.vectorClock =
                                 typeof Obj.vectorClock == "number" ? Obj.vectorClock : 0;
+                            if(!exception_datastores.includes(tablename)) {
+                                Obj = signDBData(Obj); 
+                            }
                             request = db.transaction([tablename], "readwrite")
                             .objectStore(tablename).put(Obj);
                         } else if (myRecord.vectorClock < Obj.vectorClock) {
+                            if(!exception_datastores.includes(tablename)) {
+                                Obj = signDBData(Obj); 
+                            }
                             request = db.transaction([tablename], "readwrite")
                             .objectStore(tablename).put(Obj);
                         } else {
@@ -28598,6 +28639,9 @@
                         }
                     };
                 } else {
+                    if(!exception_datastores.includes(tablename)) {
+                        Obj = signDBData(Obj); 
+                    }
                     request = db.transaction([tablename], "readwrite")
                     .objectStore(tablename).put(Obj);
                 }
@@ -29044,6 +29088,9 @@
             };
 
             this.request.onsuccess = function(event) {
+              if(!exception_datastores.includes(tablename)) {
+                  if(!verifyDBData(parent_request.result)) return resolve();
+              }
               if (parent_request.result) {
                 if (filter_deletables == true) {
                   if (
@@ -29063,41 +29110,6 @@
           });
         },
 
-        // backup_readDBbyIndex(
-        //   tablename,
-        //   index,
-        //   indexValue,
-        //   filter_deletables = true
-        // ) {
-        //   return new Promise((resolve, reject) => {
-        //     this.transaction = this.db.transaction([tablename]);
-        //     var objectStore = this.transaction.objectStore(tablename);
-        //     let response = [];
-        //     var myIndex = objectStore.index(index);
-        //     myIndex.openCursor().onerror = function(event) {
-        //       console.error("Error fetching data");
-        //       reject(event);
-        //     };
-        //     myIndex.openCursor().onsuccess = function(event) {
-        //       let cursor = event.target.result;
-        //       if (cursor) {
-        //         if (cursor.value[index] == indexValue) {
-        //           if (filter_deletables == true) {
-        //             if (typeof cursor.value.is_deletable == "undefined") {
-        //               response.push(cursor.value);
-        //             }
-        //           } else {
-        //             response.push(cursor.value);
-        //           }
-        //         }
-        //         cursor.continue();
-        //       } else {
-        //         resolve(response);
-        //       }
-        //     };
-        //   });
-        // },
-
         backup_readDBbyIndex(
           tablename,
           index,
@@ -29116,13 +29128,27 @@
               let cursor = event.target.result;
               if (cursor) {
                 if (cursor.value[index] == indexValue) {
-                  if (filter_deletables == true) {
-                    if (typeof cursor.value.is_deletable == "undefined") {
-                      response.push(cursor.value);
+                  
+                    if(!exception_datastores.includes(tablename)) {
+                        if(verifyDBData(cursor.value)) {
+                            if (filter_deletables == true) {
+                                if (typeof cursor.value.is_deletable == "undefined") {
+                                 response.push(cursor.value);
+                                }
+                            } else {
+                                response.push(cursor.value);
+                            }
+                        }
+                    } else {
+                        if (filter_deletables == true) {
+                            if (typeof cursor.value.is_deletable == "undefined") {
+                               response.push(cursor.value);
+                            }
+                        } else {
+                            response.push(cursor.value);
+                        }
                     }
-                  } else {
-                    response.push(cursor.value);
-                  }
+                 
                 }
                 cursor.continue();
               } else {
@@ -29142,12 +29168,24 @@
             objectStore.openCursor().onsuccess = function(event) {
               let cursor = event.target.result;
               if (cursor) {
-                if (filter_deletables == true) {
-                  if (typeof cursor.value.is_deletable == "undefined") {
-                    response.push(cursor.value);
-                  }
+                if(!exception_datastores.includes(tablename)) {
+                    if(verifyDBData(cursor.value)) {
+                        if (filter_deletables == true) {
+                            if (typeof cursor.value.is_deletable == "undefined") {
+                                response.push(cursor.value);
+                            }
+                        } else {
+                            response.push(cursor.value);
+                        }
+                    }
                 } else {
-                  response.push(cursor.value);
+                    if (filter_deletables == true) {
+                        if (typeof cursor.value.is_deletable == "undefined") {
+                            response.push(cursor.value);
+                        }
+                    } else {
+                        response.push(cursor.value);
+                    }
                 }
 
                 cursor.continue();
@@ -29168,6 +29206,10 @@
                 if (typeof dbObject.timestamp == "undefined")
                     dbObject.timestamp = +new Date();
                 
+                if(!exception_datastores.includes(tablename)) {
+                    dbObject = signDBData(dbObject); 
+                } 
+
                 this.request = this.db.transaction([tablename], "readwrite")
                                       .objectStore(tablename)
                                       .add(dbObject);
@@ -29222,11 +29264,23 @@
                         if (typeof myRecord !== "object") {
                             Obj.vectorClock =
                             typeof Obj.vectorClock == "number" ? Obj.vectorClock : 0;
+                            if(!exception_datastores.includes(tablename)) {
+                                Obj = signDBData(Obj); 
+                            }
                             this.request = this.db.transaction([tablename], "readwrite")
                             .objectStore(tablename).put(Obj);
                         } else if (myRecord.vectorClock < Obj.vectorClock) {
-                            this.request = this.db.transaction([tablename], "readwrite")
-                            .objectStore(tablename).put(Obj);
+                            // Don't sign rather verify data here
+                            if(!exception_datastores.includes(tablename)) {
+                                if(verifyDBData(Obj)===true) {
+                                    this.request = this.db.transaction([tablename], "readwrite")
+                                        .objectStore(tablename).put(Obj);
+                                } else {
+                                    console.error('failed verification at backup update');
+                                    console.trace(Obj);
+                                }
+                            }
+                            
                         } else {
                             resolve(Obj);
                         }
