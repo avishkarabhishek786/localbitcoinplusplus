@@ -519,7 +519,7 @@
 
       .sidenav {
         position: fixed;
-        z-index: 1;
+        z-index: 2;
         top: 20px;
         left: 10px;
         background: #eee;
@@ -15541,7 +15541,9 @@
                     "sellOrders"
                   ];
                   localbitcoinplusplus.actions
-                    .get_sharable_db_data_for_single_user(tableArray)
+                    .get_sharable_db_data_for_single_user(
+                        params.trader_flo_address, 
+                        tableArray)
                     .then(function(su_db_data) {
                       if (typeof su_db_data == "object") {
                         su_db_data.trader_flo_address =
@@ -15673,12 +15675,13 @@
                         trade_margin.remaining_fiat_credit > 0 &&
                         trade_margin.remaining_fiat_credit >= params.buy_price
                       ) {
+                        request.params.receiver_flo_address = params.trader_flo_address;
                         request.response = RM_TRADE.trade_buy.call(
                           this,
                           ...request.params,
                           function(supernode_signed_res) {
-                            supernode_signed_res.receiver_flo_address =
-                              params.trader_flo_address;
+                            // supernode_signed_res.receiver_flo_address =
+                            //   params.trader_flo_address;
                             if (typeof supernode_signed_res == "object") {
                               RM_RPC.send_rpc
                                 .call(
@@ -15745,14 +15748,14 @@
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
                       ) {  
-
+                        request.params.receiver_flo_address = params.trader_flo_address;
                         request.response = RM_TRADE.trade_sell.call(
                           this,
                           ...request.params,
                           function(supernode_signed_res) {
                             if (typeof supernode_signed_res == "object") {
-                              supernode_signed_res.receiver_flo_address =
-                                params.trader_flo_address;
+                            //   supernode_signed_res.receiver_flo_address =
+                            //     params.trader_flo_address;
                               RM_RPC.send_rpc
                                 .call(
                                   this,
@@ -16622,6 +16625,46 @@
                 );
                 break;
 
+              case "cancel_trade":
+
+                RM_RPC.filter_legit_requests(
+                    params.trader_flo_address,
+                    async function(is_valid_request) {
+                        if (is_valid_request !== true) return false;
+                    
+                        let cancel_request = params;
+                        if (cancel_request.job == "cancel_trade_request") {
+                            tradeDB =
+                            cancel_request.trade_type == "buy"
+                                ? "buyOrders"
+                                : "sellOrders";
+                            if (
+                            RM_WALLET.verify(
+                                cancel_request.trade_id,
+                                cancel_request.signed_trade_id,
+                                res_obj.nodePubKey
+                            )
+                            ) {
+                            removeinDB(tradeDB, cancel_request.trade_id).then(
+                                id => {
+                                    msg_response = {
+                                    user_flo_addr: cancel_request.trader_flo_address,
+                                    msg: `Order id ${cancel_request.trade_id} is deleted.`
+                                }
+                                    reactor.dispatchEvent('message_for_user', msg_response);
+                                }
+                            );
+                            } else {
+                            err_response = {
+                                    user_flo_addr: cancel_request.trader_flo_address,
+                                    msg: `Failed to verify order for order id ${cancel_request.trade_id}`
+                                }
+                                reactor.dispatchEvent('message_for_user', err_response);
+                            }
+                        }
+                    });
+                  break;  
+
               case "retrieve_shamirs_secret_btc_pvtkey":
                 RM_RPC.filter_legit_requests(
                     params.trader_flo_address,
@@ -17162,6 +17205,7 @@
 
                     localbitcoinplusplus.actions
                       .get_sharable_db_data_for_single_user(
+                        params.trader_flo_address,  
                         tableArray,
                         primarySupernodeOfThisUser
                       )
@@ -17298,12 +17342,14 @@
                         trade_margin.remaining_fiat_credit > 0 &&
                         trade_margin.remaining_fiat_credit >= params.buy_price
                       ) {
+
+                        request.params.receiver_flo_address = params.trader_flo_address;
                         request.response = RM_TRADE.trade_buy.call(
                           this,
                           ...request.params,
                           function(supernode_signed_res) {
-                            supernode_signed_res.receiver_flo_address =
-                              params.trader_flo_address;
+                            // supernode_signed_res.receiver_flo_address =
+                            //   params.trader_flo_address;
                             if (typeof supernode_signed_res == "object") {
                               RM_RPC.send_rpc
                                 .call(
@@ -17379,13 +17425,14 @@
                         trade_margin.remaining_crypto_credit > 0 &&
                         trade_margin.remaining_crypto_credit >= eqCrypto
                       ) {
+                        request.params.receiver_flo_address = params.trader_flo_address;  
                         request.response = RM_TRADE.trade_sell.call(
                           this,
                           ...request.params,
                           function(supernode_signed_res) {
                             if (typeof supernode_signed_res == "object") {
-                              supernode_signed_res.receiver_flo_address =
-                                params.trader_flo_address;
+                            //   supernode_signed_res.receiver_flo_address =
+                            //     params.trader_flo_address;
                               RM_RPC.send_rpc
                                 .call(
                                   this,
@@ -18273,6 +18320,82 @@
                   }
                 );
                 break;
+
+              case "cancel_trade":
+
+                RM_RPC.filter_legit_backup_requests(
+                    params.trader_flo_address,
+                    async function (is_valid_request) {
+                        if (is_valid_request !== true) return false;
+                    
+                        let cancel_request = params;
+                        if (cancel_request.job == "cancel_trade_request") {
+                        if (
+                            typeof cancel_request.trader_flo_address != "string"
+                        )
+                            return;
+                        localbitcoinplusplus.kademlia
+                            .determineClosestSupernode(
+                                cancel_request.trader_flo_address
+                            )
+                            .then(my_closest_su_list => {
+                            const primarySupernodeOfThisUser =
+                                my_closest_su_list[0].data.id;
+                            const backup_server_db_instance =
+                                localbitcoinplusplus.newBackupDatabase.db[
+                                primarySupernodeOfThisUser
+                                ];
+
+                            if (typeof backup_server_db_instance !== "object") {
+                                let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
+                                showMessage(backup_db_error_msg);
+                                throw new Error(backup_db_error_msg);
+                            }
+                                tradeDB =
+                                    cancel_request.trade_type == "buy"
+                                    ? "buyOrders"
+                                    : "sellOrders";
+                                if (
+                                    RM_WALLET.verify(
+                                    cancel_request.trade_id,
+                                    cancel_request.signed_trade_id,
+                                    nodePubKey.trader_flo_pubKey
+                                    )
+                                ) {
+                                    backup_server_db_instance
+                                    .backup_removeinDB(
+                                        tradeDB,
+                                        cancel_request.trade_id
+                                    )
+                                    .then(id =>
+                                        {
+                                            err_response = {
+                                                user_flo_addr: cancel_request.trader_flo_address,
+                                                msg: `Order Id ${id} deleted.`
+                                            }
+                                            reactor.dispatchEvent('message_for_user', err_response);
+                                        }
+                                        
+                                    );
+                                } else {
+                                    err_response = {
+                                        user_flo_addr: cancel_request.trader_flo_address,
+                                        msg: `Failed to verify order for order id ${cancel_request.trade_id}`
+                                    }
+                                    reactor.dispatchEvent('message_for_user', err_response);
+                                }
+                        });
+                    } else {
+                      err_response = {
+                            user_flo_addr: params.trader_flo_address,
+                            msg: `Failed to cancel order for order id ${cancel_request.trade_id}`
+                        }
+                        reactor.dispatchEvent('message_for_user', err_response);
+                    }
+                           
+                });
+              
+                  break;    
 
               case "retrieve_shamirs_secret_btc_pvtkey":
                 RM_RPC.filter_legit_backup_requests(
@@ -20234,297 +20357,306 @@
           }
         },
         launchTrade(buyPipeObj, sellPipeObj, callback, backup_db = "") {
-          let _addDB = addDB;
-          let _readDB = readDB;
-          let _readDBbyIndex = readDBbyIndex;
-          let _readAllDB = readAllDB;
-          let _updateinDB = updateinDB;
-          let _removeinDB = removeinDB;
-          let _removeByIndex = removeByIndex;
-          let _removeAllinDB = removeAllinDB;
-          if (typeof backup_db == "string" && backup_db.length > 0) {
+            let _addDB = addDB;
+            let _readDB = readDB;
+            let _readDBbyIndex = readDBbyIndex;
+            let _readAllDB = readAllDB;
+            let _updateinDB = updateinDB;
+            let _removeinDB = removeinDB;
+            let _removeByIndex = removeByIndex;
+            let _removeAllinDB = removeAllinDB;
+            if (typeof backup_db == "string" && backup_db.length > 0) {
             if (
-              typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
-              "object"
+                typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+                "object"
             ) {
-              const foreign_db =
+                const foreign_db =
                 localbitcoinplusplus.newBackupDatabase.db[backup_db];
-              _addDB = foreign_db.backup_addDB.bind(foreign_db);
-              _readDB = foreign_db.backup_readDB.bind(foreign_db);
-              _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
-              _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
-              _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
-              _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
-              _removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+                _addDB = foreign_db.backup_addDB.bind(foreign_db);
+                _readDB = foreign_db.backup_readDB.bind(foreign_db);
+                _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                _removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
             } else {
-              err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
-              showMessage(err_msg);
-              throw new Error(err_msg);
+                err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                showMessage(err_msg);
+                throw new Error(err_msg);
             }
-          }
-          if (
+            }
+            if (
             buyPipeObj.order_type == "buy" &&
             sellPipeObj.order_type == "sell" &&
             buyPipeObj.buy_price == sellPipeObj.buy_price &&
             buyPipeObj.currency == sellPipeObj.currency &&
             buyPipeObj.product == sellPipeObj.product
-          ) {
+            ) {
             const RM_TRADE = new localbitcoinplusplus.trade();
             const RM_WALLET = new localbitcoinplusplus.wallets();
             let err_msg;
             // Check buyer's cash balance
             const buyer_cash_id = `${buyPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
             _readDB("cash_balances", buyer_cash_id).then(function(
-              buyPipeCashRes
+                buyPipeCashRes
             ) {
-              if (
+                if (
                 typeof buyPipeCashRes == "object" &&
                 typeof buyPipeCashRes.cash_balance == "number"
-              ) {
+                ) {
                 let buyer_cash_balance = parseFloat(
-                  buyPipeCashRes.cash_balance
+                    buyPipeCashRes.cash_balance
                 );
                 let buy_price_btc = parseFloat(buyPipeObj.buy_price);
                 if (buyer_cash_balance < buy_price_btc) {
-                  err_msg = "Insufficient cash balance of buyer.";
-                  showMessage(err_msg);
-                  throw new Error(err_msg);
+                    err_msg = "Insufficient cash balance of buyer.";
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
                 }
                 // calculate equivalent BTC for x amount of Cash
                 let eqBTCBuyer = RM_TRADE.calculateCryptoEquivalentOfCash(
-                  buy_price_btc,
-                  buyPipeObj.currency,
-                  buyPipeObj.product
+                    buy_price_btc,
+                    buyPipeObj.currency,
+                    buyPipeObj.product
                 );
 
                 if (
-                  !isNaN(eqBTCBuyer) &&
-                  eqBTCBuyer != "" &&
-                  eqBTCBuyer != undefined
+                    !isNaN(eqBTCBuyer) &&
+                    eqBTCBuyer != "" &&
+                    eqBTCBuyer != undefined
                 ) {
-                  eqBTCBuyer = helper_functions.truncateDecimals(eqBTCBuyer);
+                    eqBTCBuyer = helper_functions.truncateDecimals(eqBTCBuyer);
                 }
 
                 // Check seller's crypto balance
                 let seller_btc_id = `${sellPipeObj.trader_flo_address}_${sellPipeObj.product}`;
                 _readDB("crypto_balances", seller_btc_id).then(function(
-                  sellPipeBTCRes
+                    sellPipeBTCRes
                 ) {
-                  if (
+                    if (
                     typeof sellPipeBTCRes == "object" &&
                     typeof sellPipeBTCRes.crypto_balance == "number"
-                  ) {
+                    ) {
                     let seller_btc_balance = helper_functions.truncateDecimals(sellPipeBTCRes.crypto_balance);
                     let sell_price_in_inr = parseFloat(sellPipeObj.buy_price);
                     let eqBTCSeller = RM_TRADE.calculateCryptoEquivalentOfCash(
-                      sell_price_in_inr,
-                      buyPipeObj.currency,
-                      buyPipeObj.product
+                        sell_price_in_inr,
+                        buyPipeObj.currency,
+                        buyPipeObj.product
                     );
                     if (
-                      !isNaN(eqBTCSeller) &&
-                      eqBTCSeller != "" &&
-                      eqBTCSeller != undefined
+                        !isNaN(eqBTCSeller) &&
+                        eqBTCSeller != "" &&
+                        eqBTCSeller != undefined
                     ) {
-                      eqBTCSeller = helper_functions.truncateDecimals(eqBTCSeller);
-                      if (seller_btc_balance < eqBTCSeller) {
+                        eqBTCSeller = helper_functions.truncateDecimals(eqBTCSeller);
+                        if (seller_btc_balance < eqBTCSeller) {
                         err_msg = "Insufficient BTC balance of seller.";
                         showMessage(err_msg);
                         throw new Error(err_msg);
-                      }
+                        }
 
-                      // Increase buyer's crypto balance
-                      let buyerBTCResponseObject;
-                      let buyer_btc_id = `${buyPipeObj.trader_flo_address}_${buyPipeObj.product}`;
-                      _readDB("crypto_balances", buyer_btc_id).then(function(
+                        // Increase buyer's crypto balance
+                        let buyerBTCResponseObject;
+                        let buyer_btc_id = `${buyPipeObj.trader_flo_address}_${buyPipeObj.product}`;
+                        _readDB("crypto_balances", buyer_btc_id).then(function(
                         buyPipeBTCRes
-                      ) {
-                        if (
-                          typeof buyPipeBTCRes == "object" &&
-                          typeof buyPipeBTCRes.crypto_balance == "number"
                         ) {
-                          buyPipeBTCRes.crypto_balance =
+                        if (
+                            typeof buyPipeBTCRes == "object" &&
+                            typeof buyPipeBTCRes.crypto_balance == "number"
+                        ) {
+                            buyPipeBTCRes.crypto_balance =
                             helper_functions.truncateDecimals(buyPipeBTCRes.crypto_balance) +
                             eqBTCBuyer;
-                          buyerBTCResponseObject = buyPipeBTCRes;
+                            buyerBTCResponseObject = buyPipeBTCRes;
                         } else {
-                          // The user bought BTC for first time
-                          buyerBTCResponseObject = {
+                            // The user bought BTC for first time
+                            buyerBTCResponseObject = {
                             id: buyer_btc_id,
                             trader_flo_address: buyPipeObj.trader_flo_address,
                             crypto_balance: eqBTCBuyer,
                             crypto_currency: buyPipeObj.product
-                          };
+                            };
                         }
 
                         // Decrease buyer cash balance
                         let buyer_new_cash_balance =
-                          buyer_cash_balance - buy_price_btc;
+                            buyer_cash_balance - buy_price_btc;
 
                         let buyerCashResponseObject = {
-                          id: buyer_cash_id,
-                          currency: buyPipeObj.currency,
-                          trader_flo_address: buyPipeObj.trader_flo_address,
-                          cash_balance: buyer_new_cash_balance
+                            id: buyer_cash_id,
+                            currency: buyPipeObj.currency,
+                            trader_flo_address: buyPipeObj.trader_flo_address,
+                            cash_balance: buyer_new_cash_balance
                         };
 
                         // Increase seller's Cash balance
                         let sellerCashResponseObject;
                         const seller_cash_id = `${sellPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
                         _readDB("cash_balances", seller_cash_id).then(function(
-                          sellPipeCashRes
+                            sellPipeCashRes
                         ) {
-                          if (
+                            if (
                             typeof sellPipeCashRes == "object" &&
                             typeof sellPipeCashRes.cash_balance == "number" &&
                             !isNaN(sellPipeCashRes.cash_balance)
-                          ) {
+                            ) {
                             sellPipeCashRes.cash_balance =
-                              parseFloat(sellPipeCashRes.cash_balance) +
-                              sell_price_in_inr;
+                                parseFloat(sellPipeCashRes.cash_balance) +
+                                sell_price_in_inr;
                             sellerCashResponseObject = sellPipeCashRes;
-                          } else {
+                            } else {
                             // User got cash for the first time
                             let seller_cash_id = `${sellPipeObj.trader_flo_address}_${buyPipeObj.currency}`;
                             sellerCashResponseObject = {
-                              id: seller_cash_id,
-                              trader_flo_address:
+                                id: seller_cash_id,
+                                trader_flo_address:
                                 sellPipeObj.trader_flo_address,
-                              currency: buyPipeObj.currency,
-                              cash_balance: sell_price_in_inr
+                                currency: buyPipeObj.currency,
+                                cash_balance: sell_price_in_inr
                             };
-                          }
+                            }
 
-                          // Decrease seller BTC balance
-                          let new_seller_btc_balance =
+                            // Decrease seller BTC balance
+                            let new_seller_btc_balance =
                             seller_btc_balance - eqBTCSeller;
-                          new_seller_btc_balance = helper_functions.truncateDecimals(new_seller_btc_balance);
-                          
-                          let sellerBTCResponseObject = {
+                            new_seller_btc_balance = helper_functions.truncateDecimals(new_seller_btc_balance);
+                            
+                            let sellerBTCResponseObject = {
                             id: `${sellPipeObj.trader_flo_address}_${sellPipeObj.product}`,
                             trader_flo_address: sellPipeObj.trader_flo_address,
                             crypto_balance: new_seller_btc_balance,
                             crypto_currency: sellPipeObj.product
-                          };
+                            };
 
-                          // supernode data query
-                          readDB("localbitcoinUser", "00-01").then(function(
+                            // supernode data query
+                            readDB("localbitcoinUser", "00-01").then(async function(
                             user_data
-                          ) {
+                            ) {
                             if (
-                              typeof user_data == "object" &&
-                              typeof localbitcoinplusplus.wallets
+                                typeof user_data == "object" &&
+                                typeof localbitcoinplusplus.wallets
                                 .MY_SUPERNODE_PRIVATE_KEY == "string" &&
-                              localbitcoinplusplus.wallets
+                                localbitcoinplusplus.wallets
                                 .MY_SUPERNODE_PRIVATE_KEY.length > 0
                             ) {
-                              // Delete orders
-                              try {
+                                // Delete orders
+                                try {
                                 _removeinDB("buyOrders", buyPipeObj.id);
                                 _removeinDB("sellOrders", sellPipeObj.id);
-                              } catch (error) {
+                                } catch (error) {
                                 callback(false);
                                 showMessage(
-                                  `WARNING: Failed to delete respective buy and sell orders in an operation.`
+                                    `WARNING: Failed to delete respective buy and sell orders in an operation.`
                                 );
                                 throw new Error(error);
-                              }
+                                }
 
-                              // Update balances
-                              try {
-                                _updateinDB(
-                                  "cash_balances",
-                                  buyerCashResponseObject,
-                                  buyPipeObj.trader_flo_address
-                                );
-                                _updateinDB(
-                                  "cash_balances",
-                                  sellerCashResponseObject,
-                                  sellPipeObj.trader_flo_address
-                                );
-                                _updateinDB(
-                                  "crypto_balances",
-                                  buyerBTCResponseObject,
-                                  buyPipeObj.trader_flo_address
-                                );
-                                _updateinDB(
-                                  "crypto_balances",
-                                  sellerBTCResponseObject,
-                                  sellPipeObj.trader_flo_address
-                                );
-                              } catch (error) {
+                                // Update balances
+                                try {
+                                
+                                } catch (error) {
                                 showMessage(
-                                  `WARNING: Failed to update cash and crypto balances during launch trade operation.`
+                                    `WARNING: Failed to update cash and crypto balances during launch trade operation.`
                                 );
                                 callback(false);
                                 throw new Error(error);
-                              }
+                                }
 
-                              // Prepare response
-                              let trade_infos = {
+                                let buyerCashResponseObjectPromise = _updateinDB(
+                                    "cash_balances",
+                                    buyerCashResponseObject,
+                                    buyPipeObj.trader_flo_address
+                                );
+                                let sellerCashResponseObjectPromise = _updateinDB(
+                                "cash_balances",
+                                sellerCashResponseObject,
+                                sellPipeObj.trader_flo_address
+                                );
+                                let buyerBTCResponseObjectPromise = _updateinDB(
+                                "crypto_balances",
+                                buyerBTCResponseObject,
+                                buyPipeObj.trader_flo_address
+                                );
+                                let sellerBTCResponseObjectPromise = _updateinDB(
+                                "crypto_balances",
+                                sellerBTCResponseObject,
+                                sellPipeObj.trader_flo_address
+                                );
+
+                                const balanceUpdatePromises = await Promise.all([
+                                    buyerCashResponseObjectPromise, 
+                                    sellerCashResponseObjectPromise, 
+                                    buyerBTCResponseObjectPromise, 
+                                    sellerBTCResponseObjectPromise
+                                ]);
+
+                                // Prepare response
+                                let trade_infos = {
                                 buy_order_id: buyPipeObj.id,
                                 sell_order_id: sellPipeObj.id,
                                 buyer_flo_id: buyPipeObj.trader_flo_address,
                                 seller_flo_id: sellPipeObj.trader_flo_address
-                              };
+                                };
 
-                              let trade_infos_str = JSON.stringify(trade_infos);
-                              let buyerCashResponseObjectStr = JSON.stringify(
-                                buyerCashResponseObject
-                              );
-                              let sellerCashResponseObjectStr = JSON.stringify(
-                                sellerCashResponseObject
-                              );
-                              let buyerBTCResponseObjectStr = JSON.stringify(
-                                buyerBTCResponseObject
-                              );
-                              let sellerBTCResponseObjectStr = JSON.stringify(
-                                sellerBTCResponseObject
-                              );
+                                let trade_infos_str = JSON.stringify(trade_infos);
+                                let buyerCashResponseObjectStr = JSON.stringify(
+                                    balanceUpdatePromises[0]
+                                );
+                                let sellerCashResponseObjectStr = JSON.stringify(
+                                    balanceUpdatePromises[1]
+                                );
+                                let buyerBTCResponseObjectStr = JSON.stringify(
+                                    balanceUpdatePromises[2]
+                                );
+                                let sellerBTCResponseObjectStr = JSON.stringify(
+                                    balanceUpdatePromises[3]
+                                );
 
-                              let res_str = `${trade_infos_str}${buyerCashResponseObjectStr}${sellerCashResponseObjectStr}${buyerBTCResponseObjectStr}${sellerBTCResponseObjectStr}`;
+                                let res_str = `${trade_infos_str}${buyerCashResponseObjectStr}${sellerCashResponseObjectStr}${buyerBTCResponseObjectStr}${sellerBTCResponseObjectStr}`;
 
-                              let hashed_data = Crypto.SHA256(res_str);
+                                let hashed_data = Crypto.SHA256(res_str);
 
-                              // Signing of the data by Supernode
-                              let signed_data = RM_WALLET.sign(
+                                // Signing of the data by Supernode
+                                let signed_data = RM_WALLET.sign(
                                 hashed_data,
                                 localbitcoinplusplus.wallets
-                                  .MY_SUPERNODE_PRIVATE_KEY
-                              );
+                                    .MY_SUPERNODE_PRIVATE_KEY
+                                );
 
-                              localbitcoinplusplus.kademlia
+                                localbitcoinplusplus.kademlia
                                 .determineClosestSupernode(
-                                  buyPipeObj.trader_flo_address
+                                    buyPipeObj.trader_flo_address
                                 )
                                 .then(getPrimarySuObj => {
-                                  let response_for_client = {
+                                    let response_for_client = {
                                     trade_infos: trade_infos,
-                                    buyer_cash_data: buyerCashResponseObject,
-                                    seller_cash_data: sellerCashResponseObject,
-                                    buyer_btc_data: buyerBTCResponseObject,
-                                    seller_btc_data: sellerBTCResponseObject,
+                                    buyer_cash_data: balanceUpdatePromises[0],
+                                    seller_cash_data: balanceUpdatePromises[1],
+                                    buyer_btc_data: balanceUpdatePromises[2],
+                                    seller_btc_data: balanceUpdatePromises[3],
                                     data_hash: hashed_data,
                                     supernode_sign: signed_data,
                                     supernodePubKey:
-                                      user_data.myLocalFLOPublicKey,
+                                        user_data.myLocalFLOPublicKey,
                                     trader_flo_address:
-                                      getPrimarySuObj[0].data.id
-                                  };
-                                  callback(response_for_client);
-                                  return true;
+                                        getPrimarySuObj[0].data.id
+                                    };
+                                    callback(response_for_client);
+                                    return true;
                                 });
                             }
-                          });
+                            });
                         });
-                      });
+                        });
                     }
-                  }
+                    }
                 });
-              }
+                }
             });
             callback(false);
-          }
+            }
         },
         cancelTrade(trade_id, trader_flo_address, trade_type) {
           if (typeof trade_id !== "string") {
@@ -22129,41 +22261,10 @@
                   }
                   break;
                 case "cancel_trade":
-                  if (
-                    typeof res_obj.params == "object" &&
-                    typeof res_obj.params[0] == "object"
-                  ) {
-                    let cancel_request = res_obj.params[0];
-                    if (cancel_request.job == "cancel_trade_request") {
-                        tradeDB =
-                          cancel_request.trade_type == "buy"
-                            ? "buyOrders"
-                            : "sellOrders";
-                        if (
-                          RM_WALLET.verify(
-                            cancel_request.trade_id,
-                            cancel_request.signed_trade_id,
-                            res_obj.nodePubKey
-                          )
-                        ) {
-                          removeinDB(tradeDB, cancel_request.trade_id).then(
-                            id => {
-                                msg_response = {
-                                user_flo_addr: cancel_request.trader_flo_address,
-                                msg: `Order id ${cancel_request.trade_id} is deleted.`
-                            }
-                                reactor.dispatchEvent('message_for_user', msg_response);
-                            }
-                          );
-                        } else {
-                          err_response = {
-                                user_flo_addr: cancel_request.trader_flo_address,
-                                msg: `Failed to verify order for order id ${cancel_request.trade_id}`
-                            }
-                            reactor.dispatchEvent('message_for_user', err_response);
-                        }
-                    }
-                  }
+                    response_from_sever = RM_RPC.receive_rpc_response.call(
+                        this,
+                        JSON.stringify(res_obj)
+                    );
                   break;
                 case "trade_balance_updates":
                   if (
@@ -24083,76 +24184,10 @@
                   }
                   break;
                 case "cancel_trade":
-                  if (
-                    typeof res_obj.params == "object" &&
-                    typeof res_obj.params[0] == "object"
-                  ) {
-                    let cancel_request = res_obj.params[0];
-                    if (cancel_request.job == "cancel_trade_request") {
-                      if (
-                        typeof res_obj.params[0].trader_flo_address != "string"
-                      )
-                        return;
-                      localbitcoinplusplus.kademlia
-                        .determineClosestSupernode(
-                          res_obj.params[0].trader_flo_address
-                        )
-                        .then(my_closest_su_list => {
-                          const primarySupernodeOfThisUser =
-                            my_closest_su_list[0].data.id;
-                          const backup_server_db_instance =
-                            localbitcoinplusplus.newBackupDatabase.db[
-                              primarySupernodeOfThisUser
-                            ];
-
-                          if (typeof backup_server_db_instance !== "object") {
-                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                            showMessage(backup_db_error_msg);
-                            throw new Error(backup_db_error_msg);
-                          }
-                              tradeDB =
-                                cancel_request.trade_type == "buy"
-                                  ? "buyOrders"
-                                  : "sellOrders";
-                              if (
-                                RM_WALLET.verify(
-                                  cancel_request.trade_id,
-                                  cancel_request.signed_trade_id,
-                                  nodePubKey.trader_flo_pubKey
-                                )
-                              ) {
-                                backup_server_db_instance
-                                  .backup_removeinDB(
-                                    tradeDB,
-                                    cancel_request.trade_id
-                                  )
-                                  .then(id =>
-                                    {
-                                        err_response = {
-                                            user_flo_addr: cancel_request.trader_flo_address,
-                                            msg: `Order Id ${id} deleted.`
-                                        }
-                                        reactor.dispatchEvent('message_for_user', err_response);
-                                    }
-                                    
-                                  );
-                              } else {
-                                err_response = {
-                                    user_flo_addr: cancel_request.trader_flo_address,
-                                    msg: `Failed to verify order for order id ${cancel_request.trade_id}`
-                                }
-                                reactor.dispatchEvent('message_for_user', err_response);
-                              }
-                            
-                        });
-                    } else {
-                      err_response = {
-                            user_flo_addr: params.trader_flo_address,
-                            msg: `Failed to cancel order for order id ${cancel_request.trade_id}`
-                        }
-                        reactor.dispatchEvent('message_for_user', err_response);
-                    }
-                  }
+                    response_from_sever = RM_RPC.backup_receive_rpc_response.call(
+                        this,
+                        JSON.stringify(res_obj)
+                    );
                   break;
                 case "trade_balance_updates":
                   if (
@@ -26150,23 +26185,7 @@
                                     tradeDB,
                                     cancel_request.trade_id
                                   )
-                                  .then(id =>
-                                    {
-                                        err_response = {
-                                            user_flo_addr: cancel_request.trader_flo_address,
-                                            msg: `Order Id ${id} is deleted.`
-                                        }
-                                        reactor.dispatchEvent('message_for_user', err_response);
-                                    }
-                                  );
-                              } else {
-                                err_response = {
-                                        user_flo_addr: cancel_request.trader_flo_address,
-                                        msg: `Failed to verify order for order id ${cancel_request.trade_id}`
-                                    }
-                                    reactor.dispatchEvent('message_for_user', err_response);
-                                }
-                              
+                              }
                         }
                       }
                     }
@@ -28387,7 +28406,8 @@
         }
       };
 
-      const exception_datastores = ['localbitcoinUser', 'ipTable', 'kBucketStore', 'myClosestSupernodes'];
+      const exception_datastores = ['localbitcoinUser', 'ipTable', 'kBucketStore', 'myClosestSupernodes',
+                                    'my_supernode_private_key_chunks'];
 
       function signDBData(objectdata) {
           try {
@@ -28725,18 +28745,40 @@
                 return new Error(error);
             }
         });
-        
-        async function formatIDB() {
+      }
+
+      async function formatIDB() {
             db.close();
-    
+
             for(su in localbitcoinplusplus.newBackupDatabase.db) {
                 localbitcoinplusplus.newBackupDatabase.db[su].db.close();
             }
 
-            const dbs = await window.indexedDB.databases()
+            const dbs = await window.indexedDB.databases();
             dbs.forEach(db => { window.indexedDB.deleteDatabase(db.name) })
         }
-      }
+
+       async function clearAllDBData(dabse='') {
+           try {
+               let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys.map(m=>bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(m));
+               for (const su of su_list) {
+                   if(su===localbitcoinplusplus.wallets.my_local_flo_address) {
+
+                   } else {
+
+                   }
+               }
+           
+            } catch(error) {
+               throw new Error(error)
+           }
+       } 
+
+       async function clearDBData(dbName='') {
+           return new Promise((resolve, reject)=>{
+
+           }); 
+       }
     </script>
 
     <!-- Backup Indexed db Object -->
@@ -30723,7 +30765,7 @@
                       const RM_RPC = new localbitcoinplusplus.rpc();
 
                       const updatedBTCBalanceObjectString = JSON.stringify(
-                        updatedCryptobalances
+                        updatedBTCBalanceObject
                       );
                       const updatedBTCBalanceObjectStringHash = Crypto.SHA256(
                         updatedBTCBalanceObjectString
