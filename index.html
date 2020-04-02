@@ -13431,7 +13431,8 @@
       reactor.registerEvent("informRightSuperNode");
       reactor.registerEvent("message_for_user");
       reactor.registerEvent("refresh_reserved_crypto_balances");
-  
+      reactor.registerEvent("remove_temp_data_from_db");
+
       reactor.addEventListener("fireNodeWelcomeBackEvent", function(evt) {
         let getFLOId = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(evt.flo_public_key);
 
@@ -14251,6 +14252,9 @@
                     my_local_data.myLocalFLOPublicKey
                 )
             ) {
+                // Also refresh deposited crypto balances 
+                reactor.dispatchEvent("refresh_reserved_crypto_balances", conn_su_flo_id);
+
                 // If conn_su_flo_id is not an immediate backup then give your data to it to sync
                 const myClosestSus = await readAllDB("myClosestSupernodes");
                 const myClosestSusList = myClosestSus.map(
@@ -14304,7 +14308,6 @@
             }
         }
     });
-
 
       reactor.addEventListener('createClosestSupernodesObject', async function(getClosestSuList=[]) {
 
@@ -14689,6 +14692,100 @@
                 throw new Error(error)
             }
       })
+
+      reactor.addEventListener("remove_temp_data_from_db", async function(user_flo_addr='') {
+         
+         const getSupernode = await localbitcoinplusplus.kademlia.determineClosestSupernode(user_flo_addr);
+         const getSupernodeAddr = getSupernode[0].data.id;
+         let backup_db = null;
+         let _readAllDB = readAllDB;
+         let _removeinDB = removeinDB;
+ 
+         if(getSupernodeAddr!==localbitcoinplusplus.wallets.my_local_flo_address) {
+             backup_db = getSupernodeAddr;
+         }
+         if (typeof backup_db == "string" && backup_db.length > 0) {
+             if (
+             typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+             "object"
+             ) {
+             const foreign_db =
+                 localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                 _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                 _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+             } else {
+                 if(backup_db!==localbitcoinplusplus.wallets.my_local_flo_address) {
+                     err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                     showMessage(err_msg);
+                     throw new Error(err_msg);
+                 }
+             }
+         }
+ 
+          const promises = [];
+          const datastores = ['buyOrders', 'sellOrders', 'cash_deposits', 'deposit',
+          'withdraw_btc', 'withdraw_cash'];
+          const timenow = + new Date();
+          for (const ds of datastores) {
+              switch (ds) {
+                 case "buyOrders":
+                     let buyOrdersData = await _readAllDB(ds);
+                     for (const dbData of buyOrdersData) {
+                         if(timenow-dbData.timestamp>=30*60*1000) {
+                             promises.push(_removeinDB(ds, dbData.id));
+                         } 
+                     }
+                    break;
+                 case "sellOrders":
+                 let sellOrdersData = await _readAllDB(ds);
+                     for (const dbData of sellOrdersData) {
+                         if(timenow-dbData.timestamp>=30*60*1000) {
+                             promises.push(_removeinDB(ds, dbData.id));
+                         } 
+                     }
+                     break;
+                 case "cash_deposits":
+                 let cash_depositsData = await _readAllDB(ds);
+                     for (const dbData of cash_depositsData) {
+                         if(timenow-dbData.timestamp>=720*60*1000) {
+                             promises.push(_removeinDB(ds, dbData.id));
+                         } 
+                     }
+                     break;
+                 case "deposit":
+                     let depositData = await _readAllDB(ds);
+                     for (const dbData of depositData) {
+                         if(timenow-dbData.timestamp>=30*60*1000) {
+                             promises.push(_removeinDB(ds, dbData.id));
+                         } 
+                     }
+                     break;
+                 case "withdraw_btc":
+                     let withdraw_btcData = await _readAllDB(ds);
+                     for (const dbData of withdraw_btcData) {
+                         if(timenow-dbData.timestamp>=30*60*1000) {
+                             promises.push(_removeinDB(ds, dbData.id));
+                         } 
+                     }
+                     break;
+                 case "withdraw_cash":
+                     let withdraw_cashData = await _readAllDB(ds);
+                     for (const dbData of withdraw_cashData) {
+                         if(timenow-dbData.timestamp>=720*60*1000) {
+                             promises.push(_removeinDB(ds, dbData.id));
+                         } 
+                     }
+                     break;
+                 default: 
+                     break;
+                 
+              }
+          }
+ 
+          console.log(promises);
+          promises_res = await Promise.all(promises);
+          console.log(promises_res);
+       });
 
     </script>
 
@@ -21616,14 +21713,35 @@
       async function onOpen(evt) {
         await reactor.dispatchEvent("createClosestSupernodesObject");  
         reactor.dispatchEvent("new_supernode_connected", evt);
-        readDB("localbitcoinUser", "00-01").then(res => {
-          if (typeof res == "object" && res.myLocalFLOAddress == "string") {
+        const localUser = await readDB("localbitcoinUser", "00-01");
+        if (typeof localUser == "object" && localUser.myLocalFLOAddress == "string") {
             localbitcoinplusplus.wallets.my_local_flo_address =
-              res.myLocalFLOAddress;
+                localUser.myLocalFLOAddress;
             localbitcoinplusplus.wallets.my_local_flo_public_key =
-              res.myLocalFLOPublicKey;
-          }
-        });
+                localUser.myLocalFLOPublicKey;
+        }
+
+        if(localbitcoinplusplus.master_configurations.supernodesPubKeys
+        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+            // delete buy and sell orders
+            let remove_promises = [];
+            remove_promises.push(removeAllinDB('buyOrders'));
+            remove_promises.push(removeAllinDB('sellOrders'));
+            
+            for(let dbs in localbitcoinplusplus.newBackupDatabase.db) {
+                remove_promises.push(localbitcoinplusplus
+                    .newBackupDatabase.db[dbs].backup_removeAllinDB('buyOrders'));
+                remove_promises.push(localbitcoinplusplus
+                    .newBackupDatabase.db[dbs].backup_removeAllinDB('sellOrders'));
+
+            }
+            let remove_promises_res = await Promise.all(remove_promises);
+            console.log(remove_promises_res);
+            // Also refresh deposited crypto balances 
+            reactor.dispatchEvent("refresh_reserved_crypto_balances", 
+                localbitcoinplusplus.wallets.my_local_flo_address);
+        }
+        // refresh_reserved_crypto_balances
         readAllDB("myClosestSupernodes").then(sconn => {
           const switchMyWS = new backupSupernodesWebSocketObject();
           sconn.map((m, i) => {
@@ -29295,54 +29413,21 @@
           });  
         },
 
-        backup_removeinDB(tablename, id, remove_deletables=false) {
+        backup_removeinDB(tablename, id, remove_deletables=true) {
           return new Promise((resolve, reject) => {
             try {
                 this.request = this.db.transaction([tablename], "readwrite");
 
-                if (remove_deletables===true) {
-                    this.objectStore = this.request.objectStore(tablename);
+                this.objectStore = this.request.objectStore(tablename);
 
-                    this.objectStoreRequest = this.objectStore.delete(id);
+                this.objectStoreRequest = this.objectStore.delete(id);
 
-                    this.objectStoreRequest.onsuccess = function(event) {
-                        resolve(id);
-                    }
-                    
-                    this.objectStoreRequest.onerror = function(event) {
-                        reject(event);
-                    }
-                } else {
-                    let objectStoreRequest = this.request.objectStore(tablename).get(id);
-                    objectStoreRequest.onsuccess = function(event) {
-                        var myRecord = objectStoreRequest.result;
+                this.objectStoreRequest.onsuccess = function(event) {
+                    resolve(id);
+                }
 
-                        if (typeof myRecord == "object") {
-                            myRecord.vectorClock += 1;
-
-                            // https://stackoverflow.com/a/39333479/5348972
-                            const modifiedRecord = (({ id, timestamp, vectorClock }) => ({
-                                id,
-                                timestamp,
-                                vectorClock
-                            }))(myRecord);
-
-                            modifiedRecord.is_deletable = true;
-
-                            if(!exception_datastores.includes(tablename)) {
-                                modifiedRecord = signDBData(modifiedRecord); 
-                            }                             
-
-                            this.db.transaction([tablename], "readwrite")
-                            .objectStore(tablename).put(modifiedRecord);
-                            return resolve(id);
-                        }                
-                        reject(false);
-                    }.bind(this);
-
-                    objectStoreRequest.onerror = function(event) {
-                        reject(event);
-                    }
+                this.objectStoreRequest.onerror = function(event) {
+                    reject(event);
                 }
 
             } catch (error) {
@@ -29363,23 +29448,7 @@
             this.request.onsuccess = async function(event) {
               var cursor = event.target.result;
               if (cursor) {
-                let myRecord = cursor.value;
-                myRecord.vectorClock += 1;
-
-                // https://stackoverflow.com/a/39333479/5348972
-                const modifiedRecord = (({ id, timestamp, vectorClock }) => ({
-                  id,
-                  timestamp,
-                  vectorClock
-                }))(myRecord);
-
-                modifiedRecord.is_deletable = true;
-
-                if(!exception_datastores.includes(tablename)) {
-                    modifiedRecord = signDBData(modifiedRecord); 
-                }
-
-                parent_request.put(modifiedRecord);
+                cursor.delete();
                 cursor.continue();
               } else {
                 resolve(true);
@@ -29846,14 +29915,6 @@
 
     <!-- Balances Functions-->
     <script>
-      
-      const displayLivePrices = async()=>{
-          try {
-              //
-          } catch (error) {
-              throw new Error(error);
-          }
-      }
 
       const displayBalances = flo_id => {
         if (typeof flo_id !== "string") return;
