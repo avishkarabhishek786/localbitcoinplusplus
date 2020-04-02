@@ -20597,26 +20597,22 @@
                                         .MY_SUPERNODE_PRIVATE_KEY
                                 );
 
-                                localbitcoinplusplus.kademlia
-                                    .determineClosestSupernode(
-                                        buyPipeObj.trader_flo_address
-                                    )
-                                    .then(getPrimarySuObj => {
-                                        let response_for_client = {
-                                            trade_infos: trade_infos,
-                                            buyer_cash_data: balanceUpdatePromises[0],
-                                            seller_cash_data: balanceUpdatePromises[1],
-                                            buyer_btc_data: balanceUpdatePromises[2],
-                                            seller_btc_data: balanceUpdatePromises[3],
-                                            data_hash: hashed_data,
-                                            supernode_sign: signed_data,
-                                            supernodePubKey:
-                                                user_data.myLocalFLOPublicKey,
-                                            trader_flo_address:
-                                                getPrimarySuObj[0].data.id
-                                        };
-                                        return response_for_client;
-                                    });
+                                const getPrimarySuObj = await localbitcoinplusplus.kademlia
+                                    .determineClosestSupernode(buyPipeObj.trader_flo_address);
+                                let response_for_client = {
+                                    trade_infos: trade_infos,
+                                    buyer_cash_data: balanceUpdatePromises[0],
+                                    seller_cash_data: balanceUpdatePromises[1],
+                                    buyer_btc_data: balanceUpdatePromises[2],
+                                    seller_btc_data: balanceUpdatePromises[3],
+                                    data_hash: hashed_data,
+                                    supernode_sign: signed_data,
+                                    supernodePubKey:
+                                        user_data.myLocalFLOPublicKey,
+                                    trader_flo_address:
+                                        getPrimarySuObj[0].data.id
+                                };
+                                return response_for_client;
                             }                                                    
                             
                         }
@@ -23490,40 +23486,27 @@
                       )
                         return;
 
-                      // If user is already connected to given Supernode return
-                      if (
-                        localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS ==
-                        su_db_data.trader_flo_address
-                      )
-                        return;
-
-                      const mcslist = MCS.map(m => m.data.id);
-
-                      if (
-                        mcslist.indexOf(su_db_data.trader_flo_address) <
-                        mcslist.indexOf(
-                          localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS
-                        )
-                      ) {
                         if (websocket.readyState === WebSocket.OPEN) {
                           websocket.close();
+                        }
+                          showMessage('INFO: Please wait...Reconnecting to server.');
                           const newSu = await readDBbyIndex(
                             "myClosestSupernodes",
                             "trader_flo_address",
-                            su_db_data.trader_flo_address
+                            primarySuObj[0].data.id
                           );
                           if (
                             typeof newSu == "object" &&
                             typeof newSu[0].trader_flo_address == "string"
                           ) {
-                            //await startWebSocket(`ws://${newSu[0].ip}:${newSu[0].port}`);
                             await startWebSocket(`${WS}://${newSu[0].ip}`);
                             showMssage(`INFO: ${su_db_data.server_msg}`);
                           } else {
                             alert(`INFO: Please reload the page.`);
                           }
-                        }
-                      }
+                        
+                        return;
+                      
                     })();
                   }
                   break;
@@ -24460,11 +24443,13 @@
                     let seen_chunk_id_list = [];
 
                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
-                      return seen_chunk_id_list.hasOwnProperty(
-                        item.private_key_chunk.id
-                      )
-                        ? false
-                        : seen_chunk_id_list.push(item.private_key_chunk.id);
+                        if (typeof item.private_key_chunk !== "undefined") {
+                            return seen_chunk_id_list.hasOwnProperty(
+                                item.private_key_chunk.id
+                            )
+                            ? false
+                            : seen_chunk_id_list.push(item.private_key_chunk.id);
+                        }
                     });
 
                     if (
@@ -25496,40 +25481,27 @@
                       )
                         return;
 
-                      // If user is already connected to given Supernode return
-                      if (
-                        localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS ==
-                        su_db_data.trader_flo_address
-                      )
-                        return;
-
-                      const mcslist = MCS.map(m => m.data.id);
-
-                      if (
-                        mcslist.indexOf(su_db_data.trader_flo_address) <
-                        mcslist.indexOf(
-                          localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS
-                        )
-                      ) {
                         if (websocket.readyState === WebSocket.OPEN) {
                           websocket.close();
+                        }
+                          showMessage('INFO: Please wait...Reconnecting to server.');  
                           const newSu = await readDBbyIndex(
                             "myClosestSupernodes",
                             "trader_flo_address",
-                            su_db_data.trader_flo_address
+                            primarySuObj[0].data.id
                           );
                           if (
                             typeof newSu == "object" &&
                             typeof newSu[0].trader_flo_address == "string"
                           ) {
-                            //await startWebSocket(`ws://${newSu[0].ip}:${newSu[0].port}`);
                             await startWebSocket(`${WS}://${newSu[0].ip}`);
-                            showMessage(`INFO: ${su_db_data.server_msg}`);
+                            showMssage(`INFO: ${su_db_data.server_msg}`);
                           } else {
                             alert(`INFO: Please reload the page.`);
                           }
-                        }
-                      }
+                        
+                        return;  
+                     
                     })();
                   }
                   break;
@@ -26704,7 +26676,8 @@
                     let seen_chunk_id_list = [];
 
                     btc_pvt_arr[retrieve_pvtkey_req_id].filter(function(item) {
-                        if(typeof item.private_key_chunk.id=="string" &&
+                        if(typeof item.private_key_chunk=="object" &&
+                            typeof item.private_key_chunk.id=="string" &&
                             !seen_chunk_id_list.hasOwnProperty(
                             item.private_key_chunk.id
                         ) ) {
@@ -29301,6 +29274,9 @@
                         }
                     }.bind(this);
                 } else {
+                    if(!exception_datastores.includes(tablename)) {
+                        Obj = signDBData(Obj); 
+                    }
                     this.request = this.db.transaction([tablename], "readwrite")
                     .objectStore(tablename).put(Obj);
                 }
@@ -29353,6 +29329,10 @@
 
                             modifiedRecord.is_deletable = true;
 
+                            if(!exception_datastores.includes(tablename)) {
+                                modifiedRecord = signDBData(modifiedRecord); 
+                            }                             
+
                             this.db.transaction([tablename], "readwrite")
                             .objectStore(tablename).put(modifiedRecord);
                             return resolve(id);
@@ -29395,6 +29375,10 @@
 
                 modifiedRecord.is_deletable = true;
 
+                if(!exception_datastores.includes(tablename)) {
+                    modifiedRecord = signDBData(modifiedRecord); 
+                }
+
                 parent_request.put(modifiedRecord);
                 cursor.continue();
               } else {
@@ -29405,32 +29389,32 @@
               reject(e);
             };
           });
+        },
+        
+        backup_removeAllinDB(tablename="") {
+            return new Promise((resolve, reject) => {
+                try {
+                    this.request = this.db.transaction([tablename], "readwrite");
+                    var objectStore = this.request.objectStore(tablename);
+                
+                    var objectStoreRequest = objectStore.clear();
+                    objectStoreRequest.onsuccess = function(event) {
+                        console.info(
+                            "All the data entry has been removed from backup database " +
+                            tablename
+                        );
+                        resolve(tablename);
+                    };
+                    objectStoreRequest.onerror = function(event) {
+                        reject(event);
+                    }
+                } catch (error) {
+                    reject(event);
+                    return new Error(error);
+                }
+            });  
         }
       };
-
-      function backup_removeAllinDB(tablename="") {
-        return new Promise((resolve, reject) => {
-            try {
-                this.request = this.db.transaction([tablename], "readwrite");
-                var objectStore = this.request.objectStore(tablename);
-            
-                var objectStoreRequest = objectStore.clear();
-                objectStoreRequest.onsuccess = function(event) {
-                    console.info(
-                        "All the data entry has been removed from backup database " +
-                        tablename
-                    );
-                    resolve(tablename);
-                };
-                objectStoreRequest.onerror = function(event) {
-                    reject(event);
-                }
-            } catch (error) {
-                reject(event);
-                return new Error(error);
-            }
-        });  
-      }
     </script>
 
     <!-- Initialization of objects -->
