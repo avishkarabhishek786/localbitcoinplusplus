@@ -20630,36 +20630,29 @@
 
                                 // Update balances
 
-                                let buyerCashResponseObjectPromise = _updateinDB(
+                                let buyerCashResponseObjectPromise = await _updateinDB(
                                     "cash_balances",
-                                    buyerCashResponseObject,
-                                    buyPipeObj.trader_flo_address
+                                    buyerCashResponseObject
                                 );
-                                let sellerCashResponseObjectPromise = _updateinDB(
+                                console.log("buyerCashResponseObjectPromise", buyerCashResponseObjectPromise);
+                                
+                                let sellerCashResponseObjectPromise = await _updateinDB(
                                     "cash_balances",
-                                    sellerCashResponseObject,
-                                    sellPipeObj.trader_flo_address
+                                    sellerCashResponseObject
                                 );
-                                let buyerBTCResponseObjectPromise = _updateinDB(
+                                console.log("sellerCashResponseObjectPromise", sellerCashResponseObjectPromise);
+                                
+                                let buyerBTCResponseObjectPromise = await _updateinDB(
                                     "crypto_balances",
-                                    buyerBTCResponseObject,
-                                    buyPipeObj.trader_flo_address
+                                    buyerBTCResponseObject
                                 );
-                                let sellerBTCResponseObjectPromise = _updateinDB(
+                                console.log("buyerBTCResponseObjectPromise", buyerBTCResponseObjectPromise);
+                                
+                                let sellerBTCResponseObjectPromise = await _updateinDB(
                                     "crypto_balances",
-                                    sellerBTCResponseObject,
-                                    sellPipeObj.trader_flo_address
+                                    sellerBTCResponseObject
                                 );
-
-                                const balanceUpdatePromises = await Promise.all([
-                                    buyerCashResponseObjectPromise,
-                                    sellerCashResponseObjectPromise,
-                                    buyerBTCResponseObjectPromise,
-                                    sellerBTCResponseObjectPromise
-                                ]).catch(error=>{
-                                    console.error(error);
-                                    return false;
-                                });
+                                console.log("sellerBTCResponseObjectPromise", sellerBTCResponseObjectPromise);
 
                                 // Prepare response
                                 let trade_infos = {
@@ -20671,16 +20664,16 @@
 
                                 let trade_infos_str = JSON.stringify(trade_infos);
                                 let buyerCashResponseObjectStr = JSON.stringify(
-                                    balanceUpdatePromises[0]
+                                    buyerCashResponseObjectPromise
                                 );
                                 let sellerCashResponseObjectStr = JSON.stringify(
-                                    balanceUpdatePromises[1]
+                                    sellerCashResponseObjectPromise
                                 );
                                 let buyerBTCResponseObjectStr = JSON.stringify(
-                                    balanceUpdatePromises[2]
+                                    buyerBTCResponseObjectPromise
                                 );
                                 let sellerBTCResponseObjectStr = JSON.stringify(
-                                    balanceUpdatePromises[3]
+                                    sellerBTCResponseObjectPromise
                                 );
 
                                 let res_str = `${trade_infos_str}${buyerCashResponseObjectStr}${sellerCashResponseObjectStr}${buyerBTCResponseObjectStr}${sellerBTCResponseObjectStr}`;
@@ -20698,10 +20691,10 @@
                                     .determineClosestSupernode(buyPipeObj.trader_flo_address);
                                 let response_for_client = {
                                     trade_infos: trade_infos,
-                                    buyer_cash_data: balanceUpdatePromises[0],
-                                    seller_cash_data: balanceUpdatePromises[1],
-                                    buyer_btc_data: balanceUpdatePromises[2],
-                                    seller_btc_data: balanceUpdatePromises[3],
+                                    buyer_cash_data: buyerCashResponseObjectPromise,
+                                    seller_cash_data: sellerCashResponseObjectPromise,
+                                    buyer_btc_data: buyerBTCResponseObjectPromise,
+                                    seller_btc_data: sellerBTCResponseObjectPromise,
                                     data_hash: hashed_data,
                                     supernode_sign: signed_data,
                                     supernodePubKey:
@@ -21442,9 +21435,13 @@
             await reactor.dispatchEvent("backup_supernode_up", evt.srcElement.url);
             await reactor.dispatchEvent("sync_primary_and_backup_db");
             await reactor.dispatchEvent("remove_extra_backup_connections");
+            // Get the node cuurent active status
+            reactor.dispatchEvent("get_node_status_request");
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
             reactor.dispatchEvent("backup_supernode_down", evt);
+            // Get the node cuurent active status
+            reactor.dispatchEvent("get_node_status_request");
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
             let response = evt.data;
@@ -24192,13 +24189,13 @@
                   ) {
                     let resp = res_obj.params[0];
                     if (
+                      (resp.data==null && resp.error && resp.msg.length>0) 
+                      ||
                       RM_WALLET.verify(
                         resp.data.depositDataHash,
                         resp.data.order_validator_sign,
                         resp.data.order_validator_public_key
                       )
-                      ||
-                      (resp.data==null && resp.error && resp.msg.length>0) 
                     ) {
 
                       readDB("localbitcoinUser", "00-01").then(function(user) {
@@ -30714,10 +30711,20 @@
                   balance,
                   crypto_diff
                 );
-                console.warn("User sent less cryptos");
+                let more_depositing_crypto_amount = helper_functions.truncateDecimals(trader_deposits.bitcoinToBePaid) - helper_functions.truncateDecimals(balance);
+                
+                err_msg = `Incomplete Crypto Deposit Error: You claimed to send ${trader_deposits.bitcoinToBePaid} ${trader_deposits.product} but
+                deposited only ${balance} ${trader_deposits.product}. Please send more ${more_depositing_crypto_amount} ${trader_deposits.product}
+                to ${trader_deposits.btc_address}`;
 
-                //trader_deposits.status = 4; // User sent less BTC than he should  #Disputed
-                //updateinDB("deposit", trader_deposits, trader_deposits.trader_flo_address);
+                err_response = {
+                    user_flo_addr: trader_deposits.trader_flo_address,
+                    msg: err_msg
+                }
+                reactor.dispatchEvent('message_for_user', err_response);
+                console.warn("User sent less cryptos");
+                return false;
+              
               } else {
                 //Deposit successful. Update user balance and status to 2. Its Private key can be
                 // now given to a random trader
@@ -30758,13 +30765,13 @@
                   function(res_btc_balances) {
                     if (
                       typeof res_btc_balances == "object" &&
-                      //&& typeof res_btc_balances.result == "object"
                       typeof res_btc_balances.crypto_balance == "number"
                     ) {
-                      updatedCryptobalances.crypto_balance = helper_functions.truncateDecimals(
-                          res_btc_balances.crypto_balance +
-                            updatedCryptobalances.crypto_balance
-                      );
+                      updatedCryptobalances = null;  
+                      updatedCryptobalances = JSON.parse(JSON.stringify(res_btc_balances));  
+                      updatedCryptobalances.crypto_balance = 
+                        helper_functions.truncateDecimals(res_btc_balances.crypto_balance) 
+                        + helper_functions.truncateDecimals(updatedCryptobalances.crypto_balance)
                     }
                     // Update crypto balance of user in crypto_balances
                     _updateinDB(
