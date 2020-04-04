@@ -11604,7 +11604,8 @@
         wallets: {},
         trade: {},
         rpc: {},
-        master_configurations: {}
+        master_configurations: {},
+        running_ops_status: {},
       };
 
       Object.defineProperty(localbitcoinplusplus, "server", {
@@ -12776,28 +12777,54 @@
           }
         },
 
-        refresh_live_status_of_supernodes: async function() {
+        refresh_live_status_of_supernodes: async function(send_resolve_ws_conns_to_rest_supernodes=false) {
             try {
-                promises = [];
+                const msg_obj = {};
+                if(send_resolve_ws_conns_to_rest_supernodes===true) {
+                    const RM_WALLET = new localbitcoinplusplus.wallets;
+                        msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+                        msg_obj.event = 'refresh_all_supernodes_status';
+                        msg_obj.data = {request: "RESOLVE_BACKUP_WS_CONNS"};
+                        msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
+                        msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                        msg_obj.hash = Crypto.SHA256(msg_obj);
+                        msg_obj.sign = RM_WALLET.sign(
+                            msg_obj.hash,
+                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                    );
+                }
+
+                let promises = [];
                 for (const mcs in localbitcoinplusplus.myClosestSupernodes) {
                     if(mcs===localbitcoinplusplus.wallets.my_local_flo_address) continue;
                     let wsUri = `${WS}://${localbitcoinplusplus.myClosestSupernodes[mcs].ip}`;
                     promises.push(new Promise((resolve, reject) => {
-                        temp_ws = new WebSocket(wsUri);
+                        let temp_ws = new WebSocket(wsUri);
                         temp_ws.onopen = async function(evt) {
+                            if(send_resolve_ws_conns_to_rest_supernodes===true
+                            && typeof msg_obj.event=="string") {
+                                // On open, request the connected supernode to resolve ws conn
+                                temp_ws.send(JSON.stringify(msg_obj));
+                            }
                             resolve(`${wsUri}->1`);
-                            await localbitcoinplusplus.actions.delay(10000);
+                            //await localbitcoinplusplus.actions.delay(10000);
                             temp_ws.close();
                         };
                         temp_ws.onclose = function(evt) {
+                            temp_ws = null;
+                            delete temp_ws;
                             if(!evt.wasClean) {
                                 resolve(`${wsUri}->0`);
                             }
                         };
+                        temp_ws.onerror = function(evt) {
+                            temp_ws.close();
+                        }
                     }));
                 }
 
-                let supernodesCurrentStatus = await Promise.all(promises)
+                let supernodesCurrentStatus = await Promise.all(promises);
+                console.log(supernodesCurrentStatus);
                 
                 const switchMyWS = new backupSupernodesWebSocketObject();
                 for(currentwsurl of supernodesCurrentStatus) {
@@ -13416,7 +13443,7 @@
       reactor.registerEvent("fireNodeWelcomeBackEvent");
       reactor.registerEvent("fireNodeGoodByeEvent");
       reactor.registerEvent("nodeIsAlive");
-      reactor.registerEvent("get_node_status_request");
+      reactor.registerEvent("send_refresh_all_supernodes_status_request");
       reactor.registerEvent("sync_primary_and_backup_db");
       reactor.registerEvent("store_backup_crypto_pk_object");
       reactor.registerEvent("sync_backup_nodes_of_my_backup_node");
@@ -13507,6 +13534,7 @@
           if (
             typeof getSubjectSupernodeDetails == "object" &&
             getSubjectSupernodeDetails[0].is_live !== true
+            && websocket.readyState != WebSocket.OPEN
           ) {
             showMessage(
               `INFO: Connection to primary Supernode failed. Attempting to connect to secondary Supernode.`
@@ -13756,8 +13784,9 @@
         }
       });
 
-      reactor.addEventListener("get_node_status_request", function() {
-
+      reactor.addEventListener("send_refresh_all_supernodes_status_request", function() {
+        if(localbitcoinplusplus.running_ops_status.already_executing_send_refresh_all_supernodes_status_request) return false;
+        localbitcoinplusplus.running_ops_status.already_executing_send_refresh_all_supernodes_status_request = true;
         const RM_WALLET = new localbitcoinplusplus.wallets;
         const msg_obj = {};
             msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
@@ -14018,10 +14047,6 @@
           return;
 
         try {
-
-          // Refresh Supernodes live status
-          await localbitcoinplusplus.actions.refresh_live_status_of_supernodes();   
-
           // Get list of neighbour supernodes
           const myClosestSups = await readAllDB("myClosestSupernodes");
           const myClosestSupsFloList = myClosestSups.map(
@@ -14366,7 +14391,7 @@
       reactor.addEventListener("informAllSuperNode", function(msg_obj={}) {
         if (localbitcoinplusplus.master_configurations.supernodesPubKeys
         .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-            tempWS = {};
+            let tempWS = {};
             for(let sn in localbitcoinplusplus.myClosestSupernodes) {
                 (function() {
                     if((sn!==localbitcoinplusplus.wallets.my_local_flo_address
@@ -14377,17 +14402,31 @@
                         
                         tempWS[sn] = new WebSocket(url);
                         tempWS[sn].onopen = async function(evt) {
-                            await localbitcoinplusplus.actions.delay(5000);
-                            tempWS[sn].send(JSON.stringify(msg_obj));
-                            await localbitcoinplusplus.actions.delay(5000);
-                            tempWS[sn].close();                 
+                            //await localbitcoinplusplus.actions.delay(5000);
+                            if (tempWS[sn].bufferedAmount == 0) {
+                                tempWS[sn].send(JSON.stringify(msg_obj));
+                                await localbitcoinplusplus.actions.delay(5000);
+                                tempWS[sn].close();                 
+                            }
                         };
                         tempWS[sn].onclose = function(evt) {
                             console.info(`Closed ${evt.srcElement.url}`);
+                            tempWS[sn] = null;
+                            delete tempWS[sn];
+                            if(msg_obj.event == 'refresh_all_supernodes_status') {
+                                localbitcoinplusplus.running_ops_status.already_executing_send_refresh_all_supernodes_status_request = false;
+                            }
                         };
+                        tempWS[sn].onerror = function(evt) {
+                            tempWS[sn].close();
+                        }
                     } 
                 })();
             }
+
+
+
+
         }
       });  
       
@@ -15374,7 +15413,7 @@
                 "do_you_have_latest_data_for_this_supernode",
                 "sync_backup_supernode_from_backup_supernode",
                 "sync_backup_supernode_from_backup_supernode_response",
-                "get_node_status_request"
+                "refresh_all_supernodes_status"
               ];
 
               if (
@@ -21432,16 +21471,27 @@
           this.ws_connection = new WebSocket(this.ws_url);
           const switchMyWS = new backupSupernodesWebSocketObject();
           this.ws_connection.onopen = async function(evt) {
+            
             await reactor.dispatchEvent("backup_supernode_up", evt.srcElement.url);
-            await reactor.dispatchEvent("sync_primary_and_backup_db");
             await reactor.dispatchEvent("remove_extra_backup_connections");
-            // Get the node cuurent active status
-            reactor.dispatchEvent("get_node_status_request");
+            
+            debounce(async function() {
+                await reactor.dispatchEvent("sync_primary_and_backup_db");
+                // Send refresh status request to supernodes
+                //reactor.dispatchEvent("send_refresh_all_supernodes_status_request");
+                // Refresh Supernodes live status
+                await localbitcoinplusplus.actions.refresh_live_status_of_supernodes(true);
+            }, 5000)();  
+            
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
             reactor.dispatchEvent("backup_supernode_down", evt);
-            // Get the node cuurent active status
-            reactor.dispatchEvent("get_node_status_request");
+            // Send refresh status request to supernodes
+            //reactor.dispatchEvent("send_refresh_all_supernodes_status_request");
+            // Refresh Supernodes live status
+            debounce(async function() {
+                await localbitcoinplusplus.actions.refresh_live_status_of_supernodes(true);
+            }, 5000)();
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
             let response = evt.data;
@@ -21758,8 +21808,9 @@
             for(conn in localbitcoinplusplus.backupWS) {
                 localbitcoinplusplus.backupWS[conn].ws_connection.close();
             }
+        } else {
+            reactor.dispatchEvent("primary_supernode_down", evt);
         }
-        reactor.dispatchEvent("primary_supernode_down", evt);
       }
 
       async function onMessage(evt) {
@@ -29772,9 +29823,6 @@
             // Upload files to DB
             uploadFileToDB();
 
-            // Get the node cuurent active status
-            reactor.dispatchEvent("get_node_status_request");
-
             if (
               localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                 MY_LOCAL_FLO_PUBLIC_KEY
@@ -30905,6 +30953,27 @@
           })
           .then(reqst => doSend(reqst));
       }
+
+      // Returns a function, that, as long as it continues to be invoked, will not
+        // be triggered. The function will be called after it stops being called for
+        // N milliseconds. If `immediate` is passed, trigger the function on the
+        // leading edge, instead of the trailing.
+        // https://davidwalsh.name/javascript-debounce-function
+        
+        function debounce(func, wait, immediate) {
+            var timeout;
+            return function() {
+                var context = this, args = arguments;
+                var later = function() {
+                    timeout = null;
+                    if (!immediate) func.apply(context, args);
+                };
+                var callNow = immediate && !timeout;
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+                if (callNow) func.apply(context, args);
+            };
+        };
     </script>
   </body>
 </html>
