@@ -13791,10 +13791,20 @@
           }
 
           // If any backup of my backup node is dead, sync its data as well
+          let backup_nodes = Object.keys(backup_su_list);
+          let far_left_backup_node_index = Object.values(localbitcoinplusplus.myClosestSupernodes)
+            .findIndex(x => x.trader_flo_address ===backup_nodes[backup_nodes.length-1]);
+          
+          // Don't sync backup if far_left_backup_node_index is 0 or 1 etc
+          if(far_left_backup_node_index<localbitcoinplusplus.MaxBackups) return false;
+
+          let far_left_backup_node = closestSuNodes[far_left_backup_node_index-1].trader_flo_address;
+
           reactor.dispatchEvent(
             "sync_backup_nodes_of_my_backup_node",
-            Object.keys(backup_su_list)[1]
+            far_left_backup_node
           );
+
         }
       });
 
@@ -13832,6 +13842,10 @@
                     "",
                     getSuStatus[0].trader_flo_address
                   );
+                  // Since this node is dead sync its backup data as well
+                  reactor.dispatchEvent("sync_backup_nodes_of_my_backup_node",
+                        getSuStatus[0].trader_flo_address
+                    );
                 }
               }
             }
