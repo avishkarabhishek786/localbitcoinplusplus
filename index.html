@@ -12295,14 +12295,22 @@
           });
         },
 
-        sync_with_supernode: function(trader_flo_address) {
+        sync_with_supernode: async function(trader_flo_address) {
+
+          const user_crypto_balances = await readDBbyIndex('crypto_balances', 
+            'trader_flo_address', trader_flo_address);           
+          
+          const user_cash_balances = await readDBbyIndex('cash_balances', 
+            'trader_flo_address', trader_flo_address); 
+
           const RM_RPC = new localbitcoinplusplus.rpc();
           RM_RPC.send_rpc
             .call(this, "sync_with_supernode", {
               trader_flo_address: trader_flo_address,
               job: "SYNC_MY_LOCAL_DB_WITH_SUPERNODE_DB",
-              receiver_flo_address:
-                localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS
+              receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
+              user_crypto_balances: user_crypto_balances,
+              user_cash_balances: user_cash_balances
             })
             .then(sync_request => doSend(sync_request));
         },
@@ -12854,6 +12862,33 @@
                 );
             } catch (error) {
                 showMessage('Failed to request live prices from server. Please try later.')
+            }
+        },
+
+        is_user_blacklisted: function(flo_addr="") {
+            try {
+                storedNames = JSON.parse(localStorage.getItem("blacklisted_flo_addrs"));
+                if(typeof storedNames=="object") {
+                    return storedNames.includes(flo_addr);
+                } else return false;
+            } catch (error) {
+                return false;
+            }
+        },
+
+        whitelist_flo_id: function(flo_addr='') {
+            let blacklist = JSON.parse(localStorage.getItem("blacklisted_flo_addrs"));
+            let index = blacklist.indexOf(flo_addr);
+            if(index>=0) {
+                blacklist.splice(index, 1);
+                localStorage.setItem("blacklisted_flo_addrs", JSON.stringify(storedNames));
+            }  
+        },
+
+        blacklist_flo_id: function(flo_addr='') {
+            let blacklist = JSON.parse(localStorage.getItem("blacklisted_flo_addrs"));
+            if(!blacklist.includes(flo_addr)) {
+                localStorage.setItem("blacklisted_flo_addrs", JSON.stringify(storedNames));
             }
         },
 
@@ -15718,6 +15753,12 @@
               }
             );
 
+            let is_user_blacklisted = localbitcoinplusplus.actions.is_user_blacklisted(params.trader_flo_address);
+            if(is_user_blacklisted===true) {
+                console.warn(`Flo Id ${params.trader_flo_address} is blacklisted.`);
+                return false;
+            }
+
             switch (method) {
               case "trade_buy":
                 RM_RPC.filter_legit_requests(
@@ -17277,15 +17318,80 @@
                       )
                       .then(function(su_db_data) {
                         if (typeof su_db_data == "object") {
-                          su_db_data.trader_flo_address =
-                            params.trader_flo_address;
-                          su_db_data.receiver_flo_address =
-                            params.trader_flo_address;
-                          RM_RPC.send_rpc
-                            .call(this, "server_sync_response", su_db_data)
-                            .then(server_sync_response =>
-                              doSend(server_sync_response)
-                            );
+
+                            /*The below check for stale data should only run by backup supernode 
+                            serving other's users. 
+                            Primary supernode is assumed to have the latest data of user always. 
+                            And hence this check should not be performed by Primary supernode. It 
+                            should always send the sync data response to user. */
+
+                            if(typeof params.user_crypto_balances == "object" 
+                            && params.user_crypto_balances.length>0
+                            && typeof params.user_crypto_balances == "object" 
+                            && params.user_crypto_balances.length>0) {
+
+                                let user_stale_crypto_data_in_server=true;
+                                let user_stale_cash_data_in_server=true;
+
+                                user_stale_crypto_data_in_server = su_db_data["crypto_balances"].filter(server_data=>{
+                                    return params.user_crypto_balances.some(function(user_data){
+                                        if(server_data.id === user_data.id) {
+                                            return (server_data.crypto_balance!=user_data.crypto_balance
+                                                || server_data.vectorClock<user_data.vectorClock
+                                                || server_data.timestamp<user_data.timestamp)
+                                        }
+                                    });
+                                });
+
+                                user_stale_cash_data_in_server = su_db_data["cash_balances"].filter(server_data=>{
+                                    return params.user_cash_balances.some(function(user_data){
+                                        if(server_data.id === user_data.id) {
+                                            return (server_data.cash_balance!=user_data.cash_balance
+                                                || server_data.vectorClock<user_data.vectorClock
+                                                || server_data.timestamp<user_data.timestamp)
+                                        }
+                                    });
+                                });
+
+                                // If either of user or server has no data of the user, deny service
+                                if(params.user_cash_balances.length==0
+                                || params.user_crypto_balances.length==0
+                                || su_db_data["crypto_balances"].length==0
+                                || su_db_data["cash_balances"].length==0) {
+                                    user_stale_crypto_data_in_server = true;
+                                    user_stale_cash_data_in_server = true;
+                                }
+
+                                if(user_stale_crypto_data_in_server.length 
+                                || user_stale_cash_data_in_server.length) {
+
+                                    // Server has old data, don't serve the user
+                                    localbitcoinplusplus.actions.blacklist_flo_id(params.trader_flo_address);
+                                    
+                                    let service_denied_response = {};
+                                    
+                                    service_denied_response.msg = `Supernode ${localbitcoinplusplus.wallets.my_local_flo_address} denied access. 
+                                    The server does not have latest data. Please retry after sometime.`;
+                                    
+                                    service_denied_response.trader_flo_address = params.trader_flo_address;
+                                    service_denied_response.receiver_flo_address = params.trader_flo_address;
+                                    RM_RPC.send_rpc
+                                        .call(this, "service_denied", service_denied_response)
+                                        .then(server_response =>
+                                        doSend(server_response)
+                                        );                                    
+
+                                } else {
+                                    localbitcoinplusplus.actions.whitelist_flo_id(params.trader_flo_address);
+                                    su_db_data.trader_flo_address = params.trader_flo_address;
+                                    su_db_data.receiver_flo_address = params.trader_flo_address;
+                                    RM_RPC.send_rpc
+                                        .call(this, "server_sync_response", su_db_data)
+                                        .then(server_sync_response =>
+                                        doSend(server_sync_response)
+                                        );
+                                }    
+                            }
                         }
                       });
                   }
@@ -17377,6 +17483,12 @@
                   }
                 }
               );
+            }
+
+            let is_user_blacklisted = localbitcoinplusplus.actions.is_user_blacklisted(params.trader_flo_address);
+            if(is_user_blacklisted===true) {
+                console.warn(`Flo Id ${params.trader_flo_address} is blacklisted.`);
+                return false;
             }
 
             switch (method) {
@@ -22173,6 +22285,36 @@
                     })();
                   }
                   break;
+
+                  case "service_denied":
+                  if (
+                    typeof res_obj.params == "object" &&
+                    typeof res_obj.params[0] == "object"
+                  ) {
+                    if (
+                      typeof localbitcoinplusplus.wallets
+                        .my_local_flo_address !== "string" ||
+                        service_denied_data.trader_flo_address !==
+                        localbitcoinplusplus.wallets.my_local_flo_address ||
+                      localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        localbitcoinplusplus.wallets.my_local_flo_public_key
+                      )
+                    )
+                      return false;
+                    // Only the relevent user node should get response
+                    if (
+                      res_obj.params[0].trader_flo_address !==
+                      localbitcoinplusplus.wallets.my_local_flo_address
+                    )
+                      return;
+
+                      if(typeof res_obj.params[0].msg=="string" && res_obj.params[0].msg.length>0) {
+                        websocket.close();
+                        showMessage(res_obj.params[0].msg);
+                      }
+                  }
+                    break;
+
                 case "deposit_asset_request":
                   response_from_sever = RM_RPC.receive_rpc_response.call(
                     this,
@@ -24033,6 +24175,36 @@
                     })();
                   }
                   break;
+
+                case "service_denied":
+                  if (
+                    typeof res_obj.params == "object" &&
+                    typeof res_obj.params[0] == "object"
+                  ) {
+                    if (
+                      typeof localbitcoinplusplus.wallets
+                        .my_local_flo_address !== "string" ||
+                        service_denied_data.trader_flo_address !==
+                        localbitcoinplusplus.wallets.my_local_flo_address ||
+                      localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        localbitcoinplusplus.wallets.my_local_flo_public_key
+                      )
+                    )
+                      return false;
+                    // Only the relevent user node should get response
+                    if (
+                      res_obj.params[0].trader_flo_address !==
+                      localbitcoinplusplus.wallets.my_local_flo_address
+                    )
+                      return;
+
+                      if(typeof res_obj.params[0].msg=="string" && res_obj.params[0].msg.length>0) {
+                        websocket.close();
+                        showMessage(res_obj.params[0].msg);
+                      }
+                  }
+                    break;
+
                 case "deposit_asset_request":
                   response_from_sever = RM_RPC.backup_receive_rpc_response.call(
                     this,
