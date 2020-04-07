@@ -432,7 +432,7 @@
       .modal {
         display: none; /* Hidden by default */
         position: fixed; /* Stay in place */
-        z-index: 1; /* Sit on top */
+        z-index: 2; /* Sit on top */
         left: 0;
         top: 0;
         width: 100%; /* Full width */
@@ -16884,6 +16884,12 @@
                                 // tx than to after because fetching balance after can return older or newer balance 
                                 // on random events
                                 let current_balance = await helper_functions.ajaxGet(bal_url);
+
+                                if(typeof current_balance !== "number" || current_balance<=0) {
+                                    throw new Error(
+                                        "Failed to determine utxo balance of address "+withdraw_res.utxo_addr
+                                    );
+                                }
                                 
                                 const btc_reserves = await readDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
                                 if (typeof btc_reserves == "object") {
@@ -16897,9 +16903,10 @@
                                         withdraw_res.product,
                                         withdraw_res.currency
                                     );
-                                    const EqCryptoWd = helper_functions.truncateDecimals(withdraw_res.receivingBTC);
+                                    //const EqCryptoWd = helper_functions.truncateDecimals(withdraw_res.receivingBTC);
+                                    const EqCryptoWd = helper_functions.truncateDecimals(current_balance);
 
-                                    if (EqCryptoWd > withdrawer_crypto_bal_response.crypto_balance) {
+                                    if (withdraw_res.receivingBTC > withdrawer_crypto_bal_response.crypto_balance) {
                                         err_response = {
                                             user_flo_addr: params.trader_flo_address,
                                             msg: `You are withdrawing ${withdraw_res.product} more than your balance.`
@@ -16921,7 +16928,7 @@
                                             withdraw_res.utxo_addr,
                                             btc_private_key,
                                             withdraw_res.receiverBTCAddress,
-                                            withdraw_res.receivingBTC,
+                                            EqCryptoWd,
                                             withdraw_res.change_adress,
                                             async function (res) {
                                                 console.log(res);
@@ -16933,9 +16940,7 @@
                                                             res.txid.length > 0
                                                         ) {
                                                             resp_obj = JSON.parse(res.txid);
-                                                            resp_txid =
-                                                                resp_obj.txid.result ||
-                                                                resp_obj.txid;
+                                                            resp_txid = resp_obj.txid.result || resp_obj.txid;
                                                             msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
 
                                                             const RM_RPC = new localbitcoinplusplus.rpc();
@@ -18161,7 +18166,8 @@
 
                                       // doSend btc_private_key_shamirs_id from system_btc_reserves_private_keys
                                       valid_btc_list.map(vbl => {
-                                        readDBbyIndex(
+                                        backup_server_db_instance
+                                        .backup_readDBbyIndex(
                                           "system_btc_reserves_private_keys",
                                           "btc_address",
                                           vbl.deposited_btc_address
@@ -18718,6 +18724,12 @@
                                 // on random events
                                 let current_balance = await helper_functions.ajaxGet(bal_url);
 
+                                if(typeof current_balance !== "number" || current_balance<=0) {
+                                    throw new Error(
+                                        "Failed to determine utxo balance of address "+withdraw_res.utxo_addr
+                                    );
+                                }
+
                                 const btc_reserves = await backup_server_db_instance
                                     .backup_readDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
 
@@ -18735,9 +18747,10 @@
                                         withdraw_res.product,
                                         withdraw_res.currency
                                     );
-                                    const EqCryptoWd = helper_functions.truncateDecimals(withdraw_res.receivingBTC);
+                                    //const EqCryptoWd = helper_functions.truncateDecimals(withdraw_res.receivingBTC);
+                                    const EqCryptoWd = helper_functions.truncateDecimals(current_balance);
 
-                                    if (EqCryptoWd > withdrawer_crypto_bal_response.crypto_balance) {
+                                    if (withdraw_res.receivingBTC > withdrawer_crypto_bal_response.crypto_balance) {
                                         err_response = {
                                             user_flo_addr: params.trader_flo_address,
                                             msg: `You are withdrawing ${withdraw_res.product} more than your balance.`
@@ -18760,7 +18773,7 @@
                                             withdraw_res.utxo_addr,
                                             btc_private_key,
                                             withdraw_res.receiverBTCAddress,
-                                            withdraw_res.receivingBTC,
+                                            EqCryptoWd,
                                             withdraw_res.change_adress,
                                             async function (res) {
                                                 console.log(res);
