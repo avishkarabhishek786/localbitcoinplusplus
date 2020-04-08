@@ -16236,6 +16236,12 @@
                             .then(deposit_request_response =>
                               doSend(deposit_request_response)
                             );
+
+                          // Delete the request after 24 hours
+                          localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                            removeinDB("cash_deposits", receivedTradeInfo.id);
+                          });
+
                           return true;
                         } catch (e) {
                           console.error(e);
@@ -16650,8 +16656,7 @@
                                               );
                                               const update_cash_balance_sign = RM_WALLET.sign(
                                                 update_cash_balance_hash,
-                                                localbitcoinplusplus.wallets
-                                                  .MY_SUPERNODE_PRIVATE_KEY
+                                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
                                               );
 
                                               update_cash_balance_obj.publicKey =
@@ -17935,46 +17940,107 @@
                 );
                 break;
               case "deposit_cash_request":
-                console.info(`INFO: Cash deposits are prohibited in backup mode.`);
 
                 RM_RPC.filter_legit_backup_requests(
                   params.trader_flo_address,
                   async function(is_valid_request) {
                     if (is_valid_request !== true) return false;
 
-                    let receivedTradeInfo = { ...params };
+                    // This code will only run for supernodes
+                    if (
+                        typeof params.depositing_amount !== "undefined" &&
+                        localbitcoinplusplus.master_configurations.tradableAsset2.includes(
+                            params.currency
+                        ) &&
+                        typeof params.trader_flo_address == "string" &&
+                        params.trader_flo_address.length > 0 &&
+                        typeof params.user_upi == "string" &&
+                        params.user_upi.length > 0
+                    ) {
+                        params.id = helper_functions.unique_id();
+                        params.status = 1;
+                        let receivedTradeInfo = { ...params };
 
-                    let receivedTradeInfoHash = Crypto.SHA256(
-                        JSON.stringify(receivedTradeInfo)
-                    );
+                        const su_data = await readDB("localbitcoinUser", "00-01");
 
-                    receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
-                    receivedTradeInfo["order_validator_sign"] = RM_WALLET.sign(
-                        receivedTradeInfoHash,
-                        localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                    );
-                    receivedTradeInfo["order_validator_public_key"] =
-                        localbitcoinplusplus.wallets.my_local_flo_public_key;
+                        if (
+                            typeof su_data == "object" &&
+                            typeof su_data.myLocalFLOPublicKey == "string" &&
+                            su_data.myLocalFLOPublicKey.length > 0 &&
+                            localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                su_data.myLocalFLOPublicKey
+                            )
+                        ) {
+                            let receivedTradeInfoHash = Crypto.SHA256(
+                                JSON.stringify(receivedTradeInfo)
+                            );
 
-                    let deposit_response_object = {
-                        error: true,
-                        method: "deposit_cash_request_response",
-                        msg: "Primary server is temporarily down. For now you can only trade, deposit and withdraw cryptos.",
-                        data: null,
-                        receiver_flo_address: receivedTradeInfo.trader_flo_address,
-                        trader_flo_address: receivedTradeInfo.trader_flo_address
-                    };
+                            receivedTradeInfo["depositDataHash"] = receivedTradeInfoHash;
+                            receivedTradeInfo["order_validator_sign"] = RM_WALLET.sign(
+                                receivedTradeInfoHash,
+                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                            );
+                            receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
-                    RM_RPC.send_rpc
-                    .call(
-                        this,
-                        "deposit_cash_request_response",
-                        deposit_response_object
-                    )
-                    .then(deposit_request_response =>
-                        doSend(deposit_request_response)
-                    );
-                    return true;
+                            try {
+                                const cashiersList = JSON.parse(
+                                    localbitcoinplusplus.master_configurations.cashiers
+                                );
+                                const cashiersPubKeysArray = Object.keys(cashiersList);
+                                const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
+
+                                if (!cashiersPubKeysArray.includes(
+                                    getAPaymentHandler
+                                )
+                                ) {
+                                    err_msg = `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`;
+                                    err_response = {
+                                        user_flo_addr: params.trader_flo_address,
+                                        msg: err_msg
+                                    }
+                                    reactor.dispatchEvent('message_for_user', err_response);
+
+                                    throw new Error(err_msg);
+                                }
+
+                                receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler];
+                                receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
+                                const receivedTradeInfoResp = await backup_server_db_instance
+                                    .backup_addDB("cash_deposits", receivedTradeInfo);
+
+                                let deposit_response_object = {
+                                    error: false,
+                                    method: "deposit_cash_request_response",
+                                    msg: receivedTradeInfo.cashier_upi,
+                                    data: receivedTradeInfoResp,
+                                    receiver_flo_address:
+                                        receivedTradeInfo.trader_flo_address,
+                                    trader_flo_address:
+                                        receivedTradeInfo.trader_flo_address
+                                };
+
+                                RM_RPC.send_rpc
+                                    .call(
+                                        this,
+                                        "deposit_cash_request_response",
+                                        deposit_response_object
+                                    )
+                                    .then(deposit_request_response =>
+                                        doSend(deposit_request_response)
+                                    );
+
+                                // Delete the request after 24 hours
+                                localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function () {
+                                    backup_server_db_instance
+                                        .backup_removeinDB("cash_deposits", receivedTradeInfo.id);
+                                });
+
+                            } catch (e) {
+
+                            }
+                        }
+                    }
+                    return true;        
                   }
                 );
                 break;
@@ -18226,47 +18292,6 @@
                           params.product
                         )
                       ) {
-                        /***********************************************
-                        * WITHDRAW OF CASH IS PROHIBITED IN BACKUP MODE*
-                        ************************************************/
-                        let withdraw_request_db_object = {
-                            trader_flo_address: params.trader_flo_address,
-                        };
-
-                        let withdraw_request_db_object_hash = Crypto.SHA256(
-                            JSON.stringify(withdraw_request_db_object)
-                        );
-                        withdraw_request_db_object["withdrawDataHash"] 
-                            = withdraw_request_db_object_hash;
-                        withdraw_request_db_object["order_validator_sign"] 
-                            = RM_WALLET.sign(
-                                withdraw_request_db_object_hash,
-                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                            );
-                        withdraw_request_db_object["order_validator_public_key"] 
-                            = localbitcoinplusplus.wallets.my_local_flo_public_key;
-                        
-                        // return back the response to client
-                        withdraw_request_db_object.error = true;
-                        withdraw_request_db_object.receiver_flo_address =
-                        params.trader_flo_address;
-                        withdraw_request_db_object.msg = 
-                        `INFO: The primary server is down and will be up soon. Currently,
-                        you can only trade, deposit and withdraw Cryptos but not Cash.`;
-                        RM_RPC.send_rpc
-                        .call(
-                            this,
-                            "withdrawal_request_response",
-                            withdraw_request_db_object
-                        )
-                        .then(
-                            withdrawal_request_response =>
-                            doSend(
-                                withdrawal_request_response
-                            )
-                        );
-                        
-                        return false;
 
                         if (
                           !localbitcoinplusplus.master_configurations.validTradingAmount.includes(
@@ -19240,11 +19265,11 @@
                     && params.parent_supernode.length
                     && localbitcoinplusplus.wallets.my_local_flo_address 
                         !== params.parent_supernode ) {
-                          return false;  
-                        // const foreign_db =
-                        //     localbitcoinplusplus.newBackupDatabase.db[params.parent_supernode];
-                        // if(typeof foreign_db !== "object") return;
-                        // _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
+                            
+                        const foreign_db =
+                            localbitcoinplusplus.newBackupDatabase.db[params.parent_supernode];
+                        if(typeof foreign_db !== "object") return;
+                        _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
                     }
                     const get_all_deposit_reqs_for_this_cashier = await _readDBbyIndex(
                     "cash_deposits",
@@ -26226,6 +26251,12 @@
                             "cash_deposits",
                             resp.data
                           );
+
+                          // Delete the request after 24 hours
+                          localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                            backup_server_db_instance.backup_removeinDB("cash_deposits", 
+                            resp.data.id);
+                          });
                         }
                       }
                     }
@@ -26243,11 +26274,6 @@
                     withdrawal_res_data.trader_flo_address,
                     async function(is_valid_request) {
                       if (!is_valid_request) return false;
-                      
-                      /*********************************************************
-                      *** INFO: Cash Withdrawal is prohibited in backup mode.***
-                      **********************************************************/
-                      return false;
                       
                       if (
                         typeof res_obj.params == "object" &&

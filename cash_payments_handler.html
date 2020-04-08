@@ -13434,7 +13434,7 @@
                         }
                         let t = ``;
                         let deposits_table = document.getElementById("deposits_list");
-                        deposits_table.innerHTML = '';
+                        //deposits_table.innerHTML = '';
                         for (const m of responseData.responseData.data) {
                             
                             let su_res = await localbitcoinplusplus.kademlia.determineClosestSupernode(m.trader_flo_address);
@@ -13470,7 +13470,7 @@
                     (async function() {
                         let v = ``;
                         const withdraws_table = document.getElementById("withdraws_list");
-                        withdraws_table.innerHTML = '';
+                        //withdraws_table.innerHTML = '';
                         for (const m of responseData.responseData.data) {
                             const user_upi = localbitcoinplusplus.encrypt.decryptMessage(
                                 m.receivinAddress.secret,
@@ -13804,7 +13804,7 @@
         }
 
         // Fetch Deposit or Withdraw requests
-        function send_deposit_withdraw_req(websocket_flo_id="", job="", parent_flo_id="") {
+        async function send_deposit_withdraw_req(websocket_flo_id="", job="") {
           if (localbitcoinplusplus.MY_UPI_ID.length < 1) {
             showMessage(
               `WARNING: Your UPI Id is not set.`
@@ -13812,7 +13812,7 @@
             return false;
           }
 
-          const websocket_name = localbitcoinplusplus.supernode_conns[websocket_flo_id];
+          let websocket_name = localbitcoinplusplus.supernode_conns[websocket_flo_id];
           if(typeof websocket_name!=="object") return;
 
           if(job.length<1) return;
@@ -13826,16 +13826,28 @@
               receiver_flo_address: websocket_flo_id,
             }
 
-          // For case where parent supernode is dead  
-          if(websocket_flo_id !== parent_flo_id && parent_flo_id.length>0) {
-            req_body.parent_supernode = parent_flo_id;
-            req_body.requesting_supernode = websocket_flo_id;
-          }  
+          req_body.parent_supernode = websocket_flo_id;
 
-          if(parent_flo_id.length<1 || websocket_flo_id==parent_flo_id) {
-            req_body.parent_supernode = websocket_flo_id;
-            req_body.requesting_supernode = websocket_flo_id;              
-          }
+          // For case where parent supernode is dead  
+          if(localbitcoinplusplus.supernode_conns[websocket_flo_id].readyState!==1) {
+                const sn_list = await localbitcoinplusplus.kademlia.determineClosestSupernode(
+                    "",
+                    localbitcoinplusplus.master_configurations.MaxBackups,
+                    supernodeKBucket,
+                    websocket_flo_id
+                );
+                for (const sn of sn_list) {
+                    if(sn.data.id !== websocket_flo_id &&
+                        localbitcoinplusplus.supernode_conns[sn.data.id].readyState===1) {
+                        
+                        req_body.requesting_supernode = sn.data.id;
+                        websocket_name = localbitcoinplusplus.supernode_conns[sn.data.id]; 
+                        break;
+                    }    
+                }
+            }  else {
+                req_body.requesting_supernode = websocket_flo_id;
+            }
 
           RM_RPC.send_rpc
             .call(this, job, req_body)
