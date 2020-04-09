@@ -19413,17 +19413,12 @@
                             updateUserBalance = await _updateinDB("cash_balances", cash_obj);
                         }
 
-                        // Delete data from deposits
                         if (typeof updateUserBalance!=="object" && updateUserBalance==null) 
                             throw new Error(`Error: Failed to update balance of User Cash Id: ${user_cash_id}.`);
                         
-                        if (localbitcoinplusplus.wallets.my_local_flo_address!==parent_supernode) {
-                            user_deposit_req.token_transfer_txid = params.flo_txid;
-                            _updateinDB("cash_deposits", user_deposit_req);
-                        } else {
-                            _removeinDB("cash_deposits", params.deposit_id);    
-                        }
-                                            
+                        // Delete data from deposits
+                        await _removeinDB("cash_deposits", params.deposit_id);    
+                                                                    
                         // Broadcast deposit and cash balances datastore data to backups
                         let update_cash_balance_obj = {
                             depositor_cash_data: updateUserBalance,
@@ -19486,8 +19481,6 @@
                             typeof localbitcoinplusplus.newBackupDatabase.db[parent_supernode] ==
                             "object"
                         ) {
-                            // Cash Withdraw or deposit not allowed in backup mode
-                            return;
                             const foreign_db =
                                 localbitcoinplusplus.newBackupDatabase.db[parent_supernode];
                             _readDB = foreign_db.backup_readDB.bind(foreign_db);
@@ -19505,9 +19498,7 @@
 
                         if(typeof updated_withdraw_req.id !=="string") 
                             throw new Error(`Error: Failed to update "cashier_confirms_user_cash_withdraw" data.`);
-                        
-                        return;
-
+                    
                         // Broadcast to backups
                         RM_RPC
                             .send_rpc
@@ -19515,6 +19506,11 @@
                                 "record_upi_tx_of_successfull_withdraw",
                                 updated_withdraw_req)
                             .then(resp=> doSend(resp));
+
+                        // Delete the request after 24 hours
+                        localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                            _removeinDB("withdraw_cash", withdraw_req.id);
+                        });
                         
                     } catch (error) {
                         throw new Error(error);
@@ -24347,9 +24343,11 @@
                       readDB("localbitcoinUser", "00-01").then(function(user) {
                         if (
                           typeof user == "object" &&
-                          user.myLocalFLOAddress == resp.data.trader_flo_address || resp.receiver_flo_address
+                          (user.myLocalFLOAddress == resp.data.trader_flo_address 
+                          || user.myLocalFLOAddress == resp.receiver_flo_address)
                         ) {
-                          let counterTraderAccountAddress = resp.msg;
+                            let counterTraderAccountAddress = `Please pay ${resp.data.currency} ${resp.data.depositing_amount} to following UPI ID: 
+                                                    ${resp.msg}`;
                           showMessage(counterTraderAccountAddress);
                           modalWindow(counterTraderAccountAddress);
                         }
@@ -27838,7 +27836,6 @@
 
                     if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
                         const successfull_withdraw_resp = res_obj.params[0];
-                        console.log(successfull_withdraw_resp);   
 
                         localbitcoinplusplus.kademlia.determineClosestSupernode(
                                 successfull_withdraw_resp.trader_flo_address
@@ -27849,9 +27846,14 @@
                             localbitcoinplusplus.newBackupDatabase.db[primarySupernodeOfThisUser];
 
                             _updateinDB = foreign_db.backup_updateinDB.bind(foreign_db);
+                            _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
 
                             _updateinDB('withdraw_cash', successfull_withdraw_resp, 
                                 successfull_withdraw_resp.id, true, false);
+
+                            localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                                _removeinDB('withdraw_cash', successfull_withdraw_resp.id);
+                            })
                         });
                     }
 
