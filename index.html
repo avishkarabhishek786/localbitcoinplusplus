@@ -11629,6 +11629,9 @@
       const ENVR = 'TEST'; // LIVE, TEST  
       const WS = 'ws';
       const DBName = "localbitcoinDBRemote";
+      
+      // MUST REMOVE FROM HERE. FETCH IT FROM A CONFIG FILE
+      const masterEncryptionKey = "rEmoVeMefRomHerE"; 
 
       if(ENVR === 'LIVE') {
 
@@ -12899,6 +12902,33 @@
                 blacklist = [flo_addr];
                 localStorage.setItem("blacklisted_flo_addrs", JSON.stringify(blacklist));
                 
+            }
+        },
+
+        master_encrypt: function(msg='') {
+            try {
+                if(typeof msg !== 'string') {
+                    msg = JSON.stringify(msg);
+                }
+                if(msg.length<1 || typeof masterEncryptionKey !== "string")
+                    throw new Error("Invalid request");
+
+                return Crypto.AES.encrypt(msg, masterEncryptionKey);
+
+            } catch (error) {
+                throw new Error(error);
+            }
+        },
+
+        master_decrypt: function(encrypted_msg='') {
+            try {
+                if(encrypted_msg.length<1 || typeof masterEncryptionKey !== "string")
+                    throw new Error("Invalid request");
+
+                return Crypto.AES.decrypt(encrypted_msg, masterEncryptionKey);
+
+            } catch (error) {
+                throw new Error(error);
             }
         },
 
@@ -16100,14 +16130,13 @@
                                             i => i.id
                                           );
                                           let btc_private_key_shamirs_id = this_btc_pvt_key_shamirs_secret__id_array;
-                                          let supernode_transaction_key = this_btc_tx_key;
+                                          let supernode_transaction_key = localbitcoinplusplus.actions.master_encrypt(this_btc_tx_key);
                                           const system_btc_reserves_private_keys_object = {
                                             id: helper_functions.unique_id(),
                                             product: params.product,
                                             btc_address: params.btc_address,
                                             balance: null,
-                                            trader_flo_address:
-                                              params.trader_flo_address,
+                                            trader_flo_address: params.trader_flo_address,
                                             btc_private_key_shamirs_id: btc_private_key_shamirs_id,
                                             supernode_transaction_key: supernode_transaction_key
                                           };
@@ -16920,7 +16949,8 @@
                                         return false;
                                     }
 
-                                    let transaction_key = btc_reserves.supernode_transaction_key;
+                                    let transaction_key = localbitcoinplusplus.actions
+                                        .master_decrypt(btc_reserves.supernode_transaction_key);
                                     if (transaction_key.length > 0) {
                                         let btc_private_key = RM_WALLET.rebuild_private_key(
                                             btc_pk_shares_array,
@@ -17892,14 +17922,13 @@
                                       i => i.id
                                     );
                                     let btc_private_key_shamirs_id = this_btc_pvt_key_shamirs_secret__id_array;
-                                    let supernode_transaction_key = this_btc_tx_key;
+                                    let supernode_transaction_key = localbitcoinplusplus.actions.master_encrypt(this_btc_tx_key);
                                     const system_btc_reserves_private_keys_object = {
                                       id: helper_functions.unique_id(),
                                       product: params.product,
                                       btc_address: params.btc_address,
                                       balance: null,
-                                      trader_flo_address:
-                                        params.trader_flo_address,
+                                      trader_flo_address: params.trader_flo_address,
                                       btc_private_key_shamirs_id: btc_private_key_shamirs_id,
                                       supernode_transaction_key: supernode_transaction_key
                                     };
@@ -18789,7 +18818,8 @@
                                         return false;
                                     }
 
-                                    let transaction_key = btc_reserves.supernode_transaction_key;
+                                    let transaction_key = localbitcoinplusplus.actions
+                                        .master_decrypt(btc_reserves.supernode_transaction_key);
                                     if (transaction_key.length > 0) {
                                         let btc_private_key = RM_WALLET.rebuild_private_key(
                                             btc_pk_shares_array,
