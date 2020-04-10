@@ -12214,15 +12214,11 @@
             03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
             03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
             026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
-            #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
             #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
             "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
-            #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
-            "ranchimall2":{"ip":"127.0.0.1:9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
-            "ranchimall3":{"ip":"127.0.0.1:9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
-            "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
-            "ranchimall5":{"ip":"127.0.0.1:9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
-            "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
+            #!#ShamirsMaxShares=8#!#supernodeSeeds={
+            "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"}
+            }`;
             return callback(text);
            
            let master_data = '';
@@ -12729,6 +12725,7 @@
             if (typeof immigrants_data === "object") {
               immigrants_data.trader_flo_address = closestSu[0].data.id;
               immigrants_data.receiver_flo_address = closestSu[0].data.id;
+              immigrants_data.inform_back_on_success = true;
               RM_RPC.send_rpc
                 .call(
                   this,
@@ -12743,6 +12740,8 @@
 
             const supernodesFloList = localbitcoinplusplus.master_configurations.supernodesPubKeys
             .map(s => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(s));
+
+            const extra_backup_ws = {};
 
             for (let f = 0; f < allUsersData.length; f++) {
               let closestSu = await localbitcoinplusplus.kademlia.determineClosestSupernode(
@@ -12762,13 +12761,61 @@
                 if (typeof immigrants_data === "object") {
                   immigrants_data.trader_flo_address = closestSu[0].data.id;
                   immigrants_data.receiver_flo_address = closestSu[0].data.id;
-                  RM_RPC.send_rpc
+                  
+                  let server_sync_response = await RM_RPC.send_rpc
                     .call(
                       this,
                       "sync_primary_supernode_from_backup_supernode_response",
                       immigrants_data
-                    )
-                    .then(server_sync_response => doSend(server_sync_response));
+                    );
+
+                  const RM_WALLET = new localbitcoinplusplus.wallets();
+
+                  const message256hash = Crypto.SHA256(server_sync_response);
+                  
+                  let msgObj = JSON.parse(server_sync_response);
+
+                  if (
+                    typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY !==
+                    "string"
+                  )
+                    throw new Error(`WARNING: Private key could not be found.`);
+
+                  const nodeSignedMessage = RM_WALLET.sign(
+                    message256hash,
+                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                  );
+
+                  msgObj.nodeMessage256hash = message256hash;
+                  msgObj.nodeSignedMessage = nodeSignedMessage;
+                  msgObj.nodePubKey=localbitcoinplusplus.wallets.my_local_flo_public_key;
+
+                  let finalMessage = JSON.stringify(msgObj);  
+
+                  if(typeof localbitcoinplusplus.backupWS[closestSu[0].data.id]=="object"
+                  && localbitcoinplusplus.backupWS[closestSu[0].data.id].ws_connection.readyState==WebSocket.OPEN) {
+
+                    localbitcoinplusplus.backupWS[closestSu[0].data.id].ws_connection.send(finalMessage);
+
+                  } else if(typeof extra_backup_ws[closestSu[0].data.id]=="object") {
+
+                    extra_backup_ws[closestSu[0].data.id].send(finalMessage);
+                    
+                  } else {
+                    const url = `${WS}://${localbitcoinplusplus.myClosestSupernodes[closestSu[0].data.id].ip}`;
+                    
+                    if(closestSu[0].data.id==localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                    extra_backup_ws[closestSu[0].data.id] = new WebSocket(url);
+                    extra_backup_ws[closestSu[0].data.id].onopen = function(evt) {
+                        if (extra_backup_ws[closestSu[0].data.id].bufferedAmount == 0) {
+                            extra_backup_ws[closestSu[0].data.id].send(finalMessage);
+                        }
+                    };
+                    extra_backup_ws[closestSu[0].data.id].onclose = function(evt) {
+                        console.info(`Closed extra conn ${evt.srcElement.url}`);
+                    }
+                  }
 
                   // Delete this user from kBucketStore datastore and Kbucket
                   const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId(localbitcoinplusplus.BASE_BLOCKCHAIN, closestSu[0].data.id);
@@ -12779,6 +12826,14 @@
             }
 
             localbitcoinplusplus.kademlia.updateClosestSupernodeSeeds(myFloId);
+
+            for (const wskey in extra_backup_ws) {
+                if (extra_backup_ws.hasOwnProperty(wskey)) {
+                    const conn = extra_backup_ws[wskey];
+                    conn.close();
+                    delete extra_backup_ws[wskey];
+                }
+            }
 
             // Rebuild KBucket
             // localbitcoinplusplus.kademlia.restoreKbucket(
@@ -13468,44 +13523,6 @@
           return decryptMsg;
         },
 
-        // This function is only useful when sender and receiver are both online.
-        // If receiver is not online he might never get the message
-        messageBroadcasting: function(
-          message,
-          flo_id,
-          rpc_subject = "messageBroadcasting"
-        ) {
-          readDB("userPublicData", flo_id).then(res => {
-            pubKey = res.trader_flo_pubKey;
-            let data = localbitcoinplusplus.encrypt.encryptMessage(
-              message,
-              pubKey
-            );
-            const RM_RPC = new localbitcoinplusplus.rpc();
-            RM_RPC.send_rpc
-              .call(this, rpc_subject, {
-                data: data,
-                receiver_flo_address: flo_id,
-                trader_flo_address:
-                  localbitcoinplusplus.wallets.my_local_flo_address
-              })
-              .then(bar => doSend(bar));
-          });
-        },
-
-        transmitMessageToMiddleMan: function(
-          dataToBeSentToReceiver,
-          receiverFloAddress
-        ) {
-          const RM_RPC = new localbitcoinplusplus.rpc();
-          dataToBeSentToReceiver.sender_flo_address =
-            localbitcoinplusplus.wallets.my_local_flo_address;
-          dataToBeSentToReceiver.trader_flo_address =
-            localbitcoinplusplus.wallets.my_local_flo_address;
-          RM_RPC.send_rpc
-            .call(this, "MessageForMiddleman", dataToBeSentToReceiver)
-            .then(bar => doSend(bar));
-        }
       };
     </script>
 
@@ -15206,7 +15223,6 @@
                     }
                   );
                   if (localbitcoinplusplus.is_ui_loaded == false) {
-                    loadExternalFiles();
                     dataBaseUIOperations();
                   }
 
@@ -17254,48 +17270,6 @@
                 }
                 break;
 
-              case "update_external_file_server_response":
-                if (typeof params == "object") {
-                  if (params.filename == "UPDATE_ALL_FILES") {
-                    let file_details_str = JSON.stringify(params.file_updated);
-                    if (
-                      RM_WALLET.verify(
-                        file_details_str,
-                        params.server_sign,
-                        params.server_pubkey
-                      )
-                    ) {
-                      params.file_updated.map(new_file => {
-                        updateinDB("external_files", new_file);
-                        createScript(new_file.filename, new_file.content);
-                      });
-                      return true;
-                    }
-                  } else {
-                    let file_details_string = JSON.stringify(
-                      params.file_updated
-                    );
-                    if (
-                      RM_WALLET.verify(
-                        file_details_string,
-                        params.server_sign,
-                        params.server_pubkey
-                      )
-                    ) {
-                      updateinDB("external_files", params.file_updated);
-                      createScript(
-                        params.file_updated.filename,
-                        params.file_updated.content
-                      );
-                      return true;
-                    }
-                  }
-                  showMessage(
-                    `WARNING: Failed to update external files from server.`
-                  );
-                }
-                break;
-
               default:
                 showMessage("WARNING: Unknown method called for execution.");
                 break;
@@ -19181,54 +19155,6 @@
                         }
                       }
                     }
-                  );
-                }
-                break;
-
-              case "update_external_file_server_response":
-                if (typeof params == "object") {
-                  if (params.filename == "UPDATE_ALL_FILES") {
-                    let file_details_str = JSON.stringify(params.file_updated);
-                    if (
-                      RM_WALLET.verify(
-                        file_details_str,
-                        params.server_sign,
-                        params.server_pubkey
-                      )
-                    ) {
-                      params.file_updated.map(new_file => {
-                        backup_server_db_instance.backup_updateinDB(
-                          "external_files",
-                          new_file
-                        );
-                        createScript(new_file.filename, new_file.content);
-                      });
-                      return true;
-                    }
-                  } else {
-                    let file_details_string = JSON.stringify(
-                      params.file_updated
-                    );
-                    if (
-                      RM_WALLET.verify(
-                        file_details_string,
-                        params.server_sign,
-                        params.server_pubkey
-                      )
-                    ) {
-                      backup_server_db_instance.backup_updateinDB(
-                        "external_files",
-                        params.file_updated
-                      );
-                      createScript(
-                        params.file_updated.filename,
-                        params.file_updated.content
-                      );
-                      return true;
-                    }
-                  }
-                  showMessage(
-                    `WARNING: Failed to update external files from server.`
                   );
                 }
                 break;
@@ -21444,14 +21370,12 @@
                           .length < 1
                       ) {
                         RM_WALLET.manually_assign_my_private_key();
-                        loadExternalFiles();
                         dataBaseUIOperations();
                       } else if (
                         typeof localbitcoinplusplus.wallets
                           .MY_SUPERNODE_PRIVATE_KEY == "string" &&
                         localbitcoinplusplus.is_ui_loaded == false
                       ) {
-                        loadExternalFiles();
                         dataBaseUIOperations();
                       }
                       clearTimeout();
@@ -21528,12 +21452,16 @@
                   `INFO: Invalid connection. Refreshing the closest supernode list in DB.`
                 );
                 
-                // Possible entry of new Supernode. Export data of users
-                //localbitcoinplusplus.actions.exportUserDataFromOneSupernodeToAnother(idbData.myLocalFLOAddress);
-
                 wsUri = await localbitcoinplusplus.kademlia.updateClosestSupernodeSeeds(
                   idbData.myLocalFLOAddress
                 );
+
+                // Reconfigure ws conns
+                reactor.dispatchEvent('resolve_backup_ws_connections');
+
+                // Possible entry of new Supernode. Export data of users
+                localbitcoinplusplus.actions.exportUserDataFromOneSupernodeToAnother(idbData.myLocalFLOAddress);
+
               }
             }
 
@@ -21562,14 +21490,12 @@
                 localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY.length < 1
               ) {
                 RM_WALLET.manually_assign_my_private_key();
-                loadExternalFiles();
                 dataBaseUIOperations();
               } else if (
                 typeof localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY ==
                   "string" &&
                 localbitcoinplusplus.is_ui_loaded == false
               ) {
-                loadExternalFiles();
                 dataBaseUIOperations();
               }
             }, 10000);
@@ -21644,12 +21570,6 @@
             console.log(`backup message: ${response}`);
             let is_corona_positive = quarantineCoronaElements(response);
             if(is_corona_positive===true) throw new Error("Response failed sanitization test."); 
-
-            let isItANodeLeavingMessage = response.search(`\\-- left`);
-            if (isItANodeLeavingMessage >= 0) {
-              //localbitcoinplusplus.actions.informAllANodeLeft(response);
-              return;
-            }
 
             let isRequestToLinkIp = response.search("linkMyLocalIPToMyFloId");
             let isRequestToLinkOthersIp = response.search(
@@ -21831,14 +21751,12 @@
                 ) {
                   const RM_WALLET = new localbitcoinplusplus.wallets();
                   RM_WALLET.manually_assign_my_private_key();
-                  loadExternalFiles();
                   dataBaseUIOperations();
                 } else if (
                   typeof localbitcoinplusplus.wallets
                     .MY_SUPERNODE_PRIVATE_KEY == "string" &&
                   localbitcoinplusplus.is_ui_loaded == false
                 ) {
-                  loadExternalFiles();
                   dataBaseUIOperations();
                 }
               });
@@ -21934,14 +21852,6 @@
         // Check if request is clean or not
         let is_corona_positive = quarantineCoronaElements(response);
         if(is_corona_positive===true) throw new Error("Response failed sanitization test.");
-    
-        // If the message is about leaving of a node determine its FLO Id
-        // and fire respective events
-        let isItANodeLeavingMessage = response.search(`\\-- left`);
-        if (isItANodeLeavingMessage >= 0) {
-            //localbitcoinplusplus.actions.informAllANodeLeft(response);
-            return;
-        }
 
         const isMsgFromCashier = response.search("__FOR__CASHIER__");
         if (isMsgFromCashier >= 0) {
@@ -22173,8 +22083,6 @@
               if (!byPassMethods.includes(res_obj.method)) {
                 if (
                   typeof res_obj.globalParams.primarySupernode !== "string"
-                  // || typeof localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`] !== "boolean"
-                  // || localbitcoinplusplus.services[`can_serve_${res_obj.globalParams.primarySupernode}`]==false
                 ) {
                   showMessage(
                     `INFO: You are not authorized to serve this request.`
@@ -22716,7 +22624,6 @@
                       .MY_SUPERNODE_PRIVATE_KEY == "string" &&
                     localbitcoinplusplus.is_ui_loaded == false
                   ) {
-                    loadExternalFiles();
                     dataBaseUIOperations();
                     return;
                   }
@@ -22966,109 +22873,6 @@
                   );
                   break;
 
-                case "update_external_file_request":
-                  RM_RPC.filter_legit_requests(
-                    res_obj.params[0].trader_flo_address,
-                    is_valid_request => {
-                      if (is_valid_request !== true) return false;
-                      let update_script_request = res_obj.params[0];
-
-                      if (
-                        typeof update_script_request.trader_flo_address !==
-                        "string"
-                      )
-                        throw new Error("Unknown user");
-
-                      let server_pubkey =
-                        localbitcoinplusplus.wallets.my_local_flo_public_key;
-
-                      if (
-                        typeof update_script_request.file_to_update == "string"
-                      ) {
-                        readDB(
-                          "external_files",
-                          update_script_request.file_to_update
-                        ).then(file_details => {
-                          if (
-                            typeof file_details !== "undefined" &&
-                            typeof file_details.content == "string" &&
-                            file_details.content.length > 0
-                          ) {
-                            let file_details_string = JSON.stringify(
-                              file_details
-                            );
-                            let server_sign = RM_WALLET.sign(
-                              file_details_string,
-                              localbitcoinplusplus.wallets
-                                .MY_SUPERNODE_PRIVATE_KEY
-                            );
-                            RM_RPC.send_rpc
-                              .call(
-                                this,
-                                "update_external_file_server_response",
-                                {
-                                  trader_flo_address:
-                                    update_script_request.trader_flo_address,
-                                  file_updated: file_details,
-                                  server_sign: server_sign,
-                                  server_pubkey: server_pubkey,
-                                  filename:
-                                    update_script_request.file_to_update,
-                                  trader_flo_address:
-                                    update_script_request.trader_flo_address,
-                                  receiver_flo_address:
-                                    update_script_request.trader_flo_address
-                                }
-                              )
-                              .then(response_from_sever =>
-                                doSend(response_from_sever)
-                              );
-                          }
-                        });
-                      } else {
-                        readAllDB("external_files").then(file_details => {
-                          if (file_details.length > 0) {
-                            let file_details_str = JSON.stringify(file_details);
-                            let server_sign = RM_WALLET.sign(
-                              file_details_str,
-                              localbitcoinplusplus.wallets
-                                .MY_SUPERNODE_PRIVATE_KEY
-                            );
-                            RM_RPC.send_rpc
-                              .call(
-                                this,
-                                "update_external_file_server_response",
-                                {
-                                  trader_flo_address:
-                                    update_script_request.trader_flo_address,
-                                  file_updated: file_details,
-                                  server_sign: server_sign,
-                                  server_pubkey: server_pubkey,
-                                  filename: "UPDATE_ALL_FILES",
-                                  receiver_flo_address:
-                                    update_script_request.trader_flo_address,
-                                  trader_flo_address:
-                                    update_script_request.trader_flo_address
-                                }
-                              )
-                              .then(response_from_sever =>
-                                doSend(response_from_sever)
-                              );
-                          }
-                        });
-                      }
-                    }
-                  );
-                  break;
-
-                case "update_external_file_server_response":
-                  response_from_sever = RM_RPC.receive_rpc_response.call(
-                    this,
-                    JSON.stringify(res_obj)
-                  );
-                  doSend(JSON.stringify(response_from_sever)); // send response to client
-                  break;
-
                 case "updateUserCryptoBalanceRequest":
                   if (
                     localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
@@ -23221,24 +23025,6 @@
                   }
                   break;
 
-                case "queryKbucket":
-                  try {
-                    const kBucketQuery = res_obj.params[0];
-                    const kfrom = kBucketQuery.query.from;
-                    const kto = kBucketQuery.query.to;
-                    const kmsg = kBucketQuery.query.msg;
-
-                    buckId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                        localbitcoinplusplus.BASE_BLOCKCHAIN,
-                        kto
-                    );
-                    const getItem = KBucket.get(buckId);
-                    const getData = getItem.data;
-                  } catch (error) {
-                    console.error(error);
-                  }
-                  break;
-
                 case "link_My_Local_IP_To_My_Flo_Id":
                   if (
                     typeof res_obj.params == "object" &&
@@ -23287,154 +23073,6 @@
                       temporary_ip: incoming_msg_local_ip
                     });
                   }
-                  break;
-
-                case "supernode_to_supernode_backup_request":
-                  // RM_RPC.filter_legit_requests(function (is_valid_request) {
-                  //     if (is_valid_request === true) {
-                  let data = res_obj.params[0];
-                  const tableArray = [
-                    "deposit",
-                    "cash_deposits",
-                    "withdraw_cash",
-                    "withdraw_btc",
-                    "crypto_balances",
-                    "cash_balances",
-                    "userPublicData",
-                    "buyOrders",
-                    "sellOrders",
-                    "system_btc_reserves_private_keys",
-                    "supernode_private_key_chunks"
-                  ];
-                  localbitcoinplusplus.actions
-                    .get_sharable_db_data(tableArray)
-                    .then(function(su_db_data) {
-                      su_db_data.trader_flo_address = data.trader_flo_address;
-
-                      let msg_sha256 = Crypto.SHA256(
-                        JSON.stringify(su_db_data)
-                      );
-
-                      localbitcoinplusplus.encrypt.messageBroadcasting(
-                        msg_sha256,
-                        data.trader_flo_address,
-                        "supernode_to_supernode_backup_response"
-                      );
-
-                      // if (typeof su_db_data == "object") {
-                      //     su_db_data.trader_flo_address = data.trader_flo_address;
-                      //     let server_sync_response = RM_RPC
-                      //         .send_rpc
-                      //         .call(this, "supernode_to_supernode_backup_response",
-                      //             su_db_data);
-                      //     doSend(server_sync_response);
-                      // }
-                    });
-                  //   }
-                  // })
-                  break;
-
-                case "supernode_to_supernode_backup_response":
-                  console.log(res_obj.params[0]);
-
-                  if (
-                    typeof res_obj.params == "object" &&
-                    typeof res_obj.params[0] == "object"
-                  ) {
-                    let su_db_data = res_obj.params[0];
-
-                    let db_data = localbitcoinplusplus.encrypt.decryptMessage(
-                      su_db_data.secret,
-                      su_db_data.senderPublicKeyString
-                    );
-                    console.log(db_data);
-                    return;
-
-                    if (
-                      typeof localbitcoinplusplus.wallets
-                        .my_local_flo_address !== "string" ||
-                      su_db_data.trader_flo_address !==
-                        localbitcoinplusplus.wallets.my_local_flo_address
-                    )
-                      return false;
-
-                    (async function() {
-                      for (let tableStoreName in su_db_data) {
-                        // skip loop if the property is from prototype
-                        if (
-                          tableStoreName == "trader_flo_address" ||
-                          !su_db_data.hasOwnProperty(tableStoreName)
-                        )
-                          continue;
-
-                        try {
-                          let obj = su_db_data[tableStoreName];
-                          if (
-                            [
-                              "crypto_balances",
-                              "cash_balances",
-                              "userPublicData"
-                            ].includes(tableStoreName)
-                          ) {
-                            if (obj.length > 0) {
-                              for (var prop in obj) {
-                                if (!obj.hasOwnProperty(prop)) continue;
-                                await BACKUP_DB.backup_updateinDB(
-                                  tableStoreName,
-                                  obj[prop],
-                                  obj[prop].trader_flo_address
-                                );
-                              }
-                            }
-                          } else {
-                            if (resdbdata !== false) {
-                              if (obj.length > 0) {
-                                for (var prop in obj) {
-                                  if (!obj.hasOwnProperty(prop)) continue;
-                                  await BACKUP_DB.backup_updateinDB(
-                                    resdbdata,
-                                    obj[prop],
-                                    obj[prop].trader_flo_address,
-                                    true,
-                                    false
-                                  );
-                                }
-                              }
-                            }
-                          }
-                        } catch (error) {
-                          console.log(error);
-                        }
-                      }
-                    })();
-                  }
-                  break;
-
-                case "messageBroadcasting":
-                  console.log(res_obj);
-                  try {
-                    let response = res_obj.params[0];
-                    let msg = localbitcoinplusplus.encrypt.decryptMessage(
-                      response.data.secret,
-                      response.data.senderPublicKeyString
-                    );
-                    console.log(msg);
-                  } catch (error) {
-                    console.error(error);
-                  }
-                  break;
-
-                case "MessageForMiddleman":
-                  RM_RPC.filter_legit_requests(
-                    dataToBeSentToReceiver.sender_flo_address,
-                    function(is_valid_request) {
-                      console.log(is_valid_request);
-                    }
-                  );
-                  break;
-
-                case "backup_server_sync_response":
-                  console.log(res_obj);
                   break;
 
                 case "sync_data_by_vector_clock":
@@ -23812,27 +23450,6 @@
                   }
                   break;
 
-                case "you_are_set_to_serve_given_supernode":
-                  if (
-                    res_obj.method == "you_are_set_to_serve_given_supernode" &&
-                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                      localbitcoinplusplus.wallets.my_local_flo_public_key
-                    ) &&
-                    res_obj.params[0].receiver_flo_address ==
-                      localbitcoinplusplus.wallets.my_local_flo_address
-                  ) {
-                    let supernode_to_serve =
-                      localbitcoinplusplus.services[
-                        `can_serve_${res_obj.params[0].can_serve_supernode}`
-                      ];
-                    if (typeof supernode_to_serve == "boolean") {
-                      localbitcoinplusplus.services[
-                        `can_serve_${res_obj.params[0].can_serve_supernode}`
-                      ] = true;
-                    }
-                  }
-                  break;
-
                 case "request_me_db_data":
                   if (
                     localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
@@ -23895,14 +23512,6 @@
 
       async function processBackupUserOnMesssageRequest(response) {
         console.log("processBackupUserOnMesssageRequest RESPONSE: " + response);
-        // If the message is about leaving of a node determine its FLO Id
-        // and fire respective events
-        let isItANodeLeavingMessage = response.search(`\\-- left`);
-
-        if (isItANodeLeavingMessage >= 0) {
-          //localbitcoinplusplus.actions.informAllANodeLeft(response);
-          return;
-        }
 
         var res_pos = response.indexOf("{");
         if (res_pos >= 0) {
@@ -24669,7 +24278,6 @@
                       .MY_SUPERNODE_PRIVATE_KEY == "string" &&
                     localbitcoinplusplus.is_ui_loaded == false
                   ) {
-                    loadExternalFiles();
                     dataBaseUIOperations();
                     return;
                   }
@@ -24962,135 +24570,6 @@
                   );
                   break;
 
-                case "update_external_file_request":
-                  RM_RPC.filter_legit_requests(
-                    res_obj.params[0].trader_flo_address,
-                    is_valid_request => {
-                      if (is_valid_request !== true) return false;
-                      let update_script_request = res_obj.params[0];
-
-                      if (
-                        typeof update_script_request.trader_flo_address !==
-                        "string"
-                      )
-                        throw new Error("Unknown user");
-
-                      let server_pubkey =
-                        localbitcoinplusplus.wallets.my_local_flo_public_key;
-
-                      if (
-                        typeof res_obj.params[0].trader_flo_address != "string"
-                      )
-                        return;
-                      localbitcoinplusplus.kademlia
-                        .determineClosestSupernode(
-                          res_obj.params[0].trader_flo_address
-                        )
-                        .then(my_closest_su_list => {
-                          const primarySupernodeOfThisUser =
-                            my_closest_su_list[0].data.id;
-                          const backup_server_db_instance =
-                            localbitcoinplusplus.newBackupDatabase.db[
-                              primarySupernodeOfThisUser
-                            ];
-
-                          if (typeof backup_server_db_instance !== "object") {
-                            let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                            showMessage(backup_db_error_msg);
-                            throw new Error(backup_db_error_msg);
-                          }
-
-                          if (
-                            typeof update_script_request.file_to_update ==
-                            "string"
-                          ) {
-                            backup_server_db_instance
-                              .backup_readDB(
-                                "external_files",
-                                update_script_request.file_to_update
-                              )
-                              .then(file_details => {
-                                if (
-                                  typeof file_details !== "undefined" &&
-                                  typeof file_details.content == "string" &&
-                                  file_details.content.length > 0
-                                ) {
-                                  let file_details_string = JSON.stringify(
-                                    file_details
-                                  );
-                                  let server_sign = RM_WALLET.sign(
-                                    file_details_string,
-                                    localbitcoinplusplus.wallets
-                                      .MY_SUPERNODE_PRIVATE_KEY
-                                  );
-                                  RM_RPC.send_rpc
-                                    .call(
-                                      this,
-                                      "update_external_file_server_response",
-                                      {
-                                        trader_flo_address:
-                                          update_script_request.trader_flo_address,
-                                        file_updated: file_details,
-                                        server_sign: server_sign,
-                                        server_pubkey: server_pubkey,
-                                        filename:
-                                          update_script_request.file_to_update,
-                                        receiver_flo_address:
-                                          update_script_request.trader_flo_address
-                                      }
-                                    )
-                                    .then(response_from_sever =>
-                                      doSend(response_from_sever)
-                                    );
-                                }
-                              });
-                          } else {
-                            backup_server_db_instance
-                              .backup_readAllDB("external_files")
-                              .then(file_details => {
-                                if (file_details.length > 0) {
-                                  let file_details_str = JSON.stringify(
-                                    file_details
-                                  );
-                                  let server_sign = RM_WALLET.sign(
-                                    file_details_str,
-                                    localbitcoinplusplus.wallets
-                                      .MY_SUPERNODE_PRIVATE_KEY
-                                  );
-                                  RM_RPC.send_rpc
-                                    .call(
-                                      this,
-                                      "update_external_file_server_response",
-                                      {
-                                        trader_flo_address:
-                                          update_script_request.trader_flo_address,
-                                        file_updated: file_details,
-                                        server_sign: server_sign,
-                                        server_pubkey: server_pubkey,
-                                        filename: "UPDATE_ALL_FILES",
-                                        receiver_flo_address:
-                                          update_script_request.trader_flo_address
-                                      }
-                                    )
-                                    .then(response_from_sever =>
-                                      doSend(response_from_sever)
-                                    );
-                                }
-                              });
-                          }
-                        });
-                    }
-                  );
-                  break;
-
-                case "update_external_file_server_response":
-                  response_from_sever = RM_RPC.backup_receive_rpc_response.call(
-                    this,
-                    JSON.stringify(res_obj)
-                  );
-                  doSend(JSON.stringify(response_from_sever)); // send response to client
-                  break;
-
                 case "updateUserCryptoBalanceRequest":
                   if (
                     localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
@@ -25262,24 +24741,6 @@
                   }
                   break;
 
-                case "queryKbucket":
-                  try {
-                    const kBucketQuery = res_obj.params[0];
-                    const kfrom = kBucketQuery.query.from;
-                    const kto = kBucketQuery.query.to;
-                    const kmsg = kBucketQuery.query.msg;
-
-                    buckId = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                        localbitcoinplusplus.BASE_BLOCKCHAIN,
-                        kto
-                    );
-                    const getItem = KBucket.get(buckId);
-                    const getData = getItem.data;
-                  } catch (error) {
-                    console.error(error);
-                  }
-                  break;
-
                 case "link_My_Local_IP_To_My_Flo_Id":
                   if (
                     typeof res_obj.params == "object" &&
@@ -25328,154 +24789,6 @@
                       temporary_ip: incoming_msg_local_ip
                     });
                   }
-                  break;
-
-                case "supernode_to_supernode_backup_request":
-                  // RM_RPC.filter_legit_requests(function (is_valid_request) {
-                  //     if (is_valid_request === true) {
-                  let data = res_obj.params[0];
-                  const tableArray = [
-                    "deposit",
-                    "cash_deposits",
-                    "withdraw_cash",
-                    "withdraw_btc",
-                    "crypto_balances",
-                    "cash_balances",
-                    "userPublicData",
-                    "buyOrders",
-                    "sellOrders",
-                    "system_btc_reserves_private_keys",
-                    "supernode_private_key_chunks"
-                  ];
-                  localbitcoinplusplus.actions
-                    .get_sharable_db_data(tableArray)
-                    .then(function(su_db_data) {
-                      su_db_data.trader_flo_address = data.trader_flo_address;
-
-                      let msg_sha256 = Crypto.SHA256(
-                        JSON.stringify(su_db_data)
-                      );
-
-                      localbitcoinplusplus.encrypt.messageBroadcasting(
-                        msg_sha256,
-                        data.trader_flo_address,
-                        "supernode_to_supernode_backup_response"
-                      );
-
-                      // if (typeof su_db_data == "object") {
-                      //     su_db_data.trader_flo_address = data.trader_flo_address;
-                      //     let server_sync_response = RM_RPC
-                      //         .send_rpc
-                      //         .call(this, "supernode_to_supernode_backup_response",
-                      //             su_db_data);
-                      //     doSend(server_sync_response);
-                      // }
-                    });
-                  //   }
-                  // })
-                  break;
-
-                case "supernode_to_supernode_backup_response":
-                  console.log(res_obj.params[0]);
-
-                  if (
-                    typeof res_obj.params == "object" &&
-                    typeof res_obj.params[0] == "object"
-                  ) {
-                    let su_db_data = res_obj.params[0];
-
-                    let db_data = localbitcoinplusplus.encrypt.decryptMessage(
-                      su_db_data.secret,
-                      su_db_data.senderPublicKeyString
-                    );
-                    console.log(db_data);
-                    return;
-
-                    if (
-                      typeof localbitcoinplusplus.wallets
-                        .my_local_flo_address !== "string" ||
-                      su_db_data.trader_flo_address !==
-                        localbitcoinplusplus.wallets.my_local_flo_address
-                    )
-                      return false;
-
-                    (async function() {
-                      for (let tableStoreName in su_db_data) {
-                        // skip loop if the property is from prototype
-                        if (
-                          tableStoreName == "trader_flo_address" ||
-                          !su_db_data.hasOwnProperty(tableStoreName)
-                        )
-                          continue;
-
-                        try {
-                          let obj = su_db_data[tableStoreName];
-                          if (
-                            [
-                              "crypto_balances",
-                              "cash_balances",
-                              "userPublicData"
-                            ].includes(tableStoreName)
-                          ) {
-                            if (obj.length > 0) {
-                              for (var prop in obj) {
-                                if (!obj.hasOwnProperty(prop)) continue;
-                                await BACKUP_DB.backup_updateinDB(
-                                  tableStoreName,
-                                  obj[prop],
-                                  obj[prop].trader_flo_address
-                                );
-                              }
-                            }
-                          } else {
-                            if (resdbdata !== false) {
-                              if (obj.length > 0) {
-                                for (var prop in obj) {
-                                  if (!obj.hasOwnProperty(prop)) continue;
-                                  await BACKUP_DB.backup_updateinDB(
-                                    resdbdata,
-                                    obj[prop],
-                                    obj[prop].trader_flo_address,
-                                    true,
-                                    false
-                                  );
-                                }
-                              }
-                            }
-                          }
-                        } catch (error) {
-                          console.log(error);
-                        }
-                      }
-                    })();
-                  }
-                  break;
-
-                case "messageBroadcasting":
-                  console.log(res_obj);
-                  try {
-                    let response = res_obj.params[0];
-                    let msg = localbitcoinplusplus.encrypt.decryptMessage(
-                      response.data.secret,
-                      response.data.senderPublicKeyString
-                    );
-                    console.log(msg);
-                  } catch (error) {
-                    console.error(error);
-                  }
-                  break;
-
-                case "MessageForMiddleman":
-                  RM_RPC.filter_legit_requests(
-                    dataToBeSentToReceiver.sender_flo_address,
-                    function(is_valid_request) {
-                      console.log(is_valid_request);
-                    }
-                  );
-                  break;
-
-                case "backup_server_sync_response":
-                  console.log(res_obj);
                   break;
 
                 case "sync_data_by_vector_clock":
@@ -25896,15 +25209,7 @@
       }
 
       async function handle_backup_server_messages(response) {
-        //var response = evt.data;
         console.log("backup response: " + response);
-
-        let isItANodeLeavingMessage = response.search(`\\-- left`);
-
-        if (isItANodeLeavingMessage >= 0) {
-          //localbitcoinplusplus.actions.informAllANodeLeft(response);
-          return;
-        }
 
         var res_pos = response.indexOf("{");
         if (res_pos >= 0) {
@@ -25952,61 +25257,7 @@
               const RM_RPC = new localbitcoinplusplus.rpc();
 
               switch (res_obj.method) {
-                case "give_me_your_backup":
-                  if (
-                    typeof res_obj.params == "object" &&
-                    typeof res_obj.params[0] == "object"
-                  ) {
-                    let received_resp = res_obj.params[0];
-                    RM_RPC.filter_legit_backup_requests(
-                      received_resp.trader_flo_address,
-                      function(is_valid_request) {
-                        if (
-                          !is_valid_request ||
-                          received_resp.JOB !== "BACKUP_SERVER_REQUEST"
-                        )
-                          return;
-                        const requester_supernode_pubkey =
-                          received_resp.requesters_pub_key;
-                        const requester_supernode_flo_address =
-                          received_resp.trader_flo_address;
-
-                        const tableArray = [
-                          "deposit",
-                          "cash_deposits",
-                          "withdraw_cash",
-                          "withdraw_btc",
-                          "crypto_balances",
-                          "cash_balances",
-                          "userPublicData",
-                          "buyOrders",
-                          "sellOrders",
-                          "system_btc_reserves_private_keys",
-                          "supernode_private_key_chunks"
-                        ];
-                        localbitcoinplusplus.actions
-                          .get_sharable_db_data(tableArray)
-                          .then(function(su_db_data) {
-                            if (typeof su_db_data == "object") {
-                              su_db_data.trader_flo_address =
-                                localbitcoinplusplus.wallets.my_local_flo_address;
-                              su_db_data.receiver_flo_address = requester_supernode_flo_address;
-                              RM_RPC.send_rpc
-                                .call(
-                                  this,
-                                  "backup_server_sync_response",
-                                  su_db_data
-                                )
-                                .then(server_sync_response =>
-                                  doSend(server_sync_response)
-                                );
-                            }
-                          });
-                      }
-                    );
-                  }
-                  break;
-
+                
                 case "server_sync_response":
                   if (
                     typeof res_obj.params !== "object" ||
@@ -29673,57 +28924,6 @@
         }
       };
 
-      const loadExternalFiles = async function() {
-        try {
-          const user_flo_details = await readDB("localbitcoinUser", "00-01");
-
-          if (
-            typeof user_flo_details.myLocalFLOAddress == "undefined" ||
-            user_flo_details.myLocalFLOAddress.trim() == ""
-          ) {
-            showMessage(
-              `WARNING: Failed to load external files. Please refresh the page.`
-            );
-            throw new Error(
-              `Failed to load external files as user FLO id could not be found.`
-            );
-          }
-
-          const ext_scripts_hashes_object = JSON.parse(
-            localbitcoinplusplus.master_configurations.externalFiles
-          );
-
-          Object.keys(ext_scripts_hashes_object).map(async ext_file => {
-            let readExtFile = await readDB("external_files", ext_file);
-            if (
-              typeof readExtFile == "object" &&
-              readExtFile.filehash == ext_scripts_hashes_object[ext_file]
-            ) {
-              createScript(ext_file, readExtFile.content);
-            } else {
-              updateFileRequest(user_flo_details.myLocalFLOAddress, ext_file);
-            }
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      };
-
-      const updateFileRequest = (user_flo_address, filename) => {
-        const RM_RPC = new localbitcoinplusplus.rpc();
-        RM_RPC.send_rpc
-          .call(this, "update_external_file_request", {
-            trader_flo_address: user_flo_address,
-            file_to_update: filename,
-            receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS
-          })
-          .then(update_external_file => doSend(update_external_file));
-
-        let file_to_be_updated = filename == null ? "each" : filename;
-        showMessage(`Updating ${file_to_be_updated} file. Please do not 
-            perform any operation until next confirmation.`);
-      };
-
       const privateKeyBuilder = () => {
         return new Promise(async (resolve, reject) => {
           let supernode_transaction_key_arr = [];
@@ -29758,7 +28958,6 @@
                 "string" &&
               localbitcoinplusplus.is_ui_loaded == false
             ) {
-              loadExternalFiles();
               dataBaseUIOperations();
             }
           }
@@ -30994,19 +30193,6 @@
           console.error(error);
           return false;
         }
-      }
-
-      function giveMeYourBackup(backup_server_flo_id) {
-        const RM_RPC = new localbitcoinplusplus.rpc();
-        RM_RPC.send_rpc
-          .call(this, "give_me_your_backup", {
-            JOB: "BACKUP_SERVER_REQUEST",
-            requesters_pub_key:
-              localbitcoinplusplus.wallets.my_local_flo_public_key,
-            trader_flo_address:
-              localbitcoinplusplus.wallets.my_local_flo_address
-          })
-          .then(send_backup_request => doSend(send_backup_request));
       }
 
       function linkMyLocalIPToMyFloId() {
