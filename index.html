@@ -12808,9 +12808,9 @@
 
                     extra_backup_ws[closestSu[0].data.id] = new WebSocket(url);
                     extra_backup_ws[closestSu[0].data.id].onopen = function(evt) {
-                        if (extra_backup_ws[closestSu[0].data.id].bufferedAmount == 0) {
+                        //if (extra_backup_ws[closestSu[0].data.id].bufferedAmount == 0) {
                             extra_backup_ws[closestSu[0].data.id].send(finalMessage);
-                        }
+                        //}
                     };
                     extra_backup_ws[closestSu[0].data.id].onclose = function(evt) {
                         console.info(`Closed extra conn ${evt.srcElement.url}`);
@@ -14426,11 +14426,11 @@
                         tempWS[sn] = new WebSocket(url);
                         tempWS[sn].onopen = async function(evt) {
                             //await localbitcoinplusplus.actions.delay(5000);
-                            if (tempWS[sn].bufferedAmount == 0) {
+                            //if (tempWS[sn].bufferedAmount == 0) {
                                 tempWS[sn].send(JSON.stringify(msg_obj));
                                 await localbitcoinplusplus.actions.delay(5000);
                                 tempWS[sn].close();                 
-                            }
+                            //}
                         };
                         tempWS[sn].onclose = function(evt) {
                             console.info(`Closed ${evt.srcElement.url}`);
@@ -27492,111 +27492,6 @@
         lastConnectedTime: ""
       };
 
-      const userPublicData = {
-        trader_flo_address: null,
-        trader_flo_pubKey: null,
-        trader_reputation: null,
-        supernode_flo_public_key: null,
-        timestamp: null
-      };
-
-      const deposit = {
-        id: "",
-        trader_flo_address: null,
-        depositing_amount: 0,
-        depositor_key_signature: null,
-        depositor_public_key: null,
-        operation_type: null,
-        order_validator_public_key: null,
-        product: null,
-        status: 0
-      };
-
-      const withdraw_cash = {
-        id: "",
-        trader_flo_address: null,
-        withdraw_amount: null,
-        currency: null,
-        receivinAddress: null,
-        status: null,
-        depositor_found_at: null
-      };
-
-      const crypto_balances = {
-        id: null,
-        trader_flo_address: null,
-        crypto_balance: null,
-        crypto_currency: null
-      };
-
-      const cash_balances = {
-        id: null,
-        trader_flo_address: null,
-        cash_balance: null,
-        currency: null
-      };
-
-      const system_btc_reserves_private_keys = {
-        id: "",
-        btc_address: null,
-        product: null,
-        balance: null,
-        trader_flo_address: null,
-        btc_private_key_shamirs_id: null,
-        supernode_transaction_key: null
-      };
-
-      const my_supernode_private_key_chunks = {
-        id: "",
-        supernode_transaction_key: null
-      };
-
-      const supernode_private_key_chunks = {
-        id: "",
-        privateKeyChunks: null
-      };
-
-      const withdraw_btc = {
-        id: "",
-        trader_flo_address: null,
-        utxo_addr: null,
-        receiverBTCAddress: null,
-        receivingBTC: null,
-        currency: null,
-        product: null,
-        change_adress: null,
-        timestamp: null
-      };
-
-      const external_files = {
-        filename: null,
-        filehash: null,
-        content: null
-      };
-
-      const kBucketStore = {
-        id: null,
-        vectorClock: 0,
-        data: null,
-        primary_supernode_flo_public_key: null,
-        last_updated_on: null
-      };
-
-      const ipTable = {
-        flo_public_key: null,
-        temporary_ip: null
-      };
-
-      const crypto_fiat_rates = {
-        id: null,
-        crypto_code: null,
-        currency_code: null,
-        rate: 0,
-        supernode_pub_key: null,
-        sign: null,
-        timestamp: +new Date()
-      };
-
       var db;
       const request = window.indexedDB.open(DBName, 2);
 
@@ -27883,6 +27778,107 @@
               throw new Error(error);
           } 
       }
+
+      function exportToJson(idbDatabase, dataStores=[]) {
+        return new Promise((resolve, reject) => {
+            const exportObject = {}
+            if (idbDatabase.objectStoreNames.length === 0) {
+              resolve(JSON.stringify(exportObject))
+            } else {
+                const transaction = idbDatabase.transaction(
+                    idbDatabase.objectStoreNames,
+                    'readonly'
+                )
+
+            transaction.addEventListener('error', reject)
+
+            for (const storeName of idbDatabase.objectStoreNames) {
+                const allObjects = []
+                transaction
+                .objectStore(storeName)
+                .openCursor()
+                .addEventListener('success', event => {
+                    const cursor = event.target.result
+                    if (cursor) {
+                        // Cursor holds value, put it into store data
+                        allObjects.push(cursor.value)
+                        cursor.continue()
+                    } else {
+                        // No more values, store is done
+                        exportObject[storeName] = allObjects
+
+                        // Last store was handled
+                        if (
+                            (idbDatabase.objectStoreNames.length ===
+                            Object.keys(exportObject).length)
+                            ||
+                            (dataStores.length>0 
+                            && Object.keys(exportObject).length===dataStores.length)
+                        ) {
+                            resolve(JSON.stringify(exportObject))
+                        }
+                    }
+                })
+            }
+            }
+        })
+        }
+
+        function importFromJson(idbDatabase, json) {
+            return new Promise((resolve, reject) => {
+                const transaction = idbDatabase.transaction(
+                idbDatabase.objectStoreNames,
+                'readwrite'
+                )
+                transaction.addEventListener('error', reject)
+
+                var importObject = JSON.parse(json)
+                for (const storeName of idbDatabase.objectStoreNames) {
+                let count = 0
+                for (const toAdd of importObject[storeName]) {
+                    const request = transaction.objectStore(storeName).add(toAdd)
+                    request.addEventListener('success', () => {
+                    count++
+                    if (count === importObject[storeName].length) {
+                        console.info(`Imported ${storeName} successfully.`);
+                        // Added all objects for this store
+                        delete importObject[storeName]
+                        if (Object.keys(importObject).length === 0) {
+                            // Added all object stores
+                            resolve()
+                        }
+                    }
+                    })
+                }
+                }
+            })
+        }
+
+        function clearDatabase(idbDatabase, dataStores=[]) {
+            return new Promise((resolve, reject) => {
+                const transaction = idbDatabase.transaction(
+                    idbDatabase.objectStoreNames,
+                    'readwrite'
+                )
+                transaction.addEventListener('error', reject)
+
+                let count = 0
+                for (const storeName of idbDatabase.objectStoreNames) {
+                    if(dataStores.length>0 && !dataStores.includes(storeName)) continue;
+                    transaction
+                        .objectStore(storeName)
+                        .clear()
+                        .addEventListener('success', () => {
+                            console.info(`Cleared ${storeName} datastore.`);
+                            count++
+                            if (count === idbDatabase.objectStoreNames.length) {
+                                // Cleared all object stores
+                                resolve()
+                            }
+                        })
+                }
+            })
+        }
 
       function readDB(tablename, id, filter_deletables = true) {
         return new Promise((resolve, reject) => {
@@ -28864,6 +28860,40 @@
             });  
         }
       };
+    </script>
+
+    <!-- Backing up IDB -->
+    <script>
+        localbitcoinplusplus.IdbBackup = {
+            exportIDBtoFile: async function(idbs=[], dataStores=[]) {
+                try {
+                    const backupPromises = idbs.map(idb=>exportToJson(idb, dataStores)); 
+                    const backupJson = await Promise.all(backupPromises);
+                    for (const backup of backupJson) {
+                        if(typeof backup == "object") {
+                            let filename = helper_functions.unique_id();
+                            downloadObjectAsJson(backup, filename);
+                        } 
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('Something went wrong during export:', error);   
+                }
+            },
+
+            importFiletoIDB: function(idb, file_location) {
+                try {
+                    readTextFile(file_location, async function(text){
+                        var data = JSON.parse(text);
+                        await clearDatabase(idb);
+                        await importFromJson(idb, data);
+                        console.log('Successfully cleared database and imported data')
+                    });
+                } catch (error) {
+                    console.error('Could not clear & import database:', error)
+                }
+            }
+        }
     </script>
 
     <!-- Initialization of objects -->
@@ -30241,6 +30271,28 @@
                 if (callNow) func.apply(context, args);
             };
         };
+
+        function downloadObjectAsJson(exportObj, exportName){
+            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportObj));
+            var downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href",     dataStr);
+            downloadAnchorNode.setAttribute("download", exportName + ".json");
+            document.body.appendChild(downloadAnchorNode); // required for firefox
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function readTextFile(file, callback) {
+            var rawFile = new XMLHttpRequest();
+            rawFile.overrideMimeType("application/json");
+            rawFile.open("GET", file, true);
+            rawFile.onreadystatechange = function() {
+                if (rawFile.readyState === 4 && rawFile.status == "200") {
+                    callback(rawFile.responseText);
+                }
+            }
+            rawFile.send(null);
+        }
     </script>
   </body>
 </html>
