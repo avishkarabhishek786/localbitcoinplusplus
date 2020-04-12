@@ -12468,6 +12468,33 @@
           return arr;
         },
 
+        delete_db_data_for_single_user: async function(
+          userId = "",
+          dbTableNamesArray,
+          backup_db = ""
+        ) {
+          let arr = {};
+          let _removeByIndex = removeByIndex;
+          if (typeof backup_db == "string" && backup_db.length > 0) {
+            if (
+              typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+              "object"
+            ) {
+              const foreign_db =
+                localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                _removeByIndex = foreign_db.backup_removeByIndex.bind(foreign_db);
+            } else {
+              err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+              showMessage(err_msg);
+              throw new Error(err_msg);
+            }
+          }
+          for (const elem of dbTableNamesArray) {
+            _removeByIndex(elem, "trader_flo_address", userId);
+          }
+            
+        },
+
         getHighestVectorClockInTablesOfaDB: function(dbDataOfSupernode = []) {
           return new Promise((resolve, reject) => {
             let higestVCList = [];
@@ -12709,8 +12736,16 @@
             "crypto_balances",
             "cash_balances",
             "buyOrders",
-            "sellOrders"
+            "sellOrders",
+            "system_btc_reserves_private_keys"
           ];
+
+          let db_list = Object.values(localbitcoinplusplus.newBackupDatabase.db).map(m=>m);
+          db_list.push(db);
+
+          // First create a db backup and save it
+          await localbitcoinplusplus.IdbBackup.exportIDBtoFile(db_list, tableArray); 
+
           const RM_RPC = new localbitcoinplusplus.rpc();
           if (userFloId.length > 0) {
             let closestSu = await localbitcoinplusplus.kademlia.determineClosestSupernode(
@@ -12725,7 +12760,7 @@
             if (typeof immigrants_data === "object") {
               immigrants_data.trader_flo_address = closestSu[0].data.id;
               immigrants_data.receiver_flo_address = closestSu[0].data.id;
-              immigrants_data.inform_back_on_success = true;
+              
               RM_RPC.send_rpc
                 .call(
                   this,
@@ -12817,8 +12852,31 @@
                     }
                   }
 
+                  // Delete this user's data from this server
+                  localbitcoinplusplus.actions.delete_db_data_for_single_user(myFloId, tableArray);            
+
+                  // Ask backups to delete this user data
+                    const msg_obj = {};
+                        msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+                        msg_obj.event = 'delete_this_user_data_from_backup';
+                        msg_obj.data = {request: "REMOVE_DB_DATA_OF_USER"};
+                        msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
+                        msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                        msg_obj.db_name = localbitcoinplusplus.wallets.my_local_flo_address;
+                        msg_obj.trader_flo_address = allUsersData[f].trader_flo_address;
+                        msg_obj.tableArray = tableArray;
+                        msg_obj.hash = Crypto.SHA256(msg_obj);
+                        msg_obj.sign = RM_WALLET.sign(
+                            msg_obj.hash,
+                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                        );
+
+                    reactor.dispatchEvent('informAllSuperNode', msg_obj);  
+
                   // Delete this user from kBucketStore datastore and Kbucket
-                  const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId(localbitcoinplusplus.BASE_BLOCKCHAIN, closestSu[0].data.id);
+                  const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId(
+                      localbitcoinplusplus.BASE_BLOCKCHAIN, allUsersData[f].trader_flo_address);
+                  
                   await removeinDB('kBucketStore', UintID);
                   KBucket.remove(UintID);  
                 }
@@ -12835,14 +12893,8 @@
                 }
             }
 
-            // Rebuild KBucket
-            // localbitcoinplusplus.kademlia.restoreKbucket(
-            //   myFloId,
-            //   "FLO_TEST",
-            //   KBucket
-            // );
-
           }
+
         },
 
         refresh_live_status_of_supernodes: async function(send_resolve_ws_conns_to_rest_supernodes=false) {
@@ -21974,6 +22026,14 @@
 
                     case "refresh_all_supernodes_status":
                         reactor.dispatchEvent('resolve_backup_ws_connections');
+
+                    case "delete_this_user_data_from_backup":
+                        if(res_obj.data.request=="REMOVE_DB_DATA_OF_USER"
+                        && typeof localbitcoinplusplus.newBackupDatabase.db[res_obj.db_name]=="object") {
+                            localbitcoinplusplus.actions.delete_db_data_for_single_user(
+                                res_obj.trader_flo_address, res_obj.tableArray, res_obj.db_name);            
+                        }
+                        break;   
                 
                     default:
                         break;
@@ -28191,27 +28251,6 @@
             dbs.forEach(db => { window.indexedDB.deleteDatabase(db.name) })
         }
 
-       async function clearAllDBData(dabse='') {
-           try {
-               let su_list = localbitcoinplusplus.master_configurations.supernodesPubKeys.map(m=>bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(m));
-               for (const su of su_list) {
-                   if(su===localbitcoinplusplus.wallets.my_local_flo_address) {
-
-                   } else {
-
-                   }
-               }
-           
-            } catch(error) {
-               throw new Error(error)
-           }
-       } 
-
-       async function clearDBData(dbName='') {
-           return new Promise((resolve, reject)=>{
-
-           }); 
-       }
     </script>
 
     <!-- Backup Indexed db Object -->
