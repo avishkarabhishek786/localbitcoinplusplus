@@ -12210,14 +12210,13 @@
             #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
             #!#MaxBackups=1
             #!#miners_fee={"btc":0.0003, "flo":0.0003}
-            #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
-            03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
-            03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
-            026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
+            #!#supernodesPubKeys=026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
+            0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
             #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
             "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
             #!#ShamirsMaxShares=8#!#supernodeSeeds={
-            "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"}
+            "ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
+            "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}
             }`;
             return callback(text);
            
@@ -12740,7 +12739,7 @@
             "system_btc_reserves_private_keys"
           ];
 
-          let db_list = Object.values(localbitcoinplusplus.newBackupDatabase.db).map(m=>m);
+          let db_list = Object.values(localbitcoinplusplus.newBackupDatabase.db).map(m=>m.db);
           db_list.push(db);
 
           // First create a db backup and save it
@@ -12853,7 +12852,7 @@
                   }
 
                   // Delete this user's data from this server
-                  localbitcoinplusplus.actions.delete_db_data_for_single_user(myFloId, tableArray);            
+                  localbitcoinplusplus.actions.delete_db_data_for_single_user(allUsersData[f].trader_flo_address, tableArray);            
 
                   // Ask backups to delete this user data
                     const msg_obj = {};
@@ -14653,6 +14652,7 @@
 
             if(sn===msg_obj.data.subject_flo_id || sn===usrAddr) {
                 suList = await getPrevSupernode(sn);
+                if(suList==null) return false;
                 sn = suList.trader_flo_address;
             }
 
@@ -21496,9 +21496,8 @@
               )
             ) {
               if (
-                wsUri[0].trader_flo_address !== idbData.myLocalFLOAddress ||
                 getClosestSuList.length <
-                  localbitcoinplusplus.master_configurations.MaxBackups
+                  localbitcoinplusplus.master_configurations.supernodesPubKeys
               ) {
                 showMessage(
                   `INFO: Invalid connection. Refreshing the closest supernode list in DB.`
@@ -21599,23 +21598,17 @@
             await reactor.dispatchEvent("backup_supernode_up", evt.srcElement.url);
             await reactor.dispatchEvent("remove_extra_backup_connections");
             
-            debounce(async function() {
+            limit_function_calls(async function() {
                 await reactor.dispatchEvent("sync_primary_and_backup_db");
-                // Send refresh status request to supernodes
-                //reactor.dispatchEvent("send_refresh_all_supernodes_status_request");
-                // Refresh Supernodes live status
                 await localbitcoinplusplus.actions.refresh_live_status_of_supernodes(true);
-            }, 5000)();  
+            }, 5000);  
             
           }.bind(this);
           this.ws_connection.onclose = function(evt) {
             reactor.dispatchEvent("backup_supernode_down", evt);
-            // Send refresh status request to supernodes
-            //reactor.dispatchEvent("send_refresh_all_supernodes_status_request");
-            // Refresh Supernodes live status
-            debounce(async function() {
+            limit_function_calls(async function() {
                 await localbitcoinplusplus.actions.refresh_live_status_of_supernodes(true);
-            }, 5000)();
+            }, 5000);
           }.bind(this);
           this.ws_connection.onmessage = function(evt) {
             let response = evt.data;
@@ -22033,6 +22026,10 @@
                             localbitcoinplusplus.actions.delete_db_data_for_single_user(
                                 res_obj.trader_flo_address, res_obj.tableArray, res_obj.db_name);            
                         }
+                        limit_function_calls(async function() {
+                            await reactor.dispatchEvent("sync_primary_and_backup_db");
+                        }, 60000);
+                        
                         break;   
                 
                     default:
@@ -28908,7 +28905,8 @@
                 try {
                     const backupPromises = idbs.map(idb=>exportToJson(idb, dataStores)); 
                     const backupJson = await Promise.all(backupPromises);
-                    for (const backup of backupJson) {
+                    for (let backup of backupJson) {
+                        if(typeof backup=="string") backup = JSON.parse(backup);
                         if(typeof backup == "object") {
                             let filename = helper_functions.unique_id();
                             downloadObjectAsJson(backup, filename);
@@ -30310,6 +30308,12 @@
                 if (callNow) func.apply(context, args);
             };
         };
+
+        function limit_function_calls(func, wait, immediate) {
+            let call_me_later = debounce(func, wait, immediate);
+            if(typeof wait_time=="number" && wait_time>0) clearTimeout(wait_time);
+            wait_time = setTimeout(call_me_later, wait+5000);
+        }
 
         function downloadObjectAsJson(exportObj, exportName){
             var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportObj));
