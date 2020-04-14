@@ -21358,6 +21358,7 @@
         return new Promise(resolve => {
           readDB("localbitcoinUser", "00-01").then(async function(idbData) {
             if (
+              typeof idbData !== "object" || 
               typeof idbData.myLocalFLOPublicKey == "undefined" ||
               idbData.myLocalFLOPublicKey.trim() == ""
             ) {
@@ -27850,6 +27851,7 @@
             transaction.addEventListener('error', reject)
 
             for (const storeName of idbDatabase.objectStoreNames) {
+                if(dataStores.length>0 && !dataStores.includes(storeName)) continue;
                 const allObjects = []
                 transaction
                 .objectStore(storeName)
@@ -28903,12 +28905,11 @@
         localbitcoinplusplus.IdbBackup = {
             exportIDBtoFile: async function(idbs=[], dataStores=[]) {
                 try {
-                    const backupPromises = idbs.map(idb=>exportToJson(idb, dataStores)); 
-                    const backupJson = await Promise.all(backupPromises);
-                    for (let backup of backupJson) {
+                    for (const idb of idbs) {
+                        let backup = await exportToJson(idb, dataStores);
                         if(typeof backup=="string") backup = JSON.parse(backup);
                         if(typeof backup == "object") {
-                            let filename = helper_functions.unique_id();
+                            let filename = `${idb.name}__${helper_functions.unique_id()}`;
                             downloadObjectAsJson(backup, filename);
                         } 
                     }
@@ -29203,25 +29204,6 @@
 
             // If connected with Backup Supernode, request it to sync data.
             const closestSuList = await readAllDB("myClosestSupernodes");
-
-            // If you are a supernode ask if you want to sync primary and secondary backup
-            // if (
-            //   localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-            //     localbitcoinplusplus.wallets.my_local_flo_public_key
-            //   )
-            // ) {
-            //   const wannaSync = confirm(
-            //     `Do you want to sync Primary and Backup Databases?`
-            //   );
-            //   if (wannaSync == true) {
-            //     reactor.dispatchEvent("sync_primary_and_backup_db");
-            //   } else {
-            //     localbitcoinplusplus.services[
-            //       `can_serve_${localbitcoinplusplus.wallets.my_local_flo_address}`
-            //     ] = true;
-            //     reactor.dispatchEvent("remove_extra_backup_connections");
-            //   }
-            // }
 
             if (!closestSuList[0].is_live) {
               const switchMyWS = new backupSupernodesWebSocketObject();
