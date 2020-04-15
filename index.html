@@ -17024,7 +17024,7 @@
                                             btc_pk_shares_array,
                                             transaction_key
                                         );
-                                        console.log(btc_private_key);
+                                    console.log(btc_private_key);
 
                                     let withdrawingAmountInThisTx = helper_functions.truncateDecimals(withdraw_res.receivingBTC);
                                     if(withdraw_res.receivingBTC>current_balance) {
@@ -17106,109 +17106,109 @@
                                                                 withdraw_res.utxo_addr
                                                             );
                                                             if (typeof deposit_arr_resp[0] == "object") {
-                                                                        const deposit_arr = deposit_arr_resp[0];
-                                                                        if (
-                                                                            !isNaN(current_balance) &&
-                                                                            parseFloat(current_balance) > 0
-                                                                        ) {
-                                                                            current_balance = helper_functions.truncateDecimals(
-                                                                                current_balance / decimal
-                                                                            );
+                                                                const deposit_arr = deposit_arr_resp[0];
+                                                                if (
+                                                                    !isNaN(current_balance) &&
+                                                                    parseFloat(current_balance) > 0
+                                                                ) {
+                                                                    current_balance = helper_functions.truncateDecimals(
+                                                                        current_balance / decimal
+                                                                    );
+                                                                }
+
+                                                                if (
+                                                                    typeof current_balance == "number"
+                                                                ) {
+                                                                    deposit_arr.bitcoinToBePaid = current_balance-EqCryptoWd;
+                                                                    btc_reserves.balance = current_balance-EqCryptoWd;
+                                                                } else {
+                                                                    deposit_arr.bitcoinToBePaid -= EqCryptoWd;
+                                                                    btc_reserves.balance -= EqCryptoWd;
+                                                                    // Tx is not registered in Blocckhain yet. Refresh balance after 30 minutes
+                                                                    localbitcoinplusplus.actions.delay(1800000).then(() =>
+                                                                        reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address)
+                                                                    );
+                                                                }
+
+                                                                deposit_arr.bitcoinToBePaid = helper_functions.truncateDecimals(deposit_arr.bitcoinToBePaid);
+                                                                btc_reserves.balance = helper_functions.truncateDecimals(btc_reserves.balance);
+
+                                                                if (
+                                                                    deposit_arr.bitcoinToBePaid > 0
+                                                                ) {
+                                                                    // update deposits in db
+                                                                    deposit_arr.status = 2; // UTXO ready to be used again
+                                                                    const deposit_resp = await updateinDB(
+                                                                        "deposit",
+                                                                        deposit_arr,
+                                                                        deposit_arr.id
+                                                                    );
+                                                                    // Update new balance in system_btc_reserves
+                                                                    const reserves_resp = await updateinDB(
+                                                                        "system_btc_reserves_private_keys",
+                                                                        btc_reserves,
+                                                                        btc_reserves.id
+                                                                    );
+
+                                                                    // Send the resp to backups
+                                                                    RM_RPC.send_rpc(
+                                                                        "update_deposited_crypto_instance",
+                                                                        {
+                                                                            deposit_data: deposit_resp,
+                                                                            btc_reserve_data: reserves_resp,
+                                                                            db_inst: params.db_inst,
+                                                                            trader_flo_address:
+                                                                                deposit_arr.trader_flo_address
                                                                         }
+                                                                    ).then(delRequestObject =>
+                                                                        doSend(delRequestObject)
+                                                                    );
 
-                                                                        if (
-                                                                            typeof current_balance == "number"
-                                                                        ) {
-                                                                            deposit_arr.bitcoinToBePaid = current_balance-EqCryptoWd;
-                                                                            btc_reserves.balance = current_balance-EqCryptoWd;
-                                                                        } else {
-                                                                            deposit_arr.bitcoinToBePaid -= EqCryptoWd;
-                                                                            btc_reserves.balance -= EqCryptoWd;
-                                                                            // Tx is not registered in Blocckhain yet. Refresh balance after 30 minutes
-                                                                            localbitcoinplusplus.actions.delay(1800000).then(() =>
-                                                                                reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address)
-                                                                            );
+                                                                    // Do not delete these data instantly as the data
+                                                                    // may be required by a follow-up withdraw request
+                                                                    await localbitcoinplusplus.actions.delay(180000)
+                                                                    await removeinDB("withdraw_btc", withdraw_id);
+
+                                                                    RM_RPC.send_rpc(
+                                                                        "delete_deposited_crypto_instance",
+                                                                        {
+                                                                            withdraw_btc_id: withdraw_id,
+                                                                            db_inst: params.db_inst,
+                                                                            trader_flo_address:
+                                                                                deposit_arr.trader_flo_address
                                                                         }
+                                                                    ).then(delRequestObject =>
+                                                                        doSend(delRequestObject)
+                                                                    );
 
-                                                                        deposit_arr.bitcoinToBePaid = helper_functions.truncateDecimals(deposit_arr.bitcoinToBePaid);
-                                                                        btc_reserves.balance = helper_functions.truncateDecimals(btc_reserves.balance);
+                                                                    // AND DO THE SAME ABOVE 2 IN BACKUP RECEIVE RPC
+                                                                } else {
+                                                                    // Do not delete these data instantly as the data
+                                                                    // may be required by a follow-up withdraw request
+                                                                    await localbitcoinplusplus.actions.delay(180000);
 
-                                                                        if (
-                                                                            deposit_arr.bitcoinToBePaid > 0
-                                                                        ) {
-                                                                            // update deposits in db
-                                                                            deposit_arr.status = 2; // UTXO ready to be used again
-                                                                            const deposit_resp = await updateinDB(
-                                                                                "deposit",
-                                                                                deposit_arr,
-                                                                                deposit_arr.id
-                                                                            );
-                                                                            // Update new balance in system_btc_reserves
-                                                                            const reserves_resp = await updateinDB(
-                                                                                "system_btc_reserves_private_keys",
-                                                                                btc_reserves,
-                                                                                btc_reserves.id
-                                                                            );
+                                                                    let p1 = removeinDB("deposit", deposit_arr.id);
+                                                                    let p2 = removeinDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
+                                                                    let p3 = removeinDB("withdraw_btc", withdraw_id);
 
-                                                                            // Send the resp to backups
-                                                                            RM_RPC.send_rpc(
-                                                                                "update_deposited_crypto_instance",
-                                                                                {
-                                                                                    deposit_data: deposit_resp,
-                                                                                    btc_reserve_data: reserves_resp,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        deposit_arr.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
+                                                                    await Promise.all([p1, p2, p3]);
 
-                                                                            // Do not delete these data instantly as the data
-                                                                            // may be required by a follow-up withdraw request
-                                                                            await localbitcoinplusplus.actions.delay(180000)
-                                                                            await removeinDB("withdraw_btc", withdraw_id);
-
-                                                                            RM_RPC.send_rpc(
-                                                                                "delete_deposited_crypto_instance",
-                                                                                {
-                                                                                    withdraw_btc_id: withdraw_id,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        deposit_arr.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
-
-                                                                            // AND DO THE SAME ABOVE 2 IN BACKUP RECEIVE RPC
-                                                                        } else {
-                                                                            // Do not delete these data instantly as the data
-                                                                            // may be required by a follow-up withdraw request
-                                                                            await localbitcoinplusplus.actions.delay(180000);
-
-                                                                            let p1 = removeinDB("deposit", deposit_arr.id);
-                                                                            let p2 = removeinDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
-                                                                            let p3 = removeinDB("withdraw_btc", withdraw_id);
-
-                                                                            await Promise.all([p1, p2, p3]);
-
-                                                                            RM_RPC.send_rpc(
-                                                                                "delete_deposited_crypto_instance",
-                                                                                {
-                                                                                    deposit_id:
-                                                                                        deposit_arr.id,
-                                                                                    btc_reserve_id: retrieve_pvtkey_req_id,
-                                                                                    withdraw_btc_id: withdraw_id,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        deposit_arr.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
-
+                                                                    RM_RPC.send_rpc(
+                                                                        "delete_deposited_crypto_instance",
+                                                                        {
+                                                                            deposit_id:
+                                                                                deposit_arr.id,
+                                                                            btc_reserve_id: retrieve_pvtkey_req_id,
+                                                                            withdraw_btc_id: withdraw_id,
+                                                                            db_inst: params.db_inst,
+                                                                            trader_flo_address:
+                                                                                deposit_arr.trader_flo_address
                                                                         }
+                                                                    ).then(delRequestObject =>
+                                                                        doSend(delRequestObject)
+                                                                    );
+
+                                                                }
                                                                     
                                                                 return true;
                                                             }
@@ -29204,8 +29204,8 @@
 
             // If connected with Backup Supernode, request it to sync data.
             const closestSuList = await readAllDB("myClosestSupernodes");
-
-            if (!closestSuList[0].is_live) {
+            
+            if (`${WS}://${closestSuList[0].ip}/`!==websocket.url) {
               const switchMyWS = new backupSupernodesWebSocketObject();
               const connectedWSServerFloId = await switchMyWS.getFloIdFromWSUrl(
                 websocket.url
