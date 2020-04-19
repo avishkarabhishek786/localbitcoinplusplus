@@ -1509,7 +1509,7 @@
               <div class="crypto-selector flex expand" id="send_crypto_select_div"></div>
               <label class="input">
                   <input name="senderFloId" type="text" required>
-                  <div class="label">Sender's FLO ID</div>
+                  <div class="label">Sender's Address</div>
               </label>
               <label class="input">
                   <input name="senderPrivateKey" type="password" required>
@@ -1517,10 +1517,10 @@
               </label>
               <label class="input">
                   <input name="recieverFloId" type="text" required>
-                  <div class="label">Reciever's FLO ID</div>
+                  <div class="label">Reciever's Address</div>
               </label>
               <label class="input">
-                  <input name="amount" type="number" required>
+                  <input name="amount" type="number" inputmode="numeric" required>
                   <div class="label">Amount</div>
               </label>
           </div>
@@ -1545,7 +1545,7 @@
               <h5>Select Crypto</h5>
               <div class="crypto-selector flex expand" id="deposit_crypto_div"></div>
               <label class="input">
-                  <input id="trade_amount_select" type="number" required>
+                  <input id="trade_amount_select" type="number" inputmode="numeric" required>
                   <div class="label">Amount</div>
               </label>
               <h5>Click After Sending Crypto To Exchange</h5>
@@ -1581,7 +1581,7 @@
                   <div class="label">Recieving crypto Address</div>
               </label>
               <label class="input">
-                  <input id="crypto_withdraw_amount" type="number" required>
+                  <input id="crypto_withdraw_amount" inputmode="numeric" type="number" required>
                   <div class="label">Amount</div>
               </label>
           </div>
@@ -1609,7 +1609,7 @@
                   <div class="label">Depositer's UPI address</div>
               </label>
               <label class="input">
-                  <input name="amount" type="number" required>
+                  <input name="amount" type="number" inputmode="numeric" required>
                   <div class="label">Amount</div>
               </label>
               <h3 id="upiToAddress" class="hide-completely"></h3>
@@ -1637,7 +1637,7 @@
                   <div class="label">Recieving UPI address</div>
               </label>
               <label class="input">
-                  <input name="amount" type="number" name="hi" required>
+                  <input name="amount" type="number" name="hi" inputmode="numeric" required>
                   <div class="label">Amount</div>
               </label>
           </div>
@@ -18152,6 +18152,14 @@
                                             msg: `Order id ${cancel_request.trade_id} is deleted.`
                                         }
                                         reactor.dispatchEvent('message_for_user', msg_response);
+                                        // Ask other Supernodes to delete this order
+                                        RM_RPC.send_rpc
+                                        .call(this, "cancel_trade_in_backup", {
+                                            trader_flo_address: cancel_request.trader_flo_address,
+                                            trader_flo_pubkey: request.nodePubKey,
+                                            cancel_trade_obj: cancel_request,
+                                        })
+                                        .then(server_response => doSend(server_response));
                                     }
                                 ).catch(e=>{
                                     msg_response = {
@@ -19962,6 +19970,15 @@
                                                 msg: `Order Id ${id} deleted.`
                                             }
                                             reactor.dispatchEvent('message_for_user', err_response);
+
+                                            // Ask other Supernodes to delete this order
+                                            RM_RPC.send_rpc
+                                            .call(this, "cancel_trade_in_backup", {
+                                                trader_flo_address: cancel_request.trader_flo_address,
+                                                trader_flo_pubkey: request.nodePubKey,
+                                                cancel_trade_obj: cancel_request,
+                                            })
+                                            .then(server_response => doSend(server_response));
                                         }
                                         
                                     ).catch(e=>{
@@ -26925,10 +26942,12 @@
                   );
                   break;
 
-                case "cancel_trade":
+                case "cancel_trade_in_backup":
                   if (
                     typeof res_obj.params !== "object" ||
-                    typeof res_obj.params[0] !== "object"
+                    typeof res_obj.params[0] !== "object" ||
+                    !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                    .includes(res_obj.nodePubKey)
                   )
                     return;
                   let cancel_res_data = res_obj.params[0];
@@ -26940,7 +26959,7 @@
                         typeof res_obj.params == "object" &&
                         typeof res_obj.params[0] == "object"
                       ) {
-                        let cancel_request = res_obj.params[0];
+                        let cancel_request = cancel_res_data.cancel_trade_obj;
                         if (cancel_request.job == "cancel_trade_request") {
                           let getPrimarySuObj = await localbitcoinplusplus.kademlia.determineClosestSupernode(
                             cancel_res_data.trader_flo_address
@@ -26953,7 +26972,6 @@
 
                           if (typeof backup_server_db_instance !== "object") {
                             let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                            showMessage(backup_db_error_msg);
                             throw new Error(backup_db_error_msg);
                           }
                               tradeDB =
@@ -26964,14 +26982,14 @@
                                 RM_WALLET.verify(
                                   cancel_request.trade_id,
                                   cancel_request.signed_trade_id,
-                                  nodePubKey.trader_flo_pubKey
+                                  cancel_res_data.trader_flo_pubkey
                                 )
                               ) {
                                 backup_server_db_instance
                                   .backup_removeinDB(
                                     tradeDB,
                                     cancel_request.trade_id
-                                  )
+                                  );
                               }
                         }
                       }
