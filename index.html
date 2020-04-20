@@ -13566,6 +13566,7 @@
             #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
             #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
             #!#MaxBackups=1
+            #!#ordersLife={"trade":3600000, "cryptoDeposit":3600000, "cryptoWithdraw":3600000, "cashDeposit":7200000, "cashWithdraw":86400000}
             #!#miners_fee={"btc":0.0003, "flo":0.0003}
             #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
             03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
@@ -14288,7 +14289,6 @@
                                 temp_ws.send(JSON.stringify(msg_obj));
                             }
                             resolve(`${wsUri}->1`);
-                            //await localbitcoinplusplus.actions.delay(10000);
                             temp_ws.close();
                         };
                         temp_ws.onclose = function(evt) {
@@ -15713,6 +15713,7 @@
                     my_local_data.myLocalFLOPublicKey
                 )
             ) {
+                
                 // Also refresh deposited crypto balances 
                 reactor.dispatchEvent("refresh_reserved_crypto_balances", conn_su_flo_id);
 
@@ -16169,98 +16170,100 @@
             }
       })
 
-      reactor.addEventListener("remove_temp_data_from_db", async function(user_flo_addr='') {
+      reactor.addEventListener("remove_temp_data_from_db", async function() {
          
-         const getSupernode = await localbitcoinplusplus.kademlia.determineClosestSupernode(user_flo_addr);
-         const getSupernodeAddr = getSupernode[0].data.id;
          let backup_db = null;
          let _readAllDB = readAllDB;
          let _removeinDB = removeinDB;
- 
-         if(getSupernodeAddr!==localbitcoinplusplus.wallets.my_local_flo_address) {
-             backup_db = getSupernodeAddr;
-         }
-         if (typeof backup_db == "string" && backup_db.length > 0) {
-             if (
-             typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
-             "object"
-             ) {
-             const foreign_db =
-                 localbitcoinplusplus.newBackupDatabase.db[backup_db];
-                 _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
-                 _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
-             } else {
-                 if(backup_db!==localbitcoinplusplus.wallets.my_local_flo_address) {
-                     err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
-                     showMessage(err_msg);
-                     throw new Error(err_msg);
-                 }
-             }
-         }
  
           const promises = [];
           const datastores = ['buyOrders', 'sellOrders', 'cash_deposits', 'deposit',
           'withdraw_btc', 'withdraw_cash'];
           const timenow = + new Date();
-          for (const ds of datastores) {
-              switch (ds) {
-                 case "buyOrders":
-                     let buyOrdersData = await _readAllDB(ds);
-                     for (const dbData of buyOrdersData) {
-                         if(timenow-dbData.timestamp>=30*60*1000) {
-                             promises.push(_removeinDB(ds, dbData.id));
-                         } 
-                     }
-                    break;
-                 case "sellOrders":
-                 let sellOrdersData = await _readAllDB(ds);
-                     for (const dbData of sellOrdersData) {
-                         if(timenow-dbData.timestamp>=30*60*1000) {
-                             promises.push(_removeinDB(ds, dbData.id));
-                         } 
-                     }
-                     break;
-                 case "cash_deposits":
-                 let cash_depositsData = await _readAllDB(ds);
-                     for (const dbData of cash_depositsData) {
-                         if(timenow-dbData.timestamp>=720*60*1000) {
-                             promises.push(_removeinDB(ds, dbData.id));
-                         } 
-                     }
-                     break;
-                 case "deposit":
-                     let depositData = await _readAllDB(ds);
-                     for (const dbData of depositData) {
-                         if(timenow-dbData.timestamp>=30*60*1000) {
-                             promises.push(_removeinDB(ds, dbData.id));
-                         } 
-                     }
-                     break;
-                 case "withdraw_btc":
-                     let withdraw_btcData = await _readAllDB(ds);
-                     for (const dbData of withdraw_btcData) {
-                         if(timenow-dbData.timestamp>=30*60*1000) {
-                             promises.push(_removeinDB(ds, dbData.id));
-                         } 
-                     }
-                     break;
-                 case "withdraw_cash":
-                     let withdraw_cashData = await _readAllDB(ds);
-                     for (const dbData of withdraw_cashData) {
-                         if(timenow-dbData.timestamp>=720*60*1000) {
-                             promises.push(_removeinDB(ds, dbData.id));
-                         } 
-                     }
-                     break;
-                 default: 
-                     break;
-                 
-              }
+          const lifetime = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+    
+          for (let backup_db in localbitcoinplusplus.myClosestSupernodes) {
+            if (typeof backup_db == "string" && backup_db.length > 0) {
+                if (
+                typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+                "object"
+                ) {
+                let foreign_db =
+                    localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                    _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                    _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                } else {
+                    if(backup_db!==localbitcoinplusplus.wallets.my_local_flo_address) {
+                        console.error(`WARNING: Invalid Backup DB Instance Id: ${backup_db}.`);
+                        continue;
+                    }
+                }
+                for (const ds of datastores) {
+                    switch (ds) {
+                        case "buyOrders":
+                            let buyOrdersData = await _readAllDB(ds);
+                            for (const dbData of buyOrdersData) {
+                                if(timenow-dbData.timestamp>=lifetime.trade) {
+                                    promises.push(_removeinDB(ds, dbData.id));
+                                } 
+                            }
+                            break;
+                        case "sellOrders":
+                        let sellOrdersData = await _readAllDB(ds);
+                            for (const dbData of sellOrdersData) {
+                                if(timenow-dbData.timestamp>=lifetime.trade) {
+                                    promises.push(_removeinDB(ds, dbData.id));
+                                } 
+                            }
+                            break;
+                        case "cash_deposits":
+                        let cash_depositsData = await _readAllDB(ds);
+                            for (const dbData of cash_depositsData) {
+                                if(timenow-dbData.timestamp>=lifetime.cashDeposit) {
+                                    promises.push(_removeinDB(ds, dbData.id));
+                                } 
+                            }
+                            break;
+                        case "deposit":
+                            // Deposits can contain cryptos. Don't delete
+                            break;
+                            let depositData = await _readAllDB(ds);
+                            for (const dbData of depositData) {
+                                if(timenow-dbData.timestamp>=lifetime.cryptoDeposit) {
+                                    promises.push(_removeinDB(ds, dbData.id));
+                                } 
+                            }
+                            break;
+                        case "withdraw_btc":
+                            let withdraw_btcData = await _readAllDB(ds);
+                            for (const dbData of withdraw_btcData) {
+                                if(timenow-dbData.timestamp>=lifetime.cryptoWithdraw) {
+                                    promises.push(_removeinDB(ds, dbData.id));
+                                } 
+                            }
+                            break;
+                        case "withdraw_cash":
+                            let withdraw_cashData = await _readAllDB(ds);
+                            for (const dbData of withdraw_cashData) {
+                                if(timenow-dbData.timestamp>=lifetime.cashWithdraw) {
+                                    promises.push(_removeinDB(ds, dbData.id));
+                                } 
+                            }
+                            break;
+                        default: 
+                            break;
+                        
+                    }
+                }
+            }
           }
  
           console.log(promises);
           promises_res = await Promise.all(promises);
           console.log(promises_res);
+          localStorage.setItem(`timestamp_for_last_deletion_of_db_stale_data`, timenow);
+          console.info('Updated reserved crypto prices.');
+          return true;
        });
 
     </script>
@@ -17051,11 +17054,10 @@
               });
 
               // Refresh reserved cryptos balances if more than a day has passed
+              let today = new Date().getTime();
               localbitcoinplusplus.kademlia.determineClosestSupernode(params.trader_flo_address)
               .then(su=>{
                   let last_updated = localStorage.getItem(`refresh_reserved_cryptos_prices_time_${su[0].data.id}`);
-                  let today = new Date().getTime();
-                  var yesterday = new Date(new Date().getTime() - (24 * 60 * 60 * 1000));
                   
                   readDBbyIndex("withdraw_btc", 'trader_flo_address', params.trader_flo_address).then(withdraw_response=>{
                     for (const withdraw_res of withdraw_response) {
@@ -17070,6 +17072,15 @@
                         reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
                     }
               });
+            }
+
+            // And delete redundant data as well
+            let timestamp_for_last_deletion_of_db_stale_data = localStorage.getItem(`timestamp_for_last_deletion_of_db_stale_data`);
+            if(timestamp_for_last_deletion_of_db_stale_data=null
+            || (today - timestamp_for_last_deletion_of_db_stale_data > (24 * 60 * 60 * 1000))) {
+                limit_function_calls(async function() {
+                    await reactor.dispatchEvent("remove_temp_data_from_db");
+                }, 600000); // Its expected in 10 mins all deletion should be complete.   
             }
 
             if(method=="live_prices_request") {
@@ -17615,7 +17626,8 @@
                             );
 
                           // Delete the request after 24 hours
-                          localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                          let deposit_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                          localbitcoinplusplus.actions.delay(deposit_life.cashWithdraw).then(function() {
                             removeinDB("cash_deposits", receivedTradeInfo.id);
                           });
 
@@ -17787,7 +17799,8 @@
                                         addDB("withdraw_btc", withdraw_btc_order_object);
                                         
                                         // Delete the withdraw crypto order after 30 mins anyway
-                                        localbitcoinplusplus.actions.delay(1800000)
+                                        let withdraw_order_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                                        localbitcoinplusplus.actions.delay(withdraw_order_life.cryptoWithdraw)
                                             .then(()=>{
                                                 removeinDB("withdraw_btc", withdraw_id)
                                             });
@@ -18795,11 +18808,10 @@
                   }
 
                     // Refresh reserved cryptos balances if more than a day has passed
+                    let today = new Date().getTime();
                     localbitcoinplusplus.kademlia.determineClosestSupernode(params.trader_flo_address)
                     .then(su=>{
                         let last_updated = localStorage.getItem(`refresh_reserved_cryptos_prices_time_${su[0].data.id}`);
-                        let today = new Date().getTime();
-                        var yesterday = new Date(new Date().getTime() - (24 * 60 * 60 * 1000));
                         let backup_db = localbitcoinplusplus.newBackupDatabase.db[su[0].data.id];
                         backup_db.backup_readDBbyIndex("withdraw_btc", 'trader_flo_address', params.trader_flo_address).then(withdraw_response=>{
                             for (const withdraw_res of withdraw_response) {
@@ -18812,10 +18824,22 @@
                         });
                         
                         if(last_updated==null
-                        || (today - last_updated > (24 * 60 * 60 * 1000))) {
-                            reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
+                        || (today - last_updated > (24 * 60 * 60 * 1000))) {                            
+                            limit_function_calls(async function() {
+                                await reactor.dispatchEvent("refresh_reserved_crypto_balances", params.trader_flo_address);
+                            }, 600000);
                         }
                     });
+
+                    // And delete redundant data as well
+                    let timestamp_for_last_deletion_of_db_stale_data = localStorage.getItem(`timestamp_for_last_deletion_of_db_stale_data`);
+                    if(timestamp_for_last_deletion_of_db_stale_data=null
+                    || (today - timestamp_for_last_deletion_of_db_stale_data > (24 * 60 * 60 * 1000))) {
+                        limit_function_calls(async function() {
+                            await reactor.dispatchEvent("remove_temp_data_from_db");
+                        }, 600000); // Its expected in 10 mins all deletion should be complete.   
+                    }
+
                 }
               );
               return;
@@ -19382,7 +19406,8 @@
                                     );
 
                                 // Delete the request after 24 hours
-                                localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function () {
+                                let deposit_cash_order_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                                localbitcoinplusplus.actions.delay(deposit_cash_order_life.cashDeposit).then(function () {
                                     backup_server_db_instance
                                         .backup_removeinDB("cash_deposits", receivedTradeInfo.id);
                                 });
@@ -19576,7 +19601,8 @@
                                             "withdraw_btc",
                                             withdraw_btc_order_object
                                           );
-                                          localbitcoinplusplus.actions.delay(1800000)
+                                          let withdraw_order_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                                          localbitcoinplusplus.actions.delay(withdraw_order_life.cryptoWithdraw)
                                                 .then(()=>backup_server_db_instance
                                                 .backup_removeinDB("withdraw_btc", withdraw_id));
                                           return {
@@ -20831,7 +20857,8 @@
                             .then(resp=> doSend(resp));
 
                         // Delete the request after 24 hours
-                        localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                        let withdraw_order_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                        localbitcoinplusplus.actions.delay(withdraw_order_life.cashWithdraw).then(function() {
                             _removeinDB("withdraw_cash", withdraw_req.id);
                         });
                         
@@ -23176,8 +23203,10 @@
             // Also refresh deposited crypto balances 
             reactor.dispatchEvent("refresh_reserved_crypto_balances", 
                 localbitcoinplusplus.wallets.my_local_flo_address);
+            reactor.dispatchEvent("remove_temp_data_from_db", 
+                localbitcoinplusplus.wallets.my_local_flo_address);
         }
-        // refresh_reserved_crypto_balances
+        
         readAllDB("myClosestSupernodes").then(sconn => {
           const switchMyWS = new backupSupernodesWebSocketObject();
           sconn.map((m, i) => {
@@ -26886,7 +26915,8 @@
                           );
 
                           // Delete the request after 24 hours
-                          localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                          let cash_order_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                          localbitcoinplusplus.actions.delay(cash_order_life.cashDeposit).then(function() {
                             backup_server_db_instance.backup_removeinDB("cash_deposits", 
                             resp.data.id);
                           });
@@ -28486,7 +28516,8 @@
                             _updateinDB('withdraw_cash', successfull_withdraw_resp, 
                                 successfull_withdraw_resp.id, true, false);
 
-                            localbitcoinplusplus.actions.delay(24 * 60 * 60 * 1000).then(function() {
+                            let withdraw_cash_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                            localbitcoinplusplus.actions.delay(withdraw_cash_life.cashWithdraw).then(function() {
                                 _removeinDB('withdraw_cash', successfull_withdraw_resp.id);
                             })
                         });
