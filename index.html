@@ -20879,15 +20879,19 @@
 
                           let trx = bitjs[crypto_type].transaction();
                           let sum = 0;
+                          let signing_private_keys_array = [];
 
                           for (var key in utxo_list) {
                               if (utxo_list[key].confirmations > 0) {
                                   var obj = utxo_list[key];
-                                  sum += helper_functions.truncateDecimals(obj.amount);
-                                   // let signing_private_keys_array = []; 
                                   // Find the private key of this utxo (signingPk)
-                                  // Then signing_private_keys_array.push(signingPk)
-                                  // trx.sign(signing_private_keys_array, 1)
+                                  let signingPk = utxo_addr_wif
+                                  .filter(pk=>RM_WALLET.generateFloKeys(pk).address===obj.address); 
+                                  
+                                  if(typeof signingPk[0]=="string") {
+                                    signing_private_keys_array.push(signingPk[0]);
+                                  } else continue;
+                                  sum += helper_functions.truncateDecimals(obj.amount);
 
                                   if (btc_eq_receiving_amount <= sum) {
                                       trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
@@ -20940,7 +20944,7 @@
                           try {
                               console.log(trx);
 
-                              let signedTxHash = trx.sign(utxo_addr_wif, 1); //SIGHASH_ALL DEFAULT 1
+                              let signedTxHash = trx.sign(signing_private_keys_array, 1); //SIGHASH_ALL DEFAULT 1
                               console.log(signedTxHash);
 
                               var http = new XMLHttpRequest();
@@ -21599,14 +21603,22 @@
         },
         // https://stackoverflow.com/a/9232092/5348972
         truncateDecimals: (num, digits=8)=> {
+            num = Number(num).toFixed(digits);
+            if(num<0.000000001) num = 0;
+            if(num>100000000000) {
+                console.trace(num);
+                throw new Error("Maximum 'number' upper limit crossed");
+            }
             var numS = num.toString(),
                 decPos = numS.indexOf('.'),
                 substrLength = decPos == -1 ? numS.length : 1 + decPos + digits,
                 trimmedResult = numS.substr(0, substrLength),
                 finalResult = isNaN(trimmedResult) ? 0 : trimmedResult;
 
-            if(finalResult>100000000000) return NaN;
-
+            if((Number.MIN_SAFE_INTEGER>finalResult)||(finalResult>Number.MAX_SAFE_INTEGER)) {
+                console.trace(num);
+                throw new Error("SAFE INTEGER Limit Crossed.");
+            }
             return Number(finalResult);
         }
       };
