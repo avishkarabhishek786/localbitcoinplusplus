@@ -12636,7 +12636,7 @@
           ];
 
           const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(
-            tableArray
+            tableArray, false, false
           );
 
           const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(
@@ -12683,7 +12683,8 @@
 
           const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(
             tableArray,
-            flo_addr_of_backup
+            flo_addr_of_backup,
+            false
           );
 
           const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(
@@ -12709,11 +12710,12 @@
         get_sharable_db_data: async function(
           dbTableNamesArray,
           backup_db = "",
-          filter_deletables = false
+          with_dbsigns = true
         ) {
           let arr = {};
           let _readAllDB = readAllDB;
-          if (typeof backup_db == "string" && backup_db.length > 0) {
+          if (typeof backup_db == "string" && backup_db.length > 0
+          ) {
             if (
               typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
               "object"
@@ -12730,7 +12732,7 @@
             }
           }
           for (const elem of dbTableNamesArray) {
-            await _readAllDB(elem, filter_deletables).then(
+            await _readAllDB(elem, with_dbsigns).then(
               e => (arr[elem] = e)
             );
           }
@@ -12740,7 +12742,8 @@
         get_sharable_db_data_for_single_user: async function(
           userId = "",
           dbTableNamesArray,
-          backup_db = ""
+          backup_db = "",
+          with_dbsigns=true
         ) {
           let arr = {};
           let _readDBbyIndex = readDBbyIndex;
@@ -12753,13 +12756,15 @@
                 localbitcoinplusplus.newBackupDatabase.db[backup_db];
               _readDBbyIndex = foreign_db.backup_readDBbyIndex.bind(foreign_db);
             } else {
-              err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
-              showMessage(err_msg);
-              throw new Error(err_msg);
+                if(backup_db!==localbitcoinplusplus.wallets.my_local_flo_address) {
+                    err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
+                    showMessage(err_msg);
+                    throw new Error(err_msg);
+                }
             }
           }
           for (const elem of dbTableNamesArray) {
-            await _readDBbyIndex(elem, "trader_flo_address", userId).then(
+            await _readDBbyIndex(elem, "trader_flo_address", userId, with_dbsigns).then(
               e => (arr[elem] = e)
             );
           }
@@ -12880,7 +12885,8 @@
             }
             dbDataOfSupernode = await localbitcoinplusplus.actions.get_sharable_db_data(
               tableArray,
-              subjectDB
+              subjectDB,
+              false
             );
           }
 
@@ -12910,25 +12916,6 @@
             return myArray;
           }
           return false;
-        },
-
-        check_if_you_have_latest_dbhash_of_a_db: function(
-          su = localbitcoinplusplus.wallets.my_local_flo_address
-        ) {
-          if ((su = localbitcoinplusplus.wallets.my_local_flo_address)) {
-            readDB("supernodesDbHash", `SU_DB_${su}`).then(resp => {
-              if (typeof resp == "object") {
-                RM_RPC.send_rpc
-                  .call(this, "validate_latest_db_hash", resp)
-                  .then(supernodesDbHash_response =>
-                    console.log(supernodesDbHash_response)
-                  );
-                showMessage(
-                  `INFO: Request sent to check latest DB hash for ${su}.`
-                );
-              }
-            });
-          }
         },
 
         reset_flo_keys: () => {
@@ -14022,14 +14009,9 @@
                     "supernode_private_key_chunks"
                   ];
 
-                  const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(
-                    tableArray,
-                    getFLOId
-                  );
-
+                  // Don't pass su_db_data in this as it contains db sign as well
                   const dbHashData = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(
-                    getFLOId,
-                    su_db_data
+                    getFLOId
                   );
 
                   // Now you have db tables timestamp and tables hashes. Send it to other supernodes to check
@@ -14054,7 +14036,11 @@
 
                   console.log(nonBackUpSusForDeadSu);
 
-                  if (typeof su_db_data == "object") {
+                  if (nonBackUpSusForDeadSu.length>0) {
+                    const su_db_data = await localbitcoinplusplus.actions.get_sharable_db_data(
+                        tableArray,
+                        getFLOId
+                    );
                     nonBackUpSusForDeadSu.map(nbs => {
                       su_db_data.trader_flo_address = getFLOId;
                       su_db_data.receiver_flo_address = nbs.trader_flo_address;
@@ -16473,7 +16459,6 @@
                                             id: helper_functions.unique_id(),
                                             product: params.product,
                                             btc_address: params.btc_address,
-                                            balance: null,
                                             trader_flo_address: params.trader_flo_address,
                                             btc_private_key_shamirs_id: btc_private_key_shamirs_id,
                                             supernode_transaction_key: supernode_transaction_key
@@ -18185,7 +18170,6 @@
                                       id: helper_functions.unique_id(),
                                       product: params.product,
                                       btc_address: params.btc_address,
-                                      balance: null,
                                       trader_flo_address: params.trader_flo_address,
                                       btc_private_key_shamirs_id: btc_private_key_shamirs_id,
                                       supernode_transaction_key: supernode_transaction_key
@@ -23602,6 +23586,10 @@
                     )
                       return;
 
+                      const timenow = + new Date();
+                      const lifetime = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                      const db_sync_promises = [];
+
                     (async function() {
                       let i = 0;
                       for (let tableStoreName in su_db_data) {
@@ -23616,58 +23604,97 @@
                           continue;
 
                         try {
+                  
                           let obj = su_db_data[tableStoreName];
                           if (obj.length > 0) {
                             for (var prop in obj) {
                               if (!obj.hasOwnProperty(prop)) continue;
 
-                              if(typeof obj[prop].is_deletable==="boolean"
-                              && obj[prop].is_deletable===true) {
-                                removeinDB(tableStoreName, obj[prop].id);
-                                continue;
+                              if(tableStoreName=="buyOrders" || tableStoreName=="sellOrders") {
+                                if(timenow-obj[prop].timestamp>=lifetime.trade) {
+                                    db_sync_promises.push(removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+                              
+                              if(tableStoreName=="cash_deposits") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cashDeposit) {
+                                    db_sync_promises.push(removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>removeinDB(tableStoreName, obj[prop].id)))
+                                }
                               }
 
-                              await updateinDB(
+                              if(tableStoreName=="deposit") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cryptoDeposit) {
+                                    db_sync_promises.push(removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              if(tableStoreName=="withdraw_btc") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cryptoWithdraw) {
+                                    db_sync_promises.push(removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              if(tableStoreName=="withdraw_cash") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cashWithdraw) {
+                                    db_sync_promises.push(removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              db_sync_promises.push(updateinDB(
                                 tableStoreName,
                                 obj[prop],
                                 obj[prop].id,
                                 true,
                                 false
-                              );
+                              ));
+                              
                               showMessage(
                                 `INFO: "${tableStoreName}" datastore syncing is complete.`
                               );
                             }
                           }
 
-                          if (i == Object.keys(su_db_data).length - 2) {
-                            localbitcoinplusplus.services[
-                              `can_serve_${su_db_data.trader_flo_address}`
-                            ] = true;
-
-                            const RM_RPC = new localbitcoinplusplus.rpc();
-
-                            // Ask backup Supernodes to delete deletable data from backup db instance
-                            RM_RPC.send_rpc
-                              .call(this, "delete_deletables_from_supernode_db_instance", {
-                                trader_flo_address: su_db_data.trader_flo_address,
-                                delete_deletables: true
-                              })
-                              .then(server_response => doSend(server_response));
-                            
-                            // Inform users
-                            RM_RPC.send_rpc
-                              .call(this, "supernode_message", {
-                                trader_flo_address:
-                                  su_db_data.trader_flo_address,
-                                server_msg: `System is synced and ready to serve.`
-                              })
-                              .then(server_response => doSend(server_response));
-                          }
                         } catch (error) {
                           console.log(error);
                         }
                       }
+
+                      await Promise.all(db_sync_promises);
+  
+                      const RM_RPC = new localbitcoinplusplus.rpc();                            
+                      // Inform users
+                      RM_RPC.send_rpc
+                        .call(this, "supernode_message", {
+                        trader_flo_address:
+                            su_db_data.trader_flo_address,
+                        server_msg: `System is synced and ready to serve.`
+                        })
+                        .then(server_response => doSend(server_response));
                     })();
                   }
                   break;
@@ -23686,6 +23713,10 @@
                     );
                     return;
                   }
+
+                  const timenow = + new Date();
+                  const lifetime = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                  const db_sync_promises = [];
 
                   if (
                     typeof res_obj.params == "object" &&
@@ -23732,6 +23763,9 @@
                           _updateinDB = foreign_db.backup_updateinDB.bind(
                             foreign_db
                           );
+                         _removeinDB = foreign_db.backup_removeinDB.bind(
+                            foreign_db
+                          );
                         } else {
                           err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                           showMessage(err_msg);
@@ -23742,9 +23776,6 @@
                       for (let tableStoreName in su_db_data) {
                         i++;
                         if (i == Object.keys(su_db_data).length - 2) {
-                          localbitcoinplusplus.services[
-                            `can_serve_${su_db_data[`trader_flo_address`]}`
-                          ] = true;
                           // Close unnecessary connections now
                           reactor.dispatchEvent(
                             "remove_extra_backup_connections"
@@ -23763,17 +23794,71 @@
                           if (obj.length > 0) {
                             for (var prop in obj) {
                               if (!obj.hasOwnProperty(prop)) continue;
-                              _updateinDB(
+                              if(tableStoreName=="buyOrders" || tableStoreName=="sellOrders") {
+                                if(timenow-obj[prop].timestamp>=lifetime.trade) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+                              
+                              if(tableStoreName=="cash_deposits") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cashDeposit) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                }
+                              }
+
+                              if(tableStoreName=="deposit") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cryptoDeposit) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              if(tableStoreName=="withdraw_btc") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cryptoWithdraw) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              if(tableStoreName=="withdraw_cash") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cashWithdraw) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              db_sync_promises.push(_updateinDB(
                                 tableStoreName,
                                 obj[prop],
                                 obj[prop].id,
                                 true,
                                 false
-                              ).then(() => {
-                                showMessage(
-                                  `INFO: "${tableStoreName}" datastore syncing is complete.`
-                                );
-                              });
+                              ));
+                              showMessage(
+                                `INFO: "${tableStoreName}" datastore syncing is complete.`
+                              );
                             }
                           }
                         } catch (error) {
@@ -23781,63 +23866,19 @@
                         }
                       }
                     })();
+                      await Promise.all(db_sync_promises);
+  
+                      const RM_RPC = new localbitcoinplusplus.rpc();                            
+                      // Inform users
+                      RM_RPC.send_rpc
+                        .call(this, "supernode_message", {
+                        trader_flo_address:
+                            su_db_data.trader_flo_address,
+                        server_msg: `Backup system is synced and ready to serve.`
+                        })
+                        .then(server_response => doSend(server_response));
                   }
                   break;
-
-                case "delete_deletables_from_supernode_db_instance":
-                  if(localbitcoinplusplus.master_configurations.supernodesPubKeys
-                  .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
-                  &&
-                  localbitcoinplusplus.master_configurations.supernodesPubKeys
-                  .includes(res_obj.nodePubKey)) {
-
-                    if(res_obj.params[0].delete_deletables===true
-                    && typeof localbitcoinplusplus.newBackupDatabase
-                    .db[res_obj.params[0].trader_flo_address]==="object") {
-
-                        const backup_db_inst = localbitcoinplusplus.newBackupDatabase
-                        .db[res_obj.params[0].trader_flo_address];
-
-                        const _readAllDB = backup_db_inst.backup_readAllDB.bind(backup_db_inst);
-                        const _removeinDB = backup_db_inst.backup_removeinDB.bind(backup_db_inst);
-                        
-                        const tableArray = [
-                            "deposit",
-                            "cash_deposits",
-                            "withdraw_cash",
-                            "withdraw_btc",
-                            "cash_balances",
-                            "crypto_balances",
-                            "buyOrders",
-                            "sellOrders",
-                            "system_btc_reserves_private_keys",
-                            "supernode_private_key_chunks"
-                        ];      
-
-                        let del_promise = [];
-
-                        (async function() {
-                            try {
-                                for (let tbl of tableArray) {
-                                    const allDataPromises = await _readAllDB(tbl, false);
-
-                                    for(t of allDataPromises) {
-                                        if(t.is_deletable===true) {
-                                            console.log(tbl, t);
-                                            del_promise.push(_removeinDB(tbl, t.id, true));
-                                        }
-                                    }
-                                }
-
-                                console.log(del_promise);
-                                await Promise.all(del_promise);
-                            } catch (error) {
-                                throw new Error(error);    
-                            }
-                        })();
-                    }
-                  }
-                break;  
 
                 case "reconnect_with_another_supernode":
                   if (
@@ -24039,7 +24080,6 @@
 
                 let allowed_methods = [
                   "sync_backup_supernode_from_backup_supernode_response",
-                  "updateUserBTCReservesRequest",
                   "do_you_have_latest_data_for_this_supernode"
                 ];
 
@@ -25669,11 +25709,7 @@
                           _removeinDB("withdraw_btc", res_data.withdraw_btc_id);
                         if (typeof res_data.deposit_id == "string")
                           _removeinDB("deposit", res_data.deposit_id);
-                        if (typeof res_data.btc_reserve_id == "string")
-                          _removeinDB(
-                            "system_btc_reserves_private_keys",
-                            res_data.btc_reserve_id
-                          );
+                        
                       }
                     } catch (e) {
                       console.error(e);
@@ -26962,64 +26998,7 @@
                   }
                   break;
 
-                case "updateUserBTCReservesRequest":
-                  if (
-                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                      res_obj.nodePubKey
-                    )
-                  ) {
-                    let updateUserReservesResponseObject = res_obj.params[0];
-                    let subjectuser =
-                      res_obj.params[0].trader_flo_address ||
-                      res_obj.params[0].updatedReservesObject[0]
-                        .trader_flo_address;
-                    let backup_server_db_instance = "";
-                    if (typeof subjectuser != "string") return;
-                    localbitcoinplusplus.kademlia
-                      .determineClosestSupernode(subjectuser)
-                      .then(my_closest_su_list => {
-                        const primarySupernodeOfThisUser = my_closest_su_list[0].data.id;
-                        backup_server_db_instance =
-                          localbitcoinplusplus.newBackupDatabase.db[
-                            primarySupernodeOfThisUser
-                          ];
-
-                        if (typeof backup_server_db_instance !== "object") {
-                          let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                          showMessage(backup_db_error_msg);
-                          throw new Error(backup_db_error_msg);
-                        }
-
-                        let updateUserReservesResponseString = JSON.stringify(
-                          updateUserReservesResponseObject.updatedReservesObject
-                        );
-                        let updateUserReservesResponseStringHash = Crypto.SHA256(
-                          updateUserReservesResponseString
-                        );
-                        let isBalanceLegit = RM_WALLET.verify(
-                          updateUserReservesResponseStringHash,
-                          updateUserReservesResponseObject.updatedBTCReservesObjectSign,
-                          res_obj.nodePubKey
-                        );
-                        if (isBalanceLegit) {
-                          backup_server_db_instance.backup_updateinDB(
-                            "system_btc_reserves_private_keys",
-                            updateUserReservesResponseObject
-                              .updatedReservesObject[0],
-                            true,
-                            false
-                          );
-                          return true;
-                        } else {
-                          showMessage(
-                            `WARNING: Failed to update balance in your DB. Please refresh.`
-                          );
-                        }
-                      });
-                  }
-                  break;
-
-                case "sync_backup_supernode_from_backup_supernode_response":
+                  case "sync_backup_supernode_from_backup_supernode_response":
                   let su_db_data = res_obj.params[0];
                   if (
                     typeof localbitcoinplusplus.wallets.my_local_flo_address !==
@@ -27033,6 +27012,10 @@
                     );
                     return;
                   }
+
+                  const timenow = + new Date();
+                  const lifetime = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
+                  const db_sync_promises = [];
 
                   if (
                     typeof res_obj.params == "object" &&
@@ -27079,6 +27062,9 @@
                           _updateinDB = foreign_db.backup_updateinDB.bind(
                             foreign_db
                           );
+                         _removeinDB = foreign_db.backup_removeinDB.bind(
+                            foreign_db
+                          );
                         } else {
                           err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
                           showMessage(err_msg);
@@ -27089,9 +27075,6 @@
                       for (let tableStoreName in su_db_data) {
                         i++;
                         if (i == Object.keys(su_db_data).length - 2) {
-                          localbitcoinplusplus.services[
-                            `can_serve_${su_db_data.trader_flo_address}`
-                          ] = true;
                           // Close unnecessary connections now
                           reactor.dispatchEvent(
                             "remove_extra_backup_connections"
@@ -27110,17 +27093,71 @@
                           if (obj.length > 0) {
                             for (var prop in obj) {
                               if (!obj.hasOwnProperty(prop)) continue;
-                              _updateinDB(
+                              if(tableStoreName=="buyOrders" || tableStoreName=="sellOrders") {
+                                if(timenow-obj[prop].timestamp>=lifetime.trade) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+                              
+                              if(tableStoreName=="cash_deposits") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cashDeposit) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                }
+                              }
+
+                              if(tableStoreName=="deposit") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cryptoDeposit) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              if(tableStoreName=="withdraw_btc") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cryptoWithdraw) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              if(tableStoreName=="withdraw_cash") {
+                                if(timenow-obj[prop].timestamp>=lifetime.cashWithdraw) {
+                                    db_sync_promises.push(_removeinDB(tableStoreName, obj[prop].id));
+                                    continue;
+                                } else {
+                                    db_sync_promises.push(localbitcoinplusplus.actions
+                                    .delay(timenow-obj[prop].timestamp)
+                                    .then(()=>_removeinDB(tableStoreName, obj[prop].id)))
+                                } 
+                              }
+
+                              db_sync_promises.push(_updateinDB(
                                 tableStoreName,
                                 obj[prop],
                                 obj[prop].id,
                                 true,
                                 false
-                              ).then(() => {
-                                showMessage(
-                                  `INFO: "${tableStoreName}" datastore syncing is complete.`
-                                );
-                              });
+                              ));
+                              showMessage(
+                                `INFO: "${tableStoreName}" datastore syncing is complete.`
+                              );
                             }
                           }
                         } catch (error) {
@@ -27128,6 +27165,17 @@
                         }
                       }
                     })();
+                      await Promise.all(db_sync_promises);
+  
+                      const RM_RPC = new localbitcoinplusplus.rpc();                            
+                      // Inform users
+                      RM_RPC.send_rpc
+                        .call(this, "supernode_message", {
+                        trader_flo_address:
+                            su_db_data.trader_flo_address,
+                        server_msg: `Backup system is synced and ready to serve.`
+                        })
+                        .then(server_response => doSend(server_response));
                   }
                   break;
 
@@ -27218,7 +27266,8 @@
 
                         const su_db_data_from_my_db = await localbitcoinplusplus.actions.get_sharable_db_data(
                           tableArray,
-                          backup_database
+                          backup_database,
+                          false
                         );
 
                         const dbHashData_from_my_db = await localbitcoinplusplus.actions.getDBTablesLatestHashAndTimestamp(
@@ -27268,7 +27317,7 @@
                           const mf = mismatched_fields[i];
                           latest_data[mf] = [];
                           old_data[mf] = [];
-                          const res_data_obj = await _readAllDB(mf, false);
+                          const res_data_obj = await _readAllDB(mf);
                           if(res_data_obj.length===0) {
                             old_data[mf].push(res_data_obj);
                             continue;
@@ -27288,7 +27337,6 @@
                                 )) {
                                     latest_data[mf].push(odho);    
                                 } else {
-                                    if(typeof odho.is_deletable ==="boolean") continue;
                                     old_data[mf].push(odho);
                                 }
                             }  
@@ -27341,96 +27389,6 @@
                       });
                   }
 
-                  break;
-
-                case "validate_latest_db_hash":
-                  if (
-                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                      res_obj.nodePubKey
-                    )
-                  ) {
-                    const response_object = res_obj.params[0];
-                    if (typeof response_object.trader_flo_address != "string")
-                      return;
-
-                    localbitcoinplusplus.kademlia
-                      .determineClosestSupernode(
-                        res_obj.params[0].trader_flo_address
-                      )
-                      .then(my_closest_su_list => {
-                        const primarySupernodeOfThisUser =
-                          my_closest_su_list[0].data.id;
-                        const backup_server_db_instance =
-                          localbitcoinplusplus.newBackupDatabase.db[
-                            primarySupernodeOfThisUser
-                          ];
-
-                        if (
-                          typeof backup_server_db_instance !== "object" ||
-                          backup_server_db_instance ==
-                            localbitcoinplusplus.wallets.my_local_flo_address
-                        ) {
-                          let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                          showMessage(backup_db_error_msg);
-                          throw new Error(backup_db_error_msg);
-                        }
-
-                        backup_server_db_instance
-                          .backup_readDB("supernodesDbHash", response_object.id)
-                          .then(my_db_hash_obj => {
-                            if (typeof my_db_hash_obj == "object") {
-                              if (
-                                my_db_hash_obj.vectorClock >=
-                                  response_object.vectorClock ||
-                                my_db_hash_obj.timestamp >=
-                                  response_object.timestamp
-                              ) {
-                                let diffs = []; // compare two objects and get the tables with difference in hash
-
-                                for (key in my_db_hash_obj) {
-                                  if (my_db_hash_obj.hasOwnProperty(key)) {
-                                    if (
-                                      response_object[key] &&
-                                      response_object[key] !==
-                                        my_db_hash_obj[key] &&
-                                      ![
-                                        "DBHash",
-                                        "data_of",
-                                        "id",
-                                        "timestamp",
-                                        "vectorClock"
-                                      ].includes(key)
-                                    ) {
-                                      diffs[key] = my_db_hash_obj[key];
-                                    }
-                                  }
-                                }
-
-                                localbitcoinplusplus.actions
-                                  .get_sharable_db_data(
-                                    diffs,
-                                    primarySupernodeOfThisUser
-                                  )
-                                  .then(function(su_db_data) {
-                                    if (typeof su_db_data == "object") {
-                                      su_db_data.trader_flo_address = primarySupernodeOfThisUser;
-                                      su_db_data.receiver_flo_address = res_obj.globalParams.senderFloId;
-                                      RM_RPC.send_rpc
-                                        .call(
-                                          this,
-                                          "sync_backup_supernode_from_backup_supernode_response",
-                                          su_db_data
-                                        )
-                                        .then(server_sync_response =>
-                                          doSend(server_sync_response)
-                                        );
-                                    }
-                                  });
-                              }
-                            }
-                          });
-                      });
-                  }
                   break;
 
                 case "store_backup_system_btc_reserves_private_keys":
@@ -27582,11 +27540,6 @@
                           _removeinDB("withdraw_btc", res_data.withdraw_btc_id);
                         if (typeof res_data.deposit_id == "string")
                           _removeinDB("deposit", res_data.deposit_id);
-                        if (typeof res_data.btc_reserve_id == "string")
-                          _removeinDB(
-                            "system_btc_reserves_private_keys",
-                            res_data.btc_reserve_id
-                          );
                       }
                     } catch (e) {
                       console.error(e);
@@ -27697,61 +27650,6 @@
                     }
 
                 break;
-
-                case "delete_deletables_from_supernode_db_instance":
-                  if(localbitcoinplusplus.master_configurations.supernodesPubKeys
-                  .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
-                  &&
-                  localbitcoinplusplus.master_configurations.supernodesPubKeys
-                  .includes(res_obj.nodePubKey)) {
-
-                    if(res_obj.params[0].delete_deletables===true
-                    && typeof localbitcoinplusplus.newBackupDatabase
-                    .db[res_obj.params[0].trader_flo_address]==="object") {
-
-                        const backup_db_inst = localbitcoinplusplus.newBackupDatabase
-                        .db[res_obj.params[0].trader_flo_address];
-
-                        const _readAllDB = backup_db_inst.backup_readAllDB.bind(backup_db_inst);
-                        const _removeinDB = backup_db_inst.backup_removeinDB.bind(backup_db_inst);
-                        
-                        const tableArray = [
-                            "deposit",
-                            "cash_deposits",
-                            "withdraw_cash",
-                            "withdraw_btc",
-                            "cash_balances",
-                            "crypto_balances",
-                            "buyOrders",
-                            "sellOrders",
-                            "system_btc_reserves_private_keys",
-                            "supernode_private_key_chunks"
-                        ];      
-
-                        let del_promise = [];
-
-                        (async function() {
-                            try {
-                                for (let tbl of tableArray) {
-                                    const allDataPromises = await _readAllDB(tbl, false);
-
-                                    for(t of allDataPromises) {
-                                        if(t.is_deletable===true) {
-                                            console.log(tbl, t);
-                                            del_promise.push(_removeinDB(tbl, t.id, true));
-                                        }
-                                    }
-                                }
-
-                                console.log(del_promise);
-                                await Promise.all(del_promise);
-                            } catch (error) {
-                                throw new Error(error);    
-                            }
-                        })();
-                    }
-                  }
-                break;  
         
                 default:
                   break;
@@ -28439,7 +28337,7 @@
             })
         }
 
-      function readDB(tablename, id, filter_deletables = true) {
+      function readDB(tablename, id, with_dbsigns = true) {
         return new Promise((resolve, reject) => {
           var transaction = db.transaction([tablename]);
           var objectStore = transaction.objectStore(tablename);
@@ -28454,12 +28352,13 @@
                 if(!exception_datastores.includes(tablename)) {
                     if(!verifyDBData(request.result)) return resolve();
                 }
-                if (filter_deletables == true) {
-                    if (typeof request.result.is_deletable == "undefined") {
-                     resolve(request.result);
-                    } else {
-                        resolve();
+                if (with_dbsigns == false) {
+                    let eachrecordcopy = JSON.parse(JSON.stringify(request.result));
+                    if(typeof eachrecordcopy.db_sign=="string" || typeof eachrecordcopy.db_signer=="string") {
+                        delete eachrecordcopy.db_sign;
+                        delete eachrecordcopy.db_signer;
                     }
+                    resolve(eachrecordcopy);
                 } else {
                     resolve(request.result);
                 }
@@ -28475,7 +28374,7 @@
         tablename,
         index,
         indexValue,
-        filter_deletables = true
+        with_dbsigns = true
       ) {
         return new Promise((resolve, reject) => {
           var transaction = db.transaction([tablename]);
@@ -28491,22 +28390,19 @@
               if (cursor.value[index] == indexValue) {
                 if(!exception_datastores.includes(tablename)) {
                     if(verifyDBData(cursor.value)) {
-                        if (filter_deletables == true) {
-                            if (typeof cursor.value.is_deletable == "undefined") {
-                                response.push(cursor.value);
+                        if (with_dbsigns == false) {
+                            let eachrecordcopy = JSON.parse(JSON.stringify(cursor.value));
+                            if(typeof eachrecordcopy.db_sign=="string" || typeof eachrecordcopy.db_signer=="string") {
+                                delete eachrecordcopy.db_sign;
+                                delete eachrecordcopy.db_signer;
                             }
+                            response.push(eachrecordcopy); 
                         } else {
                             response.push(cursor.value);
                         }
                     }
                   } else {
-                    if (filter_deletables == true) {
-                        if (typeof cursor.value.is_deletable == "undefined") {
-                            response.push(cursor.value);
-                        }
-                    } else {
-                        response.push(cursor.value);
-                    }
+                    response.push(cursor.value);
                   }
               }
               cursor.continue();
@@ -28517,45 +28413,35 @@
         });
       }
 
-      function readAllDB(tablename, filter_deletables = true, limit = 0) {
+      function readAllDB(tablename, with_dbsigns=true) {
         return new Promise((resolve, reject) => {
           let response = [];
           var objectStore = db.transaction(tablename).objectStore(tablename);
-          
-        //   if ('getAll' in objectStore) {
-        //     // IDBObjectStore.getAll() will return the full set of items in our store.
-        //     objectStore.getAll().onsuccess = function(event) {
-        //         resolve(event.target.result);
-        //     };
-        //   } else {                
+                       
             objectStore.openCursor().onsuccess = function(event) {
                 let cursor = event.target.result;
                 if (cursor) {
                     if(!exception_datastores.includes(tablename)) {
                         if(verifyDBData(cursor.value)) {
-                            if (filter_deletables == true) {
-                                if (typeof cursor.value.is_deletable == "undefined") {
-                                response.push(cursor.value);
+                            if (with_dbsigns == false) {
+                                let eachrecordcopy = JSON.parse(JSON.stringify(cursor.value));
+                                if(typeof eachrecordcopy.db_sign=="string" || typeof eachrecordcopy.db_signer=="string") {
+                                    delete eachrecordcopy.db_sign;
+                                    delete eachrecordcopy.db_signer;
                                 }
+                                response.push(eachrecordcopy); 
                             } else {
                                 response.push(cursor.value);
                             }
                         }
                     } else {
-                        if (filter_deletables == true) {
-                            if (typeof cursor.value.is_deletable == "undefined") {
-                            response.push(cursor.value);
-                            }
-                        } else {
-                            response.push(cursor.value);
-                        }
+                        response.push(cursor.value);
                     }
                     cursor.continue();
                 } else {
                     resolve(response);
                 }
             };
-        //   }
           
         });
       }
@@ -29110,7 +28996,7 @@
           }.bind(this);
         },
 
-        backup_readDB(tablename, id, filter_deletables = true) {
+        backup_readDB(tablename, id, with_dbsigns = true) {
           return new Promise((resolve, reject) => {
             this.transaction = this.db.transaction([tablename]);
             var objectStore = this.transaction.objectStore(tablename);
@@ -29126,16 +29012,15 @@
                 if(!exception_datastores.includes(tablename)) {
                     if(!verifyDBData(parent_request.result)) return resolve();
                 }
-                if (filter_deletables == true) {
-                  if (
-                    typeof parent_request.result.is_deletable == "undefined"
-                  ) {
-                    resolve(parent_request.result);
-                  } else {
-                    resolve();
-                  }
+                if (with_dbsigns == false) {
+                    let eachrecordcopy = JSON.parse(JSON.stringify(parent_request.result));
+                    if(typeof eachrecordcopy.db_sign=="string" || typeof eachrecordcopy.db_signer=="string") {
+                        delete eachrecordcopy.db_sign;
+                        delete eachrecordcopy.db_signer;
+                    }
+                    resolve(eachrecordcopy);
                 } else {
-                  resolve(parent_request.result);
+                    resolve(parent_request.result);
                 }
               } else {
                 resolve();
@@ -29148,7 +29033,7 @@
           tablename,
           index,
           indexValue,
-          filter_deletables = true
+          with_dbsigns = true
         ) {
           return new Promise((resolve, reject) => {
             this.transaction = this.db.transaction([tablename]);
@@ -29165,22 +29050,19 @@
                   
                     if(!exception_datastores.includes(tablename)) {
                         if(verifyDBData(cursor.value)) {
-                            if (filter_deletables == true) {
-                                if (typeof cursor.value.is_deletable == "undefined") {
-                                 response.push(cursor.value);
+                            if (with_dbsigns == false) {
+                                let eachrecordcopy = JSON.parse(JSON.stringify(cursor.value));
+                                if(typeof eachrecordcopy.db_sign=="string" || typeof eachrecordcopy.db_signer=="string") {
+                                    delete eachrecordcopy.db_sign;
+                                    delete eachrecordcopy.db_signer;
                                 }
+                                response.push(eachrecordcopy); 
                             } else {
                                 response.push(cursor.value);
                             }
                         }
                     } else {
-                        if (filter_deletables == true) {
-                            if (typeof cursor.value.is_deletable == "undefined") {
-                               response.push(cursor.value);
-                            }
-                        } else {
-                            response.push(cursor.value);
-                        }
+                        response.push(cursor.value);
                     }
                  
                 }
@@ -29192,7 +29074,7 @@
           });
         },
 
-        backup_readAllDB(tablename, filter_deletables = true) {
+        backup_readAllDB(tablename, with_dbsigns = true) {
           return new Promise((resolve, reject) => {
             let response = [];
             var objectStore = this.db
@@ -29204,22 +29086,19 @@
               if (cursor) {
                 if(!exception_datastores.includes(tablename)) {
                     if(verifyDBData(cursor.value)) {
-                        if (filter_deletables == true) {
-                            if (typeof cursor.value.is_deletable == "undefined") {
-                                response.push(cursor.value);
+                        if (with_dbsigns == false) {
+                            let eachrecordcopy = JSON.parse(JSON.stringify(cursor.value));
+                            if(typeof eachrecordcopy.db_sign=="string" || typeof eachrecordcopy.db_signer=="string") {
+                                delete eachrecordcopy.db_sign;
+                                delete eachrecordcopy.db_signer;
                             }
+                            response.push(eachrecordcopy); 
                         } else {
                             response.push(cursor.value);
                         }
                     }
                 } else {
-                    if (filter_deletables == true) {
-                        if (typeof cursor.value.is_deletable == "undefined") {
-                            response.push(cursor.value);
-                        }
-                    } else {
-                        response.push(cursor.value);
-                    }
+                    response.push(cursor.value);
                 }
 
                 cursor.continue();
@@ -30395,25 +30274,6 @@
               } else {
                 //Deposit successful. Update user balance and status to 2. Its Private key can be
                 // now given to a random trader
-
-                const reserve_res = await _readDBbyIndex(
-                  "system_btc_reserves_private_keys",
-                  "btc_address",
-                  trader_deposits.btc_address
-                );
-                if (typeof reserve_res == "object") {
-                  reserve_res.map(reserves => {
-                    reserves.balance = balance;
-                    _updateinDB(
-                      "system_btc_reserves_private_keys",
-                      reserves,
-                      reserves.id
-                    );
-                  });
-                } else {
-                  throw new Error(`ERROR: No such BTC reserves found.`);
-                }
-
                 trader_deposits.status = 2;
                 const trader_deposit_updated = await _updateinDB(
                   "deposit",
@@ -30501,27 +30361,6 @@
                         doSend(updateUsertraderDepositsRequestObject)
                       );
 
-                      const reservesObjectString = JSON.stringify(reserve_res);
-                      const reservesObjectStringHash = Crypto.SHA256(
-                        reservesObjectString
-                      );
-
-                      const reservesObjectSign = RM_WALLET.sign(
-                        reservesObjectStringHash,
-                        localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                      );
-
-                      const updateUserBTCReservesRequestObject = {
-                        updatedReservesObject: reserve_res,
-                        updatedBTCReservesObjectSign: reservesObjectSign,
-                        trader_flo_address: reserve_res[0].trader_flo_address,
-                        receiver_flo_address: reserve_res[0].trader_flo_address
-                      };
-
-                      RM_RPC.send_rpc(
-                        "updateUserBTCReservesRequest",
-                        updateUserBTCReservesRequestObject
-                      ).then(reservesObject => doSend(reservesObject));
                     });
                   }
                 );
