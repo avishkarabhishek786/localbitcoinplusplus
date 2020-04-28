@@ -12501,8 +12501,8 @@
             #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
             #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
             #!#MaxBackups=1
-            #!#ordersLife={"trade":3600000, "cryptoDeposit":3600000, "cryptoWithdraw":3600000, "cashDeposit":7200000, "cashWithdraw":86400000}
-            #!#miners_fee={"btc":0.0003, "flo":0.0003}
+            #!#ordersLife={"trade":3600000, "cryptoDeposit":172800000, "cryptoWithdraw":3600000, "cashDeposit":172800000, "cashWithdraw":172800000}
+            #!#miners_fee={"btc":0.0005, "flo":0.001}
             #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
             03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742,039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
             03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
@@ -13882,6 +13882,7 @@
       reactor.registerEvent("informRightSuperNode");
       reactor.registerEvent("message_for_user");
       reactor.registerEvent("remove_temp_data_from_db");
+      reactor.registerEvent("remove_redundant_crypto_deposits");
 
       reactor.addEventListener("new_supernode_connected", async function(evt) {
         const switchMyWS = new backupSupernodesWebSocketObject();
@@ -14758,10 +14759,6 @@
                     } 
                 })();
             }
-
-
-
-
         }
       });  
       
@@ -15025,14 +15022,7 @@
                             }
                             break;
                         case "deposit":
-                            // Deposits can contain cryptos. Don't delete
-                            break;
-                            let depositData = await _readAllDB(ds);
-                            for (const dbData of depositData) {
-                                if(timenow-dbData.timestamp>=lifetime.cryptoDeposit) {
-                                    promises.push(_removeinDB(ds, dbData.id));
-                                } 
-                            }
+                            reactor.dispatchEvent("remove_redundant_crypto_deposits");
                             break;
                         case "withdraw_btc":
                             let withdraw_btcData = await _readAllDB(ds);
@@ -15065,6 +15055,94 @@
           console.info('Updated reserved crypto prices.');
           return true;
        });
+
+      reactor.addEventListener("remove_redundant_crypto_deposits", async function(deposit_list=[]) {
+        try {
+            if(deposit_list.length==0) 
+                deposit_list = await readAllDB("deposit");
+            if (
+                typeof deposit_list == "object" &&
+                deposit_list.length > 0
+            ) {
+                
+                for (const dl in deposit_list) {
+                if (deposit_list.hasOwnProperty(dl)) {
+                    const deposit_dl = deposit_list[dl];
+                    if((
+                        typeof deposit_dl.btc_address == "string" &&
+                        localbitcoinplusplus.master_configurations.tradableAsset1.includes(
+                            deposit_dl.product
+                        )
+                    )) {
+                        let blockchain_explorer;
+                        let crypto_type = deposit_dl.product;
+                        if (crypto_type == "BTC") {
+                            blockchain_explorer = localbitcoinplusplus.server.btc_mainnet;
+                        } else if (crypto_type == "BTC_TEST") {
+                            blockchain_explorer = localbitcoinplusplus.server.btc_testnet;
+                        } else if (crypto_type == "FLO") {
+                            blockchain_explorer = localbitcoinplusplus.server.flo_mainnet;
+                        } else if (crypto_type == "FLO_TEST") {
+                            blockchain_explorer = localbitcoinplusplus.server.flo_testnet;
+                        }
+                        const orderslife = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife)
+                        let timenow = + new Date();
+                        let url = `${blockchain_explorer}/api/addr/${deposit_dl.btc_address}/utxo`;
+                        let deposited_crypto_balance_req = await helper_functions.ajaxGet(url);
+                        let deposited_crypto_balance = deposited_crypto_balance_req[0].amount;
+                        if(deposited_crypto_balance>0
+                        || timenow-deposit_dl.timestamp<orderslife.cryptoDeposit) continue;
+                 
+                        const res = await readDBbyIndex(
+                            "system_btc_reserves_private_keys",
+                            "btc_address",
+                            deposit_dl.btc_address
+                        );
+                        if(typeof res!=="object" || typeof res[0].id!=="string") {
+                            continue;
+                        }
+                        let retrieve_pvtkey_req_id = res[0].id;
+                        const RM_RPC = new localbitcoinplusplus.rpc;
+                        for (const bpks of res[0].btc_private_key_shamirs_id) {
+                            RM_RPC.send_rpc
+                            .call(
+                                this,
+                                "delete_shamirs_secret_btc_pvtkey",
+                                {
+                                    retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
+                                    chunk_val: bpks,
+                                    db_inst: localbitcoinplusplus.wallets.my_local_flo_address
+                                }
+                            )
+                            .then(retrieve_pvtkey_req =>
+                                doSend(retrieve_pvtkey_req)
+                            );   
+                        }
+
+                        removeinDB("deposit", deposit_dl.id);
+                        removeinDB("system_btc_reserves_private_keys", res.id);
+
+                        RM_RPC.send_rpc(
+                            "delete_deposited_crypto_instance",
+                            {
+                                db_inst: params.db_inst,
+                                deposit_id: deposit_dl.id,
+                                reserves_id: res[0].id,
+                                trader_flo_address:
+                                withdraw_res.trader_flo_address
+                            }
+                        ).then(delRequestObject =>
+                            doSend(delRequestObject)
+                        );
+
+                    }
+                }
+                }
+            }
+        } catch (error) {
+            throw new Error(error)
+        }
+      });
 
     </script>
 
@@ -22992,6 +23070,25 @@
                     });
                   }
                   break;
+                case "delete_shamirs_secret_btc_pvtkey":
+                  if (
+                    typeof res_obj.params == "object" &&
+                    typeof res_obj.params[0] == "object"
+                  ) {
+                    if (
+                      typeof res_obj.nodePubKey != "string"
+                      || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                      .includes(res_obj.nodePubKey)
+                      || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                      .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                    ) return;
+                    
+                    removeinDB(
+                      "supernode_private_key_chunks",
+                      res_obj.params[0].chunk_val
+                    );
+                  }
+                  break;  
                 case "retrieve_shamirs_secret_btc_pvtkey":
                   if (
                     typeof res_obj.params == "object" &&
@@ -24750,6 +24847,30 @@
                     });
                   }
                   break;
+                case "delete_shamirs_secret_btc_pvtkey":
+                  if (
+                    typeof res_obj.params == "object" &&
+                    typeof res_obj.params[0] == "object"
+                  ) {
+                    if (
+                      typeof res_obj.nodePubKey != "string"
+                      || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                      .includes(res_obj.nodePubKey)
+                      || typeof localbitcoinplusplus.newBackupDatabase.db[res_obj.params[0].db_inst]
+                      !== "object"
+                      || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                      .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                    )
+                      return;
+
+                      localbitcoinplusplus.newBackupDatabase.db[res_obj.params[0].db_inst]
+                        .backup_removeinDB(
+                        "supernode_private_key_chunks",
+                        res_obj.params[0].chunk_val
+                      );
+                  }
+                  break;
+
                 case "retrieve_shamirs_secret_btc_pvtkey":
                 if (
                     typeof res_obj.params == "object" &&
@@ -25663,7 +25784,11 @@
                         }
                         if (typeof res_data.withdraw_btc_id == "string")
                           _removeinDB("withdraw_btc", res_data.withdraw_btc_id);
-                        
+                        if(typeof res_data.deposit_id=="string")
+                            _removeinDB("deposit", res_data.deposit_id);
+                        if(typeof res_data.reserves_id=="string")
+                            _removeinDB("system_btc_reserves_private_keys", 
+                            res_data.reserves_id);
                       }
                     } catch (e) {
                       console.error(e);
@@ -26620,6 +26745,30 @@
                   }
                   break;
 
+                case "delete_shamirs_secret_btc_pvtkey":
+                  if (
+                    typeof res_obj.params == "object" &&
+                    typeof res_obj.params[0] == "object"
+                  ) {
+                    if (
+                      typeof res_obj.nodePubKey != "string"
+                      || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                      .includes(res_obj.nodePubKey)
+                      || typeof localbitcoinplusplus.newBackupDatabase.db[res_obj.params[0].db_inst]
+                      !== "object"
+                      || !localbitcoinplusplus.master_configurations.supernodesPubKeys
+                      .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                    )
+                      return;
+
+                      localbitcoinplusplus.newBackupDatabase.db[res_obj.params[0].db_inst]
+                      .backup_removeinDB(
+                        "supernode_private_key_chunks",
+                        res_obj.params[0].chunk_val
+                       );
+                  }
+                  break;  
+
                 case "store_shamirs_secret_pvtkey_shares":
                   if (
                     typeof res_obj.params == "object" &&
@@ -27490,6 +27639,11 @@
                         }
                         if (typeof res_data.withdraw_btc_id == "string")
                           _removeinDB("withdraw_btc", res_data.withdraw_btc_id);
+                        if(typeof res_data.deposit_id=="string")
+                            _removeinDB("deposit", res_data.deposit_id);
+                        if(typeof res_data.reserves_id=="string")
+                            _removeinDB("system_btc_reserves_private_keys", 
+                            res_data.reserves_id);
                       }
                     } catch (e) {
                       console.error(e);
@@ -28439,7 +28593,7 @@
       ) {
         return new Promise((resolve, reject) => {
            try {
-            const originalObj = JSON.parse(JSON.stringify(Obj));
+                const originalObj = JSON.parse(JSON.stringify(Obj));
                 if (typeof Obj.vectorClock == "undefined") {
                     Obj.vectorClock = 0;
                 } else if (increaseVectorClock === false) {
@@ -28447,7 +28601,7 @@
                 } else {
                     Obj.vectorClock += 1;
                     // If vectorClock is increased, also update timestamp
-                    Obj.timestamp = +new Date();
+                    //Obj.timestamp = +new Date();
                 }
                 if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = +new Date();
@@ -29121,7 +29275,7 @@
                 } else {
                     Obj.vectorClock += 1;
                     // If vectorClock is increased, also update timestamp
-                    Obj.timestamp = +new Date();
+                    //Obj.timestamp = +new Date();
                 }
                 if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = +new Date();
