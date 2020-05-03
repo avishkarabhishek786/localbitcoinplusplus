@@ -1002,10 +1002,9 @@
         btnLoading(btn, 'start')  
 
         const RM_TRADE = new localbitcoinplusplus.trade();
-        RM_TRADE.sendTransaction(
+        RM_TRADE.sendMultipleInputsTransaction(
             send_crypto_type,
-            utxo_addr_input,
-            utxo_addr_wif_input,
+            [utxo_addr_wif_input],
             receiver_address_input,
             receiving_crypto_amount_input,
             utxo_addr_input,
@@ -12623,9 +12622,8 @@
             #!#miners_fee={"btc":0.0005, "flo":0.001}
             #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
             026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
-            #!#externalFiles={"d3js":"58f54395efa8346e8e94d12609770f66b916897e7f4e05f6c98780cffa5c70a3"}
-            #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":"johnDoe@upi",
-            "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":"janeDoe@upi"}
+            #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":{"upi":"johnDoe@upi", "currencies":["INR"], "is_live":false},
+            "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":{"upi":"janeDoe@upi", "currencies":["INR", "USD"], "is_live":false}}
             #!#ShamirsMaxShares=8#!#supernodeSeeds={"ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
             "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
             return callback(text);
@@ -13989,6 +13987,7 @@
       reactor.registerEvent("user_flo_keys_active");
       reactor.registerEvent("remove_extra_backup_connections");
       reactor.registerEvent("createClosestSupernodesObject");
+      reactor.registerEvent("createCashierStatusObject");
       reactor.registerEvent("informAllSuperNode");
       reactor.registerEvent("informLeftSuperNode");
       reactor.registerEvent("informRightSuperNode");
@@ -14788,14 +14787,14 @@
         }
     });
 
-      reactor.addEventListener('createClosestSupernodesObject', async function(getClosestSuList=[]) {
+    reactor.addEventListener('createClosestSupernodesObject', async function (getClosestSuList = []) {
 
         if (typeof localbitcoinplusplus.myClosestSupernodes === "object"
             && localbitcoinplusplus.myClosestSupernodes.length ===
             localbitcoinplusplus.master_configurations.supernodesPubKeys.length)
             return;
 
-        if(typeof localbitcoinplusplus.myClosestSupernodes==="object") return;    
+        if (typeof localbitcoinplusplus.myClosestSupernodes === "object") return;
 
         const idbData = await readDB("localbitcoinUser", "00-01");
 
@@ -14837,9 +14836,57 @@
                 }
             }
         }
+        return localbitcoinplusplus.myClosestSupernodes;
+    });
 
-            return localbitcoinplusplus.myClosestSupernodes;
-        }); 
+    reactor.addEventListener('createCashierStatusObject', async function () {
+
+        if (typeof localbitcoinplusplus.CashierStatusObject === "object"
+            && localbitcoinplusplus.CashierStatusObject.length ===
+            localbitcoinplusplus.master_configurations.cashiers.length)
+            return;
+
+        if (typeof localbitcoinplusplus.CashierStatusObject === "object") return;
+
+        const cashiers_list = JSON.parse(localbitcoinplusplus.master_configurations.cashiers);
+
+        Object.defineProperty(localbitcoinplusplus, 'CashierStatusObject', {
+            value: {},
+            writable: false,
+            enumerable: true,
+            configurable: false
+        });
+
+        for (let cashier_pubkey in cashiers_list) {
+            for (let vals in cashiers_list[cashier_pubkey]) {
+                if (typeof localbitcoinplusplus.CashierStatusObject[cashier_pubkey] !== "object") {
+                    Object.defineProperty(localbitcoinplusplus.CashierStatusObject, [cashier_pubkey], {
+                        value: {},
+                        writable: false,
+                        enumerable: true,
+                        configurable: false
+                    });
+                }
+                if (vals === 'is_live') {
+                    Object.defineProperty(localbitcoinplusplus.CashierStatusObject[cashier_pubkey], vals, {
+                        value: cashiers_list[cashier_pubkey][vals],
+                        writable: true,
+                        enumerable: true,
+                        configurable: false
+                    });
+
+                } else {
+                    Object.defineProperty(localbitcoinplusplus.CashierStatusObject[cashier_pubkey], vals, {
+                        value: cashiers_list[cashier_pubkey][vals],
+                        writable: false,
+                        enumerable: true,
+                        configurable: false
+                    });
+                }
+            }
+        }
+        return localbitcoinplusplus.CashierStatusObject;
+    });  
     
       /* Function to notify all Supernodes of a particuat event (may or may not releated to a subject flo id) */   
       reactor.addEventListener("informAllSuperNode", function(msg_obj={}) {
@@ -16690,11 +16737,14 @@
                         receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
                         try {
-                          const cashiersList = JSON.parse(
-                            localbitcoinplusplus.master_configurations.cashiers
-                          );
-                          const cashiersPubKeysArray = Object.keys(cashiersList);
-                          const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
+                            let cashiersList = Object.keys(localbitcoinplusplus.CashierStatusObject)
+                             .filter(f=>localbitcoinplusplus.CashierStatusObject[f].currencies.includes(params.currency));
+                            if(cashiersList.length<1) throw new Error('Unknown currency requested. No cashier found.');  
+                            let liveCashiersList = cashiersList.filter(f=>localbitcoinplusplus.CashierStatusObject[f].is_live===true);
+                            if(liveCashiersList.length>0) {
+                                cashiersList = liveCashiersList;
+                            }
+                          const getAPaymentHandler = randomNoRepeats(cashiersList)();
 
                           if (!cashiersPubKeysArray.includes(
                               getAPaymentHandler
@@ -16710,7 +16760,7 @@
                             throw new Error(err_msg);
                           }
 
-                          receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler];
+                          receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler].upi;
                           receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
                           const receivedTradeInfoResp = await addDB(
                             "cash_deposits",
@@ -18401,16 +18451,18 @@
                             receivedTradeInfo["order_validator_public_key"] = su_data.myLocalFLOPublicKey;
 
                             try {
-                                const cashiersList = JSON.parse(
-                                    localbitcoinplusplus.master_configurations.cashiers
-                                );
-                                const cashiersPubKeysArray = Object.keys(cashiersList);
-                                const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
+                                let cashiersList = Object.keys(localbitcoinplusplus.CashierStatusObject)
+                                    .filter(f=>localbitcoinplusplus.CashierStatusObject[f].currencies.includes(params.currency));
+                                if(cashiersList.length<1) throw new Error('Unknown currency requested. No cashier found.');  
+                                let liveCashiersList = cashiersList.filter(f=>localbitcoinplusplus.CashierStatusObject[f].is_live===true);
+                                if(liveCashiersList.length>0) {
+                                    cashiersList = liveCashiersList;
+                                }
+                                const getAPaymentHandler = randomNoRepeats(cashiersList)();
 
                                 if (!cashiersPubKeysArray.includes(
                                     getAPaymentHandler
-                                )
-                                ) {
+                                )) {
                                     err_msg = `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`;
                                     err_response = {
                                         user_flo_addr: params.trader_flo_address,
@@ -18421,7 +18473,7 @@
                                     throw new Error(err_msg);
                                 }
 
-                                receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler];
+                                receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler].upi;
                                 receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
                                 const receivedTradeInfoResp = await backup_server_db_instance
                                     .backup_addDB("cash_deposits", receivedTradeInfo);
@@ -18455,7 +18507,7 @@
                                 });
 
                             } catch (e) {
-
+                                console.error(e);
                             }
                         }
                     }
@@ -18866,7 +18918,7 @@
 
                                       try {
                                         // Transfer Token
-                                        RM_TRADE.sendTransaction(
+                                        RM_TRADE.sendMultipleInputsTransaction(
                                             localbitcoinplusplus.BASE_BLOCKCHAIN,
                                           [localbitcoinplusplus.wallets
                                             .MY_SUPERNODE_PRIVATE_KEY],
@@ -20641,173 +20693,6 @@
             `current_${crypto_code}_price_in_${currency_code}`
           ];
         },
-        sendTransaction(
-          crypto_type,
-          utxo_addr,
-          utxo_addr_wif,
-          receiver_address,
-          receiving_amount,
-          change_adress,
-          callback,
-          custom_floData = ""
-        ) {
-          let blockchain_explorer;
-          let miners_fee = 0.0003;
-          const miner_fee_obj = JSON.parse(
-            localbitcoinplusplus.master_configurations.miners_fee
-          );
-          if (crypto_type == "BTC") {
-            blockchain_explorer = localbitcoinplusplus.server.btc_mainnet;
-            miners_fee = miner_fee_obj.btc;
-          } else if (crypto_type == "BTC_TEST") {
-            blockchain_explorer = localbitcoinplusplus.server.btc_testnet;
-            miners_fee = miner_fee_obj.btc;
-          } else if (crypto_type == "FLO") {
-            blockchain_explorer = localbitcoinplusplus.server.flo_mainnet;
-            miners_fee = miner_fee_obj.flo;
-          } else if (crypto_type == "FLO_TEST") {
-            blockchain_explorer = localbitcoinplusplus.server.flo_testnet;
-            miners_fee = miner_fee_obj.flo;
-          }
-
-          if (typeof blockchain_explorer !== "string") {
-            showMessage(
-              `WARNING: Please select cryptocurrency/fiat value from select bar.`
-            );
-            return false;
-          }
-
-          let url = `${blockchain_explorer}/api/addr/${utxo_addr}/utxo`;
-          console.log(url);
-          let err_msg;
-
-          helper_functions
-            .ajaxGet(url)
-            .then(utxo_list => {
-              if (utxo_list.length > 0) {
-                try {
-                  utxo_list.sort((a,b)=>b.confirmations - a.confirmations);  
-                  let btc_eq_receiving_amount = helper_functions.truncateDecimals(receiving_amount);
-                  
-                  let trx = bitjs[crypto_type].transaction();
-                  let sum = 0;
-                  let signing_private_keys_array = [];
-
-                  for (var key in utxo_list) {
-                    if (utxo_list[key].confirmations > 0) {
-                      var obj = utxo_list[key];
-                      sum += obj.amount;
-
-                      let signingPk = utxo_addr_wif
-                        .filter(pk=>RM_WALLET.generateFloKeys(pk).address===obj.address); 
-                        
-                        if(typeof signingPk[0]=="string") {
-                        signing_private_keys_array.push(signingPk[0]);
-                        } else continue;
-
-                      if (btc_eq_receiving_amount <= sum) {
-                        trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
-                        break;
-                      } else {
-                        trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
-                      }
-                    }
-                  }
-
-                  if (sum <= 0) {
-                    console.log(utxo_list);
-                    throw new Error("ERROR: No amount found in UTXO.");
-                  }
-
-                  // Output cannot be greater than input
-                  if (sum < btc_eq_receiving_amount) {
-                    btc_eq_receiving_amount = sum;
-                  }
-
-                  if (btc_eq_receiving_amount - miners_fee <= 0)
-                    throw new Error(
-                      `Error: btc_eq_receiving_amount cannot be less than miners_fee.`
-                    );
-
-                  btc_eq_receiving_amount =
-                    btc_eq_receiving_amount - miners_fee;
-                  btc_eq_receiving_amount = helper_functions.truncateDecimals(
-                    btc_eq_receiving_amount
-                  );
-                  trx.addoutput(receiver_address, btc_eq_receiving_amount);
-
-                  let change_amount = 0;
-                  if (sum - btc_eq_receiving_amount - miners_fee > 0) {
-                    change_amount = sum - btc_eq_receiving_amount - miners_fee;
-                    change_amount = helper_functions.truncateDecimals(change_amount);
-                  }
-
-                  if (change_amount > 0) {
-                    trx.addoutput(change_adress, change_amount);
-                  }
-                  var sendFloData = `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
-                  if (custom_floData.length > 0) {
-                    sendFloData = custom_floData;
-                  }
-                  if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
-                    trx.addflodata(sendFloData); // flochange .. create this function
-                  }
-
-                  try {
-                    console.log(trx);
-
-                    let signedTxHash = trx.sign(signing_private_keys_array, 1); //SIGHASH_ALL DEFAULT 1
-                    console.log(signedTxHash);
-
-                    var http = new XMLHttpRequest();
-                    var tx_send_url = `${blockchain_explorer}/api/tx/send`;
-                    var params = `{"rawtx":"${signedTxHash}"}`;
-                    http.open("POST", tx_send_url, true);
-                    http.setRequestHeader("Content-type", "application/json");
-                    http.onreadystatechange = function() {
-                      //Call a function when the state changes.
-                      if (http.readyState == 4) {
-                        if (http.status == 200) {
-                          console.log(http.responseText);
-                          let response_obj = {
-                            signedTxHash: signedTxHash,
-                            txid: http.responseText
-                          };
-                          //callback(http.responseText);
-                          callback(response_obj);
-                        } else {
-                          let response_obj = {
-                            signedTxHash: signedTxHash,
-                            txid: ""
-                          };
-                          callback(response_obj);
-                        }
-                      }
-                    };
-                    http.onerror = function() {
-                      let response_obj = {
-                        signedTxHash: signedTxHash,
-                        txid: ""
-                      };
-                      callback(response_obj);
-                    };
-                    http.send(params);
-                  } catch (error) {
-                    showMessage(error);
-                    throw new Error(error);
-                  }
-                } catch (error) {
-                  throw new Error(error);
-                }
-              }
-            })
-            .catch(e =>
-              console.error(
-                `ERROR: Failed to send tx from utxo ${utxo_addr}: ${e}`
-              )
-            );
-        },
-
         // Send transaction for multiple inputs and outputs
         sendMultipleInputsTransaction(
               crypto_type,
@@ -20838,7 +20723,7 @@
               }
 
               if (typeof blockchain_explorer !== "string") {
-                  showMessage(
+                  notify(
                       `WARNING: Please select cryptocurrency/fiat value from select bar.`
                   );
                   return false;
@@ -20860,7 +20745,7 @@
                       try {
                           const utxo_list = [].concat(...all_utxos);
                           utxo_list.sort((a, b) => b.confirmations - a.confirmations);
-                          let btc_eq_receiving_amount = helper_functions.truncateDecimals(receiving_amount);
+                          let btc_eq_receiving_amount = receiving_amount;
 
                           let trx = bitjs[crypto_type].transaction();
                           let sum = 0;
@@ -20876,7 +20761,7 @@
                                   if(typeof signingPk[0]=="string") {
                                     signing_private_keys_array.push(signingPk[0]);
                                   } else continue;
-                                  sum += helper_functions.truncateDecimals(obj.amount);
+                                  sum += obj.amount;
 
                                   if (btc_eq_receiving_amount <= sum) {
                                       trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
@@ -20902,18 +20787,21 @@
                                   `Error: btc_eq_receiving_amount cannot be less than miners_fee.`
                               );
 
-                          btc_eq_receiving_amount = helper_functions.truncateDecimals(
-                              btc_eq_receiving_amount - miners_fee);
+                          btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
                           
                           trx.addoutput(receiver_address, btc_eq_receiving_amount);
 
                           let change_amount = 0;
                           if (sum - btc_eq_receiving_amount - miners_fee > 0) {
                               change_amount = sum - btc_eq_receiving_amount - miners_fee;
-                              change_amount = helper_functions.truncateDecimals(change_amount);
                           }
 
                           if (change_amount > 0) {
+                              if(typeof change_adress !== "string"
+                              || change_adress.length<1) {
+                                let change_adress_keygen = RM_WALLET.generateFloKeys(utxo_addr_wif[0]);
+                                change_adress = change_adress_keygen.address;
+                              }
                               trx.addoutput(change_adress, change_amount);
                           }
                           var sendFloData = `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
@@ -20936,7 +20824,6 @@
                               http.open("POST", tx_send_url, true);
                               http.setRequestHeader("Content-type", "application/json");
                               http.onreadystatechange = function () {
-                                  //Call a function when the state changes.
                                   if (http.readyState == 4) {
                                       if (http.status == 200) {
                                           console.log(http.responseText);
@@ -20944,7 +20831,6 @@
                                               signedTxHash: signedTxHash,
                                               txid: http.responseText
                                           };
-                                          //callback(http.responseText);
                                           callback(response_obj);
                                       } else {
                                           let response_obj = {
@@ -21945,6 +21831,7 @@
             const getClosestSuList = await readAllDB("myClosestSupernodes");
 
             reactor.dispatchEvent("createClosestSupernodesObject", getClosestSuList);
+            reactor.dispatchEvent("createCashierStatusObject", getClosestSuList);
 
             if (
               localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
@@ -27911,6 +27798,7 @@
               );
 
             if (typeof res_obj.method !== "undefined") {
+              localbitcoinplusplus.CashierStatusObject[res_obj.nodePubKey].is_live=true;
               let response_from_sever;
 
               const RM_WALLET = new localbitcoinplusplus.wallets();
@@ -27941,6 +27829,9 @@
                     JSON.stringify(res_obj)
                   );
                   break;
+                case "cashier_left":
+                    localbitcoinplusplus.CashierStatusObject[res_obj.nodePubKey].is_live=false; 
+                break;  
 
                 default:
                   break;
