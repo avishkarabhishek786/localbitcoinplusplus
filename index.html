@@ -955,16 +955,13 @@
 
             document.getElementById('refresh_market_price').addEventListener('click', () => {
 				btnLoading('refresh_market_price', 'start')
-				setTimeout(() => {
-					updateMarketPrice(800000, 1.30)
-				}, 1000)
+				localbitcoinplusplus.actions.request_live_prices_from_server();
             })
 
             document.getElementById('refresh_bal').addEventListener('click', (e) => {
 				btnLoading('refresh_bal', 'start')
-				setTimeout(() => {
-					updateBalance(40000, 50, 600)
-				}, 1000)
+                const RM_WALLET = new localbitcoinplusplus.wallets;
+				RM_WALLET.get_current_user_balance();
 			})
 			
 			let notificationsContainer = document.getElementById('notification_container');
@@ -977,18 +974,13 @@
 		})
 		
 		//call these functions inside your already created functions and provide new value as parameters
-		function updateMarketPrice(btcPrice, floPrice){
+		function updateMarketPrice(crypto_code, price) {
 			btnLoading('refresh_market_price', 'stop')
-			document.getElementById('btc_market_price').textContent = '₹'+ btcPrice;
-			document.getElementById('flo_market_price').textContent = '₹'+ floPrice;
-		}
-
-		function updateBalance(inrBal, btcBal, floBal){
-			btnLoading('refresh_bal', 'stop')
-			document.getElementById('user_cash_bal').textContent = '₹'+inrBal;
-			document.getElementById('user_btc_bal').textContent = btcBal;
-			document.getElementById('user_flo_bal').textContent = floBal;
-			notify('balance updated')
+            if(crypto_code=="BTC") {
+			    document.getElementById('btc_market_price').textContent = '₹'+ price;
+            } else if(crypto_code=="FLO") {
+			    document.getElementById('flo_market_price').textContent = '₹'+ price;
+            }
 		}
         
         function sendCrypto(btn){
@@ -15265,7 +15257,7 @@
                             "btc_address",
                             deposit_dl.btc_address
                         );
-                        if(typeof res!=="object" || typeof res[0].id!=="string") {
+                        if(typeof res[0]!=="object" || typeof res[0].id!=="string") {
                             removeinDB("deposit", deposit_dl.id);
                             continue;
                         }
@@ -15892,6 +15884,20 @@
                 throw new Error(error)
             }
         },
+        get_current_user_balance: function(user=localbitcoinplusplus.wallets.my_local_flo_address) {
+            try {
+                const RM_RPC = new localbitcoinplusplus.rpc();
+                RM_RPC.send_rpc
+                .call(this, "fetch_user_balance", {
+                    trader_flo_address: user,
+                    job: "FETCH_USER_BALANCE",
+                    receiver_flo_address: localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
+                })
+                .then(sync_request => doSend(sync_request));
+            } catch (error) {
+                notify(`Failed to get your balance from the server. Please try again.`)
+            }
+        }
       };
     </script>
 
@@ -16275,6 +16281,32 @@
                 }
               });  
               return true;
+            }
+
+            if(method=="fetch_user_balance") {
+                RM_RPC.filter_legit_requests(params.trader_flo_address, 
+                    async function(is_valid_request) {
+                        if (
+                        is_valid_request === true &&
+                       params.trader_flo_address.length > 0
+                    ) {
+                        let bal_promises = [];
+                        const crypto_bal = await readDBbyIndex('crypto_balances', 'trader_flo_address', params.trader_flo_address)
+                        const cash_bal = await readDBbyIndex('cash_balances', 'trader_flo_address', params.trader_flo_address)
+                        
+                        const response = {
+                            crypto_balances: crypto_bal,
+                            cash_balances: cash_bal,
+                            trader_flo_address: params.trader_flo_address,
+                            receiver_flo_address: params.trader_flo_address
+                        }
+                        RM_RPC.send_rpc
+                          .call(this, "fetch_user_balance_response", response)
+                          .then(server_response =>
+                            doSend(server_response)
+                          );
+                    }
+                });
             }
 
             RM_RPC.filter_legit_requests(
@@ -24004,17 +24036,57 @@
                             if(server_live_trading_prices.receiver_flo_address===localbitcoinplusplus.wallets.my_local_flo_address) {
                                 console.log(server_live_trading_prices);            
                                 for(commodity of Object.values(server_live_trading_prices.live_trading_prices)) {
-                                    if(commodity.crypto_code==="BTC") {
-                                        document.getElementById('btc_market_price').innerText = `${commodity.currency_code} ${commodity.rate}`;
-                                    } else if(commodity.crypto_code==="FLO") {
-                                        document.getElementById('flo_market_price').innerText = `${commodity.currency_code} ${commodity.rate}`;
+                                    if(commodity.crypto_code==="BTC"&&commodity.currency_code=="INR") {
+                                        updateMarketPrice(commodity.crypto_code, commodity.rate);
+                                    } else if(commodity.crypto_code==="FLO"&&commodity.currency_code=="INR") {
+                                        updateMarketPrice(commodity.crypto_code, commodity.rate);
                                     }
                                 }
                             }
                         } else {
-                            showMessage('Failed to fetch live trading prices.')
+                            notify('Failed to fetch current crypto prices.');
                         }
                     break;  
+
+                  case "fetch_user_balance":
+                    response_from_sever = RM_RPC.receive_rpc_response.call(
+                        this,
+                        JSON.stringify(res_obj)
+                    );
+                  break;  
+                  
+                  case "fetch_user_balance_response":
+                    if(typeof res_obj.params[0]=="object") {
+                        const server_balance_resp = res_obj.params[0];
+                        if(server_balance_resp.receiver_flo_address
+                            ===localbitcoinplusplus.wallets.my_local_flo_address) {
+                            let usr_bal_promises = []
+                            for (const cryptobal of server_balance_resp.crypto_balances) {
+                                usr_bal_promises.push(updateinDB(
+                                    'crypto_balances', 
+                                    cryptobal,
+                                    cryptobal.id,
+                                    false,
+                                    false
+                                ))
+                            }
+                            for (const cashbal of server_balance_resp.cash_balances) {
+                                usr_bal_promises.push(updateinDB(
+                                    'crypto_balances', 
+                                    cashbal,
+                                    cashbal.id,
+                                    false,
+                                    false
+                                ))
+                            }
+                            Promise.all(usr_bal_promises)
+                            .then(()=>{
+                                displayBalances(server_balance_resp.receiver_flo_address);
+                                btnLoading('refresh_bal', 'stop')
+                            });
+                        }
+                    }
+                  break;  
 
                 default:
                   break;
@@ -28661,6 +28733,13 @@
                 } else {
                     if(!exception_datastores.includes(tablename)) {
                         if(verifyDBData(originalObj)===true) {
+                            if(typeof localbitcoinplusplus.wallets.my_local_flo_public_key=="string"
+                            && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                                request = db.transaction([tablename], "readwrite")
+                                .objectStore(tablename).put(originalObj);
+                                return;
+                            }
                             Obj = signDBData(Obj); 
                         } else {
                             if(typeof localbitcoinplusplus.wallets.my_local_flo_public_key=="string"
@@ -29270,8 +29349,6 @@
                 // leave the vector clock field unchanged
                 } else {
                     Obj.vectorClock += 1;
-                    // If vectorClock is increased, also update timestamp
-                    //Obj.timestamp = +new Date();
                 }
                 if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = +new Date();
