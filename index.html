@@ -15839,13 +15839,13 @@
                             break;
                         case "FLO":
                             explorer = localbitcoinplusplus.server.flo_mainnet;
-                            decimal = 1;
                             crypto_diff = crypto_diff/decimal;
+                            decimal = 1;
                             break;
                         case "FLO_TEST":
                             explorer = localbitcoinplusplus.server.flo_testnet;
-                            decimal = 1;
                             crypto_diff = crypto_diff/decimal;
+                            decimal = 1;
                             break;
                         default:
                             break;
@@ -16777,8 +16777,8 @@
                                 cashiersList = liveCashiersList;
                             }
                           const getAPaymentHandler = randomNoRepeats(cashiersList)();
-
-                          if (!cashiersPubKeysArray.includes(
+                              
+                          if (!cashiersList.includes(
                               getAPaymentHandler
                             )
                           ) {
@@ -16792,7 +16792,8 @@
                             throw new Error(err_msg);
                           }
 
-                          receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler].upi;
+                          receivedTradeInfo.cashier_upi = localbitcoinplusplus
+                            .CashierStatusObject[getAPaymentHandler].upi;
                           receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
                           const receivedTradeInfoResp = await addDB(
                             "cash_deposits",
@@ -18491,8 +18492,7 @@
                                     cashiersList = liveCashiersList;
                                 }
                                 const getAPaymentHandler = randomNoRepeats(cashiersList)();
-
-                                if (!cashiersPubKeysArray.includes(
+                                if (!cashiersList.includes(
                                     getAPaymentHandler
                                 )) {
                                     err_msg = `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`;
@@ -18505,7 +18505,8 @@
                                     throw new Error(err_msg);
                                 }
 
-                                receivedTradeInfo.cashier_upi = cashiersList[getAPaymentHandler].upi;
+                                receivedTradeInfo.cashier_upi = localbitcoinplusplus
+                                    .CashierStatusObject[getAPaymentHandler].upi;
                                 receivedTradeInfo.cashier_pubKey = getAPaymentHandler;
                                 const receivedTradeInfoResp = await backup_server_db_instance
                                     .backup_addDB("cash_deposits", receivedTradeInfo);
@@ -19811,7 +19812,7 @@
                         RM_RPC
                             .send_rpc
                             .call(this,
-                                "update_all_deposit_success",
+                                "update_all_cash_deposit_success",
                                 update_cash_balance_obj)
                             .then(update_cash_balance_req=>
                         doSend(update_cash_balance_req));
@@ -21462,13 +21463,13 @@
                         break;
                     case "FLO":
                         explorer = localbitcoinplusplus.server.flo_mainnet;
-                        decimal = 1;
                         crypto_diff = crypto_diff/decimal;
+                        decimal = 1;
                         break;
                     case "FLO_TEST":
                         explorer = localbitcoinplusplus.server.flo_testnet;
-                        decimal = 1;
                         crypto_diff = crypto_diff/decimal;
+                        decimal = 1;
                         break;
                     default:
                         break;
@@ -23468,7 +23469,7 @@
                             displayBalances(
                             updateUserDepositsResponseObject.trader_flo_address
                             );
-                            showMessage(`INFO: Your balance is updated.`);
+                            notify(`INFO: Your balance is updated.`);
                         }
                         return true;
                       })
@@ -24087,6 +24088,43 @@
                         }
                     }
                   break;  
+
+                  case "update_all_cash_deposit_success":
+                    if (res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_public_key
+                        ||
+                        !localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        res_obj.nodePubKey) 
+                        || 
+                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                        localbitcoinplusplus.wallets.my_local_flo_public_key)
+                    ) return;
+
+                    if (typeof res_obj.params == "object" && typeof res_obj.params[0] == "object") {
+                        const deposit_success_response = res_obj.params[0];
+                        let update_cash_balance_obj_res = {
+                            depositor_cash_data: deposit_success_response.depositor_cash_data,
+                            deposit_req_id: deposit_success_response.deposit_req_id
+                        }
+                        let update_cash_balance_obj_res_str = JSON.stringify(update_cash_balance_obj_res);
+                        let update_cash_balance_obj_res_hash = Crypto.SHA256(
+                            update_cash_balance_obj_res_str);
+                        let update_cash_balance_obj_res_verification = RM_WALLET
+                            .verify(update_cash_balance_obj_res_hash, deposit_success_response.sign,
+                            deposit_success_response.publicKey);
+
+                        if ((update_cash_balance_obj_res_hash === deposit_success_response.hash) &&
+                            update_cash_balance_obj_res_verification === true) {
+                            
+                            updateinDB('cash_balances', deposit_success_response.depositor_cash_data, 
+                                deposit_success_response.depositor_cash_data.id, false, false);
+                            removeinDB('cash_deposits', deposit_success_response.deposit_req_id);
+
+                            return true;
+                        }
+                        throw new Error(`Error: Hash matching failed while updating cash deposit.`);
+                        return false;
+                    }
+                break;
 
                 default:
                   break;
@@ -25339,12 +25377,12 @@
                             displayBalances(
                             updateUserDepositsResponseObject.trader_flo_address
                             );
-                            showMessage(`INFO: Your balance is updated.`);
+                            notify(`INFO: Your balance is updated.`);
                         }
                         return true;
                       })
                     } else {
-                      showMessage(
+                        notify(
                         `WARNING: Failed to update balance in your DB. Please refresh.`
                       );
                     }
@@ -27129,7 +27167,7 @@
 
                         if (typeof backup_server_db_instance !== "object") {
                           let backup_db_error_msg = `WARNING: Unknown DB instance. DB Backup failed.`;
-                          showMessage(backup_db_error_msg);
+                          console.trace(backup_db_error_msg);
                           throw new Error(backup_db_error_msg);
                         }
 
@@ -27151,21 +27189,10 @@
                             updateUserDepositsResponseObject.updatedTraderDepositObject.id,
                             true,
                             false
-                          ).then(()=>{
-                            if (
-                                localbitcoinplusplus.wallets.my_local_flo_address ==
-                                updateUserDepositsResponseObject.trader_flo_address
-                            ) {
-                                displayBalances(
-                                updateUserDepositsResponseObject.trader_flo_address
-                                );
-                                showMessage(`INFO: Your balance is updated.`);
-                            }
-                            return true;
-                          })
+                          )
                         } else {
-                          showMessage(
-                            `WARNING: Failed to update balance in your DB. Please refresh.`
+                          console.trace(
+                            `WARNING: Failed to update balance in DB. Please refresh.`
                           );
                         }
                       });
@@ -27735,7 +27762,7 @@
                   }
                   break;
 
-                case "update_all_deposit_success":
+                case "update_all_cash_deposit_success":
                     // If either Sender and Receiver are not Supernodes, return.
                     if (!localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                         res_obj.nodePubKey) 
@@ -28648,8 +28675,6 @@
                 return new Error(error);
             }
           });  
-
-
       }
 
       function updateinDB(
@@ -28661,46 +28686,46 @@
       ) {
         return new Promise((resolve, reject) => {
            try {
-                const originalObj = JSON.parse(JSON.stringify(Obj));
                 if (typeof Obj.vectorClock == "undefined") {
                     Obj.vectorClock = 0;
                 } else if (increaseVectorClock === false) {
                     // leave the vector clock field unchanged
                 } else {
                     Obj.vectorClock += 1;
-                    // If vectorClock is increased, also update timestamp
-                    //Obj.timestamp = +new Date();
                 }
                 if (typeof Obj.timestamp !== "number") {
                     Obj.timestamp = +new Date();
                 }
                 var request = db.transaction([tablename], "readwrite")
                               .objectStore(tablename);
-                if (updateByVectorClock === true) {
-                    if (typeof key == "undefined") {
-                        key = Obj[request.keyPath];
-                    }
-                    let objectStoreRequest = request.get(key);
-                    objectStoreRequest.onsuccess = function (event) {
-                        var myRecord = objectStoreRequest.result;
-                        if (myRecord==null
-                        || myRecord== undefined 
-                        || typeof myRecord !== "object") {
-                            Obj.vectorClock =
-                                typeof Obj.vectorClock == "number" ? Obj.vectorClock : 0;
-                            if(!exception_datastores.includes(tablename)) {
-                                Obj = signDBData(Obj); 
-                            }
-                            request = db.transaction([tablename], "readwrite")
-                            .objectStore(tablename).put(Obj);
-                        } else if (myRecord.vectorClock < Obj.vectorClock) {
+                              
+                if (typeof key == "undefined") {
+                    key = Obj[request.keyPath];
+                }
+                
+                let objectStoreRequest = request.get(key);
+                objectStoreRequest.onsuccess = function (event) {
+                    var myRecord = objectStoreRequest.result;
+                    if (myRecord==null
+                    || myRecord== undefined 
+                    || typeof myRecord !== "object") {
+                        Obj.vectorClock =
+                            typeof Obj.vectorClock == "number" ? Obj.vectorClock : 0;
+                        if(!exception_datastores.includes(tablename)) {
+                            Obj = signDBData(Obj); 
+                        }
+                        request = db.transaction([tablename], "readwrite")
+                        .objectStore(tablename).put(Obj);
+                    } else if(updateByVectorClock === true) {
+
+                        if (myRecord.vectorClock < Obj.vectorClock) {
                             // First verify data here
                             if(!exception_datastores.includes(tablename)) {
-                                if(verifyDBData(originalObj)===true) {
+                                if(verifyDBData(myRecord)===true) {
                                     Obj = signDBData(Obj); 
                                 } else {
-                                    console.trace(Obj);
-                                    throw new Error('Failed verification at db update');
+                                    console.trace(myRecord);
+                                    return reject('Failed verification at db update');
                                 }
                             }
                             request = db.transaction([tablename], "readwrite")
@@ -28708,11 +28733,11 @@
                         } else if (myRecord.vectorClock == Obj.vectorClock) {
                             if(myRecord.timestamp < Obj.timestamp) {
                                 if(!exception_datastores.includes(tablename)) {
-                                    if(verifyDBData(originalObj)===true) {
+                                    if(verifyDBData(myRecord)===true) {
                                         Obj = signDBData(Obj); 
                                     } else {
-                                        console.trace(Obj);
-                                        throw new Error('Failed verification at db update');
+                                        console.trace(myRecord);
+                                        return reject('Failed verification at db update');
                                     }
                                 }
                                 request = db.transaction([tablename], "readwrite")
@@ -28721,47 +28746,30 @@
                         } else {
                             resolve(Obj);
                         }
-                        
-                        request.onsuccess = function() {
-                            resolve(Obj);
-                        }
-
-                        request.onerror = function(e) {
-                            reject(e);
-                        }
-                    };
-                } else {
-                    if(!exception_datastores.includes(tablename)) {
-                        if(verifyDBData(originalObj)===true) {
-                            if(typeof localbitcoinplusplus.wallets.my_local_flo_public_key=="string"
-                            && localbitcoinplusplus.master_configurations.supernodesPubKeys
-                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                request = db.transaction([tablename], "readwrite")
-                                .objectStore(tablename).put(originalObj);
-                                return;
-                            }
-                            Obj = signDBData(Obj); 
-                        } else {
-                            if(typeof localbitcoinplusplus.wallets.my_local_flo_public_key=="string"
-                            && localbitcoinplusplus.master_configurations.supernodesPubKeys
-                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                Obj = signDBData(Obj);
+                    } else {
+                        if(!exception_datastores.includes(tablename)) {
+                            if(verifyDBData(myRecord)===true) {
+                                if(typeof localbitcoinplusplus.wallets.my_local_flo_public_key=="string"
+                                && localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+                                    Obj = signDBData(Obj);
+                                }
                             } else {
-                                reject("Verification failed in backup update");
-                            }
-                        } 
+                                return reject("Verification failed in updateinDB");
+                            } 
+                        }
+                        request = db.transaction([tablename], "readwrite")
+                        .objectStore(tablename).put(Obj);
                     }
-                    request = db.transaction([tablename], "readwrite")
-                    .objectStore(tablename).put(Obj);
-                }
-                
-                request.onsuccess = function() {
-                    resolve(Obj);
-                }
+                    
+                    request.onsuccess = function() {
+                        resolve(Obj);
+                    }
 
-                request.onerror = function(e) {
-                    reject(e);
-                }
+                    request.onerror = function(e) {
+                        reject(e);
+                    }
+                };
             } catch (error) {
                 reject(error);
                 return new Error(error);
@@ -29342,7 +29350,6 @@
         ) {
           return new Promise((resolve, reject) => {              
             try {
-                const originalObj = JSON.parse(JSON.stringify(Obj));
                 if (typeof Obj.vectorClock == "undefined") {
                     Obj.vectorClock = 0;
                 } else if (increaseVectorClock === false) {
@@ -29355,15 +29362,14 @@
                 }
                 this.request = this.db.transaction([tablename], "readwrite")
                 .objectStore(tablename);
+                if (typeof key == "undefined") {
+                    key = Obj[this.request.keyPath];
+                }
+                let objectStoreRequest = this.request.get(key);
 
-                if (updateByVectorClock === true) {
-                    if (typeof key == "undefined") {
-                        key = Obj[this.request.keyPath];
-                    }
-                    let objectStoreRequest = this.request.get(key);
-                    objectStoreRequest.onsuccess = function(event) {
-                        var myRecord = objectStoreRequest.result;
-                        if (myRecord==null
+                objectStoreRequest.onsuccess = function(event) {
+                    var myRecord = objectStoreRequest.result;
+                    if (myRecord==null
                         || myRecord== undefined 
                         || typeof myRecord !== "object") {
                             Obj.vectorClock =
@@ -29373,14 +29379,15 @@
                             }
                             this.request = this.db.transaction([tablename], "readwrite")
                             .objectStore(tablename).put(Obj);
-                        } else if (myRecord.vectorClock < Obj.vectorClock) {
+                    } else if (updateByVectorClock === true) {
+                        if (myRecord.vectorClock < Obj.vectorClock) {
                             // First verify data here
                             if(!exception_datastores.includes(tablename)) {
-                                if(verifyDBData(originalObj)===true) {
+                                if(verifyDBData(myRecord)===true) {
                                     Obj = signDBData(Obj); 
                                 } else {
-                                    console.trace(Obj);
-                                    throw new Error('failed verification at backup update');
+                                    console.trace(myRecord);
+                                    return reject('failed verification at backup update');
                                 }
                             }
                             this.request = this.db.transaction([tablename], "readwrite")
@@ -29389,11 +29396,11 @@
                         } else if (myRecord.vectorClock == Obj.vectorClock) {
                             if(myRecord.timestamp < Obj.timestamp) {
                                 if(!exception_datastores.includes(tablename)) {
-                                    if(verifyDBData(originalObj)===true) {
+                                    if(verifyDBData(myRecord)===true) {
                                         Obj = signDBData(Obj); 
                                     } else {
-                                        console.trace(Obj);
-                                        throw new Error('Failed verification at db update');
+                                        console.trace(myRecord);
+                                        return reject('Failed verification at backup db update');
                                     }
                                 }
                                 this.request = this.db.transaction([tablename], "readwrite")
@@ -29402,39 +29409,27 @@
                         } else {
                             resolve(Obj);
                         }
-                        this.request.onsuccess = function() {
-                            resolve(Obj);
-                        }
-
-                        this.request.onerror = function(e) {
-                            reject(e);
-                        }
-                    }.bind(this);
-                } else {
-                    if(!exception_datastores.includes(tablename)) {
-                        if(verifyDBData(originalObj)===true) {
-                            Obj = signDBData(Obj); 
-                        } else {
-                            if(typeof localbitcoinplusplus.wallets.my_local_flo_public_key=="string"
-                            && localbitcoinplusplus.master_configurations.supernodesPubKeys
-                            .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                                Obj = signDBData(Obj);
+                    }  else {
+                        if(!exception_datastores.includes(tablename)) {
+                            if(verifyDBData(myRecord)===true) {
+                                Obj = signDBData(Obj); 
                             } else {
-                                reject("Verification failed in backup update");
+                                return reject("Verification failed in backup update");
                             }
                         }
+                        this.request = this.db.transaction([tablename], "readwrite")
+                        .objectStore(tablename).put(Obj);
+                    }  
+                    
+                    this.request.onsuccess = function() {
+                        resolve(Obj);
                     }
-                    this.request = this.db.transaction([tablename], "readwrite")
-                    .objectStore(tablename).put(Obj);
-                }
 
-                this.request.onsuccess = function() {
-                    resolve(Obj);
-                }
-
-                this.request.onerror = function(e) {
-                    reject(e);
-                }
+                    this.request.onerror = function(e) {
+                        reject(e);
+                    }
+                }.bind(this);
+                
             } catch (error) {
                 reject(error);
                 return new Error(error);
@@ -30158,7 +30153,7 @@
                                     notify(`Waiting for deposit txid ${resp_txid} for at least 3 confirmations. 
                                         Please do not close or refresh the window until the process completes.`);
                                         
-                                    await delay(60000); 
+                                    await localbitcoinplusplus.actions.delay(60000); 
                                     if(typeof txdata.txid !=="string" 
                                     || typeof txdata.confirmations !== "number"
                                     || txdata.confirmations<3) {
@@ -30205,11 +30200,13 @@
         get_crypto_svg_selection_html('withdraw_assets_type', withdraw_crypto_div);
 
         withdrawCryptoButton.addEventListener("click", function(params) {
+          disableBtn('withdrawCryptoButton');
           let parentPopup = this.closest('.popup');  
           let asset_type = document.querySelector("input[name='crypto']:checked").value;
           let receivinAddress = document.getElementById('withdraw_recving_addr').value
           let withdraw_amount_box= document.getElementById('crypto_withdraw_amount')
           if (receivinAddress == null || receivinAddress.trim() == "") {
+            enableBtn('withdrawCryptoButton')
             err_msg =`You must specify a valid ${asset_type} address to continue.`;
             notify(err_msg);
             throw new Error(err_msg);
@@ -30222,6 +30219,7 @@
             typeof userFLOaddress == undefined ||
             userFLOaddress.trim().length < 1
           ) {
+            enableBtn('withdrawCryptoButton')  
             err_msg = "Invalid or empty user FLO address.";
             notify(err_msg);
             throw new Error(err_msg);
@@ -30241,7 +30239,9 @@
               userFLOaddress,
               fiatCurrency
             );
+            localbitcoinplusplus.actions.delay(60000).then(()=>enableBtn('withdrawCryptoButton'));
           } else {
+            enableBtn('withdrawCryptoButton')  
             err_msg = `Error: Withdraw of Crypto failed. Invalid asset type ${asset_type} provided.`;
             notify(err_msg);
             throw new Error(err_msg);
@@ -30263,6 +30263,7 @@
         let user_deposited_cash = 0; // false  
 
         depositCashButton.addEventListener("click", function() {
+            disableBtn('withdrawCashButton');
             user_deposited_cash === 0 ? user_deposited_cash = 1: user_deposited_cash = 0;
             if(user_deposited_cash == 1){
                 this.firstElementChild.textContent = 'done';
@@ -30271,6 +30272,7 @@
                 tradeAmount = parentPopup.querySelector("input[name='amount']").value;
         
                 if (typeof user_upi !== "string" || user_upi.length < 1) {
+                    enableBtn('withdrawCashButton')
                     err_msg = "Invalid or empty UPI id.";
                     showMessage(err_msg);
                     throw new Error(err_msg);
@@ -30282,6 +30284,7 @@
                     typeof userFLOaddress == undefined ||
                     userFLOaddress.trim().length < 1
                 ) {
+                    enableBtn('withdrawCashButton')
                     err_msg = "Invalid or empty user FLO address.";
                     showMessage(err_msg);
                     throw new Error(err_msg);
@@ -30299,7 +30302,9 @@
                     userFLOaddress,
                     user_upi
                     );
+                    localbitcoinplusplus.actions.delay(60000).then(()=>enableBtn('withdrawCashButton'));
                 } else {
+                    enableBtn('withdrawCashButton')
                     err_msg = "Error:  Deposit of Cash failed.";
                     showMessage(err_msg);
                     throw new Error(err_msg);
@@ -30527,13 +30532,13 @@
             break;
           case "FLO":
             explorer = localbitcoinplusplus.server.flo_mainnet;
-            decimal = 1;
             crypto_diff = helper_functions.truncateDecimals(localbitcoinplusplus.master_configurations.btcTradeMargin/decimal);
+            decimal = 1;
             break;
           case "FLO_TEST":
             explorer = localbitcoinplusplus.server.flo_testnet;
-            decimal = 1;
             crypto_diff = helper_functions.truncateDecimals(localbitcoinplusplus.master_configurations.btcTradeMargin/decimal);
+            decimal = 1;
             break;
           default:
             break;
@@ -30548,16 +30553,17 @@
 
               /************************ Case of dispute *****************/
               if (
-                trader_deposits.bitcoinToBePaid - balance > crypto_diff
+                trader_deposits.depositing_amount - balance > crypto_diff
               ) {
                 console.log(
+                  trader_deposits.depositing_amount,
                   trader_deposits.bitcoinToBePaid,
                   balance,
                   crypto_diff
                 );
-                let more_depositing_crypto_amount = helper_functions.truncateDecimals(trader_deposits.bitcoinToBePaid) - helper_functions.truncateDecimals(balance);
+                let more_depositing_crypto_amount = helper_functions.truncateDecimals(trader_deposits.depositing_amount) - helper_functions.truncateDecimals(balance);
                 
-                err_msg = `Incomplete Crypto Deposit Error: You claimed to send ${trader_deposits.bitcoinToBePaid} ${trader_deposits.product} but
+                err_msg = `Incomplete Crypto Deposit Error: You claimed to send ${trader_deposits.depositing_amount} ${trader_deposits.product} but
                 deposited only ${balance} ${trader_deposits.product}. Please send more ${more_depositing_crypto_amount} ${trader_deposits.product}
                 to ${trader_deposits.btc_address}`;
 
