@@ -12717,6 +12717,7 @@
                     #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
                     #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
                     #!#MaxBackups=1
+                    #!#waitTime={"normaldelay":180000, "exportdelay":300000, "syncdelay":600000, "hugedelay":1200000}
                     #!#ordersLife={"trade":300000, "cryptoDeposit":900000, "cryptoWithdraw":300000, "cashDeposit":900000, "cashWithdraw":900000}
                     #!#miners_fee={"btc":0.0005, "flo":0.001}
                     #!#supernodesPubKeys=0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
@@ -13267,25 +13268,33 @@
                         return true;
                     } else {
 
-                        const allUsersData = await readAllDB("userPublicData");
+                        // Get list of all users so far
+                        const crypto_users = readAllDB('crypto_balances');
+                        const cash_users = readAllDB('cash_balances');
+                        const crypto_deposit_users = readAllDB('deposit');
+                        const cash_deposit_users = readAllDB('cash_deposits');
+
+                        const promise_list = await Promise.all([crypto_users, cash_users, crypto_deposit_users, cash_deposit_users]);
+                        const allUsersFloAddr = promise_list.reduce((acc, cv)=>acc.concat(cv), []).map(m=>m.trader_flo_address);
+                        const uniqueUsersFloAddrs = [...new Set(allUsersFloAddr)]; // filter duplicates
 
                         const supernodesFloList = localbitcoinplusplus.master_configurations.supernodesPubKeys
                             .map(s => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(s));
 
                         const extra_backup_ws = {};
 
-                        for (let f = 0; f < allUsersData.length; f++) {
+                        for (let userFLOaddress of uniqueUsersFloAddrs) {
                             let closestSu = await localbitcoinplusplus.kademlia.determineClosestSupernode(
-                                allUsersData[f].trader_flo_address
+                                userFLOaddress
                             );
 
                             if (
                                 closestSu[0].data.id !==
                                 localbitcoinplusplus.wallets.my_local_flo_address &&
-                                !supernodesFloList.includes(allUsersData[f].trader_flo_address)
+                                !supernodesFloList.includes(userFLOaddress)
                             ) {
                                 const immigrants_data = await localbitcoinplusplus.actions.get_sharable_db_data_for_single_user(
-                                    allUsersData[f].trader_flo_address,
+                                    userFLOaddress,
                                     tableArray
                                 );
 
@@ -13349,7 +13358,7 @@
                                     }
 
                                     // Delete this user's data from this server
-                                    localbitcoinplusplus.actions.delete_db_data_for_single_user(allUsersData[f].trader_flo_address, tableArray);
+                                    localbitcoinplusplus.actions.delete_db_data_for_single_user(userFLOaddress, tableArray);
 
                                     // Ask backups to delete this user data
                                     const msg_obj = {};
@@ -13359,7 +13368,7 @@
                                     msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
                                     msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
                                     msg_obj.db_name = localbitcoinplusplus.wallets.my_local_flo_address;
-                                    msg_obj.trader_flo_address = allUsersData[f].trader_flo_address;
+                                    msg_obj.trader_flo_address = userFLOaddress;
                                     msg_obj.tableArray = tableArray;
                                     msg_obj.hash = Crypto.SHA256(msg_obj);
                                     msg_obj.sign = RM_WALLET.sign(
@@ -13371,7 +13380,7 @@
 
                                     // Delete this user from kBucketStore datastore and Kbucket
                                     const UintID = localbitcoinplusplus.kademlia.floIdToKbucketId(
-                                        localbitcoinplusplus.BASE_BLOCKCHAIN, allUsersData[f].trader_flo_address);
+                                        localbitcoinplusplus.BASE_BLOCKCHAIN, userFLOaddress);
 
                                     await removeinDB('kBucketStore', UintID);
                                     KBucket.remove(UintID);
@@ -21821,6 +21830,539 @@
 
             /* JSON RPC Library Ends */
 
+            /*SECTION: UI Functions*/
+
+            let frag = document.createDocumentFragment(),
+                currentTimeout,
+                notificationSound = document.getElementById('notification_sound'),
+                depositCryptoButtonClicked = 0,
+                depositCryptoButton = document.getElementById('depositCryptoButton'),
+                themeToggler = document.getElementById('theme_toggle'),
+                body = document.querySelector('body');
+            if (localStorage.theme === 'dark') {
+                nightlight();
+                themeToggler.checked = true
+            }
+            else {
+                daylight();
+                themeToggler.checked = false
+            }
+            themeToggler.addEventListener('change', () => {
+                if (themeToggler.checked) {
+                    nightlight();
+                    localStorage.setItem('theme', 'dark')
+                }
+                else {
+                    daylight();
+                    localStorage.setItem('theme', 'light')
+                }
+            })
+            function daylight() {
+                body.setAttribute("data-theme", 'light');
+            }
+            function nightlight() {
+                body.setAttribute('data-theme', 'dark');
+            }
+            const render = {
+                // returns an order element;
+                order: function (tradeId, type, product, price, currency) {
+                    let card = document.createElement('div'), currencySymbol;
+                    card.classList.add('order', 'grid', 'grid-2')
+                    currency === 'INR' ? currencySymbol = '₹' : currencySymbol = '$';
+                    card.innerHTML = `<div class="details">
+                        <h3>${type.toUpperCase()}</h3>
+                        ${product} worth ${currencySymbol}${price}
+                        <h5>Trade Id</h5>
+                        <span class="breakable">${tradeId}</span>
+                    </div>
+                    <button id="${tradeId}-${localbitcoinplusplus.wallets.my_local_flo_address}-${type}" 
+                        class="cancel-order">Cancel</button>`;
+                    return card;
+                },
+                notification: function (message) {
+                    let card = document.createElement('div');
+                    card.classList.add('notification');
+                    card.innerHTML = `
+        <svg class="remove-notification" viewBox="0 0 50 50">
+        <title>Close this notification</title>
+        <line x1="50" y1="0" x2="0" y2="50"/>
+        <line x1="0" y1="0" x2="50" y2="50"/>
+        </svg>
+        <p>${message}</p>`
+                    return card;
+                }
+            }
+
+            //Checks for internet connection status
+            if (!navigator.onLine)
+                notify('There seems to be a problem connecting to the internet.', 'error', true)
+            window.addEventListener('offline', () => {
+                notify('There seems to be a problem connecting to the internet.', 'error', true)
+            })
+            window.addEventListener('online', () => {
+                notify('We are back online.')
+            })
+
+            // function required for popups or modals to appear
+            class Stack {
+                constructor() {
+                    this.items = [];
+                }
+                push(element) {
+                    this.items.push(element);
+                }
+                pop() {
+                    if (this.items.length == 0)
+                        return "Underflow";
+                    return this.items.pop();
+                }
+                peek() {
+                    return this.items[this.items.length - 1];
+                }
+            }
+            let popupStack = new Stack(),
+                loader = document.getElementById('loader'),
+                zIndex = 10,
+                tipsInterval;
+            function showPopup(popup, permission) {
+                let thisPopup = document.getElementById(popup);
+                thisPopup.parentNode.classList.remove('hide');
+                thisPopup.classList.add('no-transformations');
+                popupStack.push({ popup, permission })
+                zIndex++;
+                thisPopup.parentNode.setAttribute('style', `z-index: ${zIndex}`)
+                if (popup === 'main_loader') {
+                    loader.classList.add('animate-loader')
+                    tipsInterval = setInterval(changeTips, 2000)
+                    document.querySelector('main').classList.add('hide-completely')
+                }
+            }
+
+            // hides the popup or modal 
+            function hidePopup() {
+                let { popup, permission } = popupStack.pop();
+                thisPopup = document.getElementById(popup);
+                thisPopup.closest('.popup-container').classList.add('hide');
+                thisPopup.closest('.popup').classList.remove('no-transformations');
+                setTimeout(() => {
+                    clearAllInputs(thisPopup)
+                    zIndex--;
+                    thisPopup.parentNode.setAttribute('style', `z-index: ${zIndex}`)
+                    if (thisPopup.querySelector('.btn')) {
+                        btnLoading(thisPopup.querySelector('.action'), 'stop')
+                        thisPopup.querySelector("button[type='submit']").disabled = true;
+                    }
+                }, 400)
+                if (popup === 'deposit_cash_popup') {
+                    thisPopup.querySelector('#upiToAddress').classList.add('hide-completely')
+                    thisPopup.querySelectorAll('.input').forEach((input) => {
+                        input.classList.remove('hide-completely')
+                    })
+                }
+                if (popup === 'deposit_crypto_popup') {
+                    setTimeout(() => {
+                        depositCryptoButton.classList.remove('hide-completely');
+                        let selectDepositCryptoSection = document.getElementById('select_deposit_crypto_section')
+                        showElement(selectDepositCryptoSection, 'deposit-crypto-group');
+                        depositCryptoButton.firstElementChild.textContent = 'proceed'
+                    }, 400)
+                    document.getElementById('send_crypto_hidden_section').querySelectorAll('input').forEach(input => {
+                        input.disabled = true;
+                    })
+                    depositCryptoButtonClicked = 0;
+                }
+                if (popup === 'main_loader') {
+                    loader.classList.remove('animate-loader')
+                    clearInterval(tipsInterval)
+                    document.querySelector('main').classList.remove('hide-completely')
+                }
+            }
+
+            function setAttributes(el, attrs) {
+                for (var key in attrs) {
+                    el.setAttribute(key, attrs[key]);
+                }
+            }
+
+            function clearAllInputs(parent) {
+                parent.querySelectorAll("input").forEach((field) => {
+                    if (field.getAttribute('type') !== 'radio') {
+                        field.value = '';
+                        if (field.closest('.input')) {
+                            field.closest('.input').classList.remove('animate-label')
+                        }
+                    }
+                    else
+                        field.checked = false
+                })
+            }
+
+            //Function for displaying toast notifications.
+            /*options
+            message - notifiation body text.
+            mode - error or normal notification. only error has to be specified.
+            fixed - if set true notification will not fade after 4s;
+            sound - set true to enable notification sound. ! should only be used for important tasks.
+            setAside - set true to add notification inside notification panel
+            */
+            let currentCount = 0;
+            function notify(message, mode, fixed, sound, setAside) {
+                let banner = document.getElementById('show_message'),
+                    notificationContainer = document.getElementById('notification_container'),
+                    notifiationCounter = document.querySelector("#notification_badge");
+                currentCount = parseInt(notifiationCounter.getAttribute('data-badge'));
+
+                if (mode === 'error') {
+                    banner.querySelector('#error_icon').classList.remove('hide-completely')
+                    banner.querySelector('#done_icon').classList.add('hide-completely')
+                }
+                else {
+                    banner.querySelector('#error_icon').classList.add('hide-completely')
+                    banner.querySelector('#done_icon').classList.remove('hide-completely')
+                }
+                if (setAside) {
+                    notificationContainer.prepend(render.notification(message));
+                    console.log(currentCount)
+                    currentCount++;
+                    notifiationCounter.setAttribute('data-badge', currentCount);
+                }
+
+                banner.classList.add('no-transformations')
+                banner.classList.remove('hide')
+                banner.querySelector('#notification_text').textContent = message.charAt(0).toUpperCase() + message.slice(1);
+                if (navigator.onLine && sound) {
+                    notificationSound.currentTime = 0;
+                    notificationSound.play();
+                }
+                banner.querySelector('#hide_banner_btn').onclick = function () {
+                    banner.classList.add('hide')
+                    banner.classList.remove('no-transformations')
+                }
+                clearTimeout(currentTimeout)
+                if (fixed) return;
+                currentTimeout = setTimeout(() => {
+                    banner.classList.add('hide')
+                    banner.classList.remove('no-transformations')
+                }, 6000)
+            }
+
+            function showNotifications() {
+                let notificationPanel = document.getElementById('notification_panel');
+                currentCount = 0;
+                document.querySelector("#notification_badge").setAttribute('data-badge', currentCount);
+                notificationPanel.classList.toggle('hide')
+                window.onmousedown = e => {
+                    if (!e.target.closest('.dropdown'))
+                        notificationPanel.classList.add('hide')
+                }
+            }
+
+            function clearAllNotifications() {
+                document.getElementById('notification_container').innerHTML = '';
+            }
+
+            // displays a popup for asking permission. Use this instead of JS confirm
+            let askConfirmation = function (message) {
+                return new Promise((resolve, reject) => {
+                    let popup = document.getElementById('confirmation');
+                    showPopup('confirmation')
+                    popup.children[0].textContent = message;
+                    popup.children[1].firstElementChild.onclick = function () {
+                        hidePopup()
+                        resolve(false)
+                    }
+                    popup.children[1].children[1].onclick = function () {
+                        hidePopup()
+                        resolve(true);
+                    }
+                })
+            }
+            function enableBtn(btn) {
+                if (typeof btn === 'string')
+                    btn = document.getElementById(btn);
+                if (btn.disabled)
+                    btn.disabled = false;
+            }
+
+            function disableBtn(btn) {
+                if (typeof btn === 'string')
+                    btn = document.getElementById(btn);
+                if (!btn.disabled)
+                    btn.disabled = true;
+            }
+            function btnLoading(btn, option) {
+                if (typeof btn === 'string')
+                    btn = document.getElementById(btn);
+                if (option === 'start') {
+                    btn.children[0].classList.add('clip')
+                    btn.children[1].classList.add('animate-loader')
+                }
+                else {
+                    btn.children[0].classList.remove('clip')
+                    btn.children[1].classList.remove('animate-loader')
+                }
+            }
+
+            function copyToClipboard(parent, childIndex) {
+                let input = document.createElement('textarea'),
+                    toast = document.getElementById('textCopied');
+                input.setAttribute('readonly', '');
+                input.setAttribute('style', 'position: absolute; left: -9999px');
+                document.body.appendChild(input);
+                input.value = parent.children[childIndex].textContent;
+                input.select();
+                document.execCommand('copy');
+                document.body.removeChild(input);
+                toast.classList.remove('hide');
+                setTimeout(() => {
+                    toast.classList.add('hide');
+                }, 2000)
+            }
+
+
+
+            let allExchangeSections = document.querySelectorAll('.exchange-section'),
+                allExchangeBtns = document.querySelectorAll('.exchange-btn');
+            function showSection(thisBtn, elem) {
+                let element = document.getElementById(elem)
+                allExchangeSections.forEach((section) => {
+                    section.classList.add('hide-completely')
+                })
+                allExchangeBtns.forEach((btn) => {
+                    btn.classList.remove('active')
+                })
+                element.classList.remove('hide-completely')
+                thisBtn.classList.add('active')
+            }
+            // prevents non numerical input on firefox 
+            function preventNonNumericalInput(e) {
+                e = e || window.event;
+                let charCode = (typeof e.which == "undefined") ? e.keyCode : e.which,
+                    charStr = String.fromCharCode(charCode);
+
+                if (!charStr.match(/([0-9]*[.])?[0-9]+/))
+                    e.preventDefault();
+            }
+
+            function areInputsEmpty(parent) {
+                let allInputs = parent.querySelectorAll(".input input:not([disabled])"),
+                    allRadios = parent.querySelectorAll("input[type='radio']"),
+                    radioStatus, inputStatus, counter = radioGroups = 0;
+                if (parent.querySelector("input[name='trading_amount']"))
+                    radioGroups++;
+                if (parent.querySelector("input[name='crypto']"))
+                    radioGroups++;
+                if (parent.querySelector("input[name='currency']"))
+                    radioGroups++;
+                inputStatus = [...allInputs].every(input => input.checkValidity())
+
+                allRadios.forEach(radio => {
+                    if (radio.checked)
+                        counter++;
+                })
+                if (counter === radioGroups)
+                    radioStatus = true;
+                if (inputStatus && radioStatus)
+                    return true
+                else
+                    return false
+            }
+
+            function formValidation(formElement, e) {
+                if (formElement.getAttribute('type') === 'number')
+                    preventNonNumericalInput(e);
+                let parent = formElement.closest('.popup'),
+                    submitBtn = parent.querySelector("button[type = 'submit']");
+                if (areInputsEmpty(parent))
+                    submitBtn.disabled = false;
+                else {
+                    submitBtn.disabled = true;
+                    btnLoading(submitBtn.parentNode, 'stop')
+                }
+            }
+
+            // Event delegation when clicked on exchage options
+            window.addEventListener('load', () => {
+                document.getElementById('switcher_body').addEventListener('click', (e) => {
+                    if (e.target.closest('#buy_crypto_btn'))
+                        showPopup('buy_crypto_popup')
+                    if (e.target.closest('#sell_crypto_btn'))
+                        showPopup('sell_crypto_popup')
+                    if (e.target.closest('#send_crypto_btn'))
+                        showPopup('send_crypto_popup', 'no')
+                    if (e.target.closest('#deposit_crypto_btn'))
+                        showPopup('deposit_crypto_popup', 'no')
+                    if (e.target.closest('#withdraw_crypto_btn'))
+                        showPopup('withdraw_crypto_popup')
+                    if (e.target.closest('#deposit_cash_btn'))
+                        showPopup('deposit_cash_popup')
+                    if (e.target.closest('#withdraw_cash_btn'))
+                        showPopup('withdraw_cash_popup')
+                })
+
+                window.addEventListener('mousedown', e => {
+                    if (e.target.classList.contains('popup-container') && popupStack.peek().permission !== 'no') {
+                        hidePopup()
+                    }
+                })
+
+                function checkInput(e) {
+                    if (e.target.closest('.input') || e.target.closest('.select-crypto')) {
+                        let parent = e.target.closest('.input') || e.target.closest('.select-crypto');
+                        if (parent.classList.contains('input')) {
+                            if (parent.firstElementChild.value !== '')
+                                parent.classList.add('animate-label')
+                            else
+                                parent.classList.remove('animate-label')
+                        }
+                        formValidation(parent.firstElementChild, e)
+                        if (e.key === 'Enter')
+                            parent.closest('.popup').querySelector("button[type='submit']").click();
+                    }
+                }
+                document.getElementById('popup-parent').addEventListener('input', (e) => {
+                    checkInput(e);
+                })
+                document.getElementById('popup-parent').addEventListener('keyup', (e) => {
+                    checkInput(e);
+                })
+
+                //Sign in behaviour
+                document.getElementById('sign_in_popup').addEventListener('input', (e) => {
+                    checkInput(e);
+                })
+                document.getElementById('sign_in_popup').addEventListener('keyup', (e) => {
+                    checkInput(e);
+                })
+
+                document.getElementById('refresh_market_price').addEventListener('click', () => {
+                    btnLoading('refresh_market_price', 'start')
+                    localbitcoinplusplus.actions.request_live_prices_from_server();
+                })
+
+                document.getElementById('refresh_bal').addEventListener('click', (e) => {
+                    btnLoading('refresh_bal', 'start')
+                    const RM_WALLET = new localbitcoinplusplus.wallets;
+                    RM_WALLET.get_current_user_balance();
+                })
+
+                let notificationsContainer = document.getElementById('notification_container');
+                notificationsContainer.addEventListener('click', (e) => {
+                    if (e.target.closest('.remove-notification')) {
+                        e.target.closest('.notification').remove()
+                    }
+                })
+            })
+
+            //call these functions inside your already created functions and provide new value as parameters
+            function updateMarketPrice(crypto_code, price) {
+                btnLoading('refresh_market_price', 'stop')
+                if (crypto_code == "BTC") {
+                    document.getElementById('btc_market_price').textContent = '₹' + price;
+                } else if (crypto_code == "FLO") {
+                    document.getElementById('flo_market_price').textContent = '₹' + price;
+                }
+            }
+
+            function sendCrypto(btn) {
+                let parentPopup = btn.closest('.popup'),
+                    send_crypto_type = document.querySelector("input[name='crypto']:checked").value,
+                    utxo_addr_input = parentPopup.querySelector("input[name='senderFloId']").value,
+                    utxo_addr_wif_input = parentPopup.querySelector("input[name='senderPrivateKey']").value,
+                    receiver_address_input = parentPopup.querySelector("input[name='recieverFloId']").value,
+                    receiving_crypto_amount_input = parentPopup.querySelector("input[name='amount']").value;
+
+                btnLoading(btn, 'start')
+
+                const RM_TRADE = new localbitcoinplusplus.trade();
+                RM_TRADE.sendMultipleInputsTransaction(
+                    send_crypto_type,
+                    [utxo_addr_wif_input],
+                    receiver_address_input,
+                    receiving_crypto_amount_input,
+                    utxo_addr_input,
+                    async function (res) {
+                        console.log(res);
+                        if (typeof res == "object") {
+                            try {
+                                let resp_obj = JSON.parse(res.txid);
+                                let resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                let msg = `Transaction Id for your deposited crypto asset: ${resp_txid}`;
+                                showMessage(msg);
+                                notify(msg);
+                                btnLoading(btn, 'stop')
+                                hidePopup()
+                                return true;
+                            } catch (error) {
+                                console.warn(error);
+                                showMessage(error);
+                                notify(error, 'error');
+                            }
+                        }
+                    });
+            }
+
+            //show or hide element group from a group
+
+            function showElement(elem, classGroup) {
+                let allGroups = document.querySelectorAll(`.${classGroup}`),
+                    thisElement = elem;
+                if (typeof elem === 'string')
+                    thisElement = document.getElementById(elem);
+                allGroups.forEach(group => {
+                    group.classList.add('hide-completely')
+                })
+                thisElement.classList.remove('hide-completely')
+            }
+
+            // new displayMeesage and closeMessage functions. please remove old functions from script 
+
+            let eventLog = document.getElementById("event_log");
+            function displayMessages() {
+                eventLog.classList.remove('hide')
+                eventLog.classList.add('no-transformations')
+                window.onmousedown = e => {
+                    if (!e.target.closest('#event_log'))
+                        closeMessage()
+                }
+            }
+
+            function closeMessage() {
+                eventLog.classList.add('hide')
+                eventLog.classList.remove('no-transformations')
+            }
+
+            //Show tips when loading screen is shown
+            let tips = [
+                'Loading Local Bitcoin Plus Plus',
+                'Always keep your private key safe',
+                `Use this software on same browser and same mobile or laptop`,
+                'Withdraw your assets soon after the trade'
+            ], currentIndex = 0, tipsLength = tips.length,
+                tipContainer = document.getElementById('tip_container');
+
+            function changeTips() {
+                if (tipsLength > currentIndex)
+                    currentIndex++
+                if (tipsLength === currentIndex)
+                    currentIndex = 0
+                tipContainer.textContent = tips[currentIndex]
+            }
+            let defaultCurrencySelector = document.getElementById('default_currency_selector');
+
+            if (localStorage.getItem('defaultCurrency') !== null) {
+                defaultCurrencySelector.querySelector(`input[value="${localStorage.defaultCurrency}"]`).checked = true;
+            }
+            else {
+                localStorage.setItem('defaultCurrency', 'INR')
+            }
+            defaultCurrencySelector.addEventListener('input', () => {
+                let selectedCurrency = defaultCurrencySelector.querySelector('input[type="radio"]:checked').value
+                localStorage.setItem('defaultCurrency', selectedCurrency)
+                console.log(localStorage.defaultCurrency)
+            })
+    
+
             /*******************************************************
             Custom Localbitcoin++ JSON-RPC code starts here 
             *********************************************************/
@@ -21932,8 +22474,7 @@
                     }
                 }, 10000);
 
-                localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS =
-                    wsUri[0].trader_flo_address;
+                localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS = wsUri[0].trader_flo_address;
 
                 localbitcoinplusplus.services = {};
 
@@ -21986,23 +22527,6 @@
                     // Declare the user flo address
                     const MY_LOCAL_FLO_ADDRESS = localbitcoinplusplus.wallets.my_local_flo_address;
                     const MY_LOCAL_FLO_PUBLIC_KEY = localbitcoinplusplus.wallets.my_local_flo_public_key;
-
-                    // Send request to others to link your flo id to your local ip
-                    // linkMyLocalIPToMyFloId();
-
-                    // const pubic_data_response = await readDB("userPublicData", MY_LOCAL_FLO_ADDRESS);
-                    // if (typeof pubic_data_response !== "object") {
-                    //     RM_RPC.send_rpc
-                    //         .call(this, "add_user_public_data", {
-                    //             trader_flo_address: MY_LOCAL_FLO_ADDRESS,
-                    //             trader_flo_pubKey: MY_LOCAL_FLO_PUBLIC_KEY,
-                    //             trader_reputation: 0,
-                    //             timestamp: +new Date()
-                    //         })
-                    //         .then(add_user_public_data_req =>
-                    //             doSend(add_user_public_data_req)
-                    //         );
-                    // }
 
                     const user_reallocation_div = document.getElementById('reallocate_user_div');
                     const user_reallocation_btn = document.getElementById('reallocate_user_btn');
@@ -22481,18 +23005,30 @@
                                             BitBang.call(LPP);
                                             console.log("REALLOCATTION_OF_USER_DATA");
                                             showMessage('User data re-allocation to start in 3 mins.');
-                                            await localbitcoinplusplus.actions.delay(180000);
+                                            const wait_time = JSON.parse(localbitcoinplusplus.master_configurations.waitTime);
+                                            await localbitcoinplusplus.actions.delay(wait_time.normaldelay);
+                                            await localbitcoinplusplus.actions.refresh_live_status_of_supernodes();
                                             const current_num_supernodes = localbitcoinplusplus
                                                 .master_configurations.supernodesPubKeys.length;
                                             if(current_num_supernodes<=previous_num_supernodes) {
                                                 console.error('initialize_user_data_reallocation condition failed.')
                                                 return false;
                                             }
-                                            localbitcoinplusplus.actions.exportUserDataFromOneSupernodeToAnother(
+                                            const sk = supernodeKBucket.toArray();
+                                            const sk_id = sk.map(m=>m.data.id);
+                                            let idx = sk_id.indexOf(localbitcoinplusplus.wallets.my_local_flo_address);
+                                            if(idx<0) throw new Error('Negative index in Supernode Kbucket array.');
+                                            // Delay process a/c to Supernode rank   
+                                            await localbitcoinplusplus.actions.delay(idx*wait_time.exportdelay); 
+                                            await localbitcoinplusplus.actions.exportUserDataFromOneSupernodeToAnother(
                                                 localbitcoinplusplus.wallets.my_local_flo_address
                                             );
-                                            await showMessage('All user data re-allocated successfully.');
-                                        
+                                            showMessage('All user data re-allocated successfully.');
+                                            showMessage(`Starting Full DB sync in ${Math.floor(wait_time.syncdelay/60000)} minutes.`);
+                                            // Now re-sync backup dbs
+                                            await localbitcoinplusplus.actions.delay(idx*wait_time.syncdelay);
+                                            await reactor.dispatchEvent("sync_primary_and_backup_db");
+                                            
                                         }, 60000);
                                     }
                                     break;
