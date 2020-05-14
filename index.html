@@ -11573,11 +11573,10 @@
 
     <script>
         (function() {
-            var LPP = {};
+            let localbitcoinplusplus = {};
             function BitBang() {
             //SECTION: INITIALIZATION
-            //let localbitcoinplusplus;
-            LPP = localbitcoinplusplus = {
+            localbitcoinplusplus = {
                 wallets: {},
                 trade: {},
                 rpc: {},
@@ -22442,18 +22441,27 @@
                                     break;
 
                                 case "initialize_user_data_reallocation":
-                                    if (res_obj.data.request == "REALLOCATTION_OF_USER_DATA") {
+                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                        && res_obj.data.request == "REALLOCATTION_OF_USER_DATA") {
+
                                         showMessage('User data re-allocation to start in 4 mins.');
                                         console.log("REALLOCATTION_OF_USER_DATA_PRE");
                                         const previous_num_supernodes = localbitcoinplusplus
                                         .master_configurations.supernodesPubKeys.length;
+
+                                        const old_sk = supernodeKBucket.toArray();
+                                        const old_sk_id = sk.map(m=>m.data.id);
+                                        let old_idx = sk_id.indexOf(localbitcoinplusplus.wallets.my_local_flo_address);
+                                        if(old_idx<0) throw new Error('Negative index in Supernode Kbucket array.');
+                                        
                                         limit_function_calls(async function () {
-                                            BitBang.call(LPP);
+                                            BitBang.call(localbitcoinplusplus);
                                             console.log("REALLOCATTION_OF_USER_DATA");
                                             showMessage('User data re-allocation to start in 3 mins.');
-                                            const wait_time = JSON.parse(localbitcoinplusplus.master_configurations.waitTime);
-                                            await localbitcoinplusplus.actions.delay(wait_time.normaldelay);
+                                            await localbitcoinplusplus.actions.delay(180000);
                                             await localbitcoinplusplus.actions.refresh_live_status_of_supernodes();
+                                            const wait_time = JSON.parse(localbitcoinplusplus.master_configurations.waitTime);
                                             const current_num_supernodes = localbitcoinplusplus
                                                 .master_configurations.supernodesPubKeys.length;
                                             if(current_num_supernodes<=previous_num_supernodes) {
@@ -22475,7 +22483,7 @@
                                             await localbitcoinplusplus.actions.delay(idx*wait_time.syncdelay);
                                             await reactor.dispatchEvent("sync_primary_and_backup_db");
                                             
-                                        }, 60000);
+                                        }, old_idx*60000);
                                     }
                                     break;
 
