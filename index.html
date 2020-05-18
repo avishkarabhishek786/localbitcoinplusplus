@@ -13597,6 +13597,225 @@
             reactor.registerEvent("message_for_user");
             reactor.registerEvent("remove_temp_data_from_db");
             reactor.registerEvent("remove_redundant_crypto_deposits");
+            reactor.registerEvent("redistribute_crypto_shares_to_backups");
+            reactor.registerEvent("redistribute_crypto_shares_to_backups");
+            reactor.registerEvent("enquire_crypto_shares_availability_to_backups");
+
+            reactor.addEventListener('enquire_crypto_shares_availability_to_backups', async function() {
+                try {
+                    const RM_WALLET = new localbitcoinplusplus.wallets;
+                    const promise_list = [];
+                    const all_chunks = readAllDB('supernode_private_key_chunks');
+                    promise_list.push(all_chunks);
+                    for (let backup_db in localbitcoinplusplus.myClosestSupernodes) {
+                        if (
+                            typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+                            "object" && backup_db !== localbitcoinplusplus.wallets.my_local_flo_address
+                        ) {
+                            promise_list.push(localbitcoinplusplus.newBackupDatabase.db[backup_db]
+                            .backup_readAllDB('supernode_private_key_chunks'));
+                        }
+                    }
+                    const resolved_list = await Promise.all(promise_list);
+                    const all_shares = resolved_list.reduce((acc, cv)=>acc.concat(cv), []);
+                    const unique_set = [...new Set(all_shares)];
+                    console.log(unique_set);
+
+                    const sorted_list = {};
+
+                    for (const chunk of unique_set) {
+                        const primarySuObj = await localbitcoinplusplus.kademlia
+                                        .determineClosestSupernode(chunk.trader_flo_address);
+                        const primarySu = primarySuObj[0].data.id;
+                        if(typeof sorted_list[primarySu] !=="object") sorted_list[primarySu] = [];
+                        sorted_list[primarySu].push(chunk.id);
+                    }
+
+                    console.log(sorted_list);
+                    console.log(JSON.stringify(sorted_list));
+
+                    const extra_backup_ws = {};
+
+                    for (const primarySu in sorted_list) {
+                        const closestNodesToPrimary = await localbitcoinplusplus.kademlia.determineClosestSupernode(
+                            "",
+                            "",
+                            "",
+                            primarySu
+                        );
+                        const primarySuBackups = closestNodesToPrimary.map(m=>m.data.id)
+                        .splice(1, localbitcoinplusplus.master_configurations.MaxBackups);
+
+                        console.log(primarySuBackups)
+                        for (const closestBackup of primarySuBackups) {
+                            // If you yourself are the backup save the data in owner's primarySu
+                            if(closestBackup===localbitcoinplusplus.wallets.my_local_flo_address) {
+                                localbitcoinplusplus.newBackupDatabase.db[primarySu]
+                                .backup_updateinDB('supernode_private_key_chunks', chunk);  
+                                continue;
+                            }
+
+                            const msg_obj = {};
+                            msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+                            msg_obj.event = 'do_you_have_these_crypto_shares';
+                            msg_obj.data = sorted_list[primarySu];
+                            msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
+                            msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                            msg_obj.db_name = primarySu;
+                            msg_obj.trader_flo_address = primarySu;
+                            msg_obj.receiverFloAddress = closestBackup;
+                            msg_obj.hash = Crypto.SHA256(msg_obj);
+                            msg_obj.sign = RM_WALLET.sign(
+                                msg_obj.hash,
+                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                            );
+
+                            const finalMessage = JSON.stringify(msg_obj);
+                            console.log(finalMessage);
+                        
+                            if (typeof localbitcoinplusplus.backupWS[closestBackup] == "object"
+                                && localbitcoinplusplus.backupWS[closestBackup].ws_connection.readyState == WebSocket.OPEN) {
+
+                                localbitcoinplusplus.backupWS[closestBackup].ws_connection.send(finalMessage);
+
+                            } else if (typeof extra_backup_ws[closestBackup] == "object") {
+
+                                extra_backup_ws[closestBackup].send(finalMessage);
+
+                            } else {
+                                const url = `${WS}://${localbitcoinplusplus.myClosestSupernodes[closestBackup].ip}`;
+
+                                if (closestBackup == localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                                extra_backup_ws[closestBackup] = new WebSocket(url);
+                                extra_backup_ws[closestBackup].onopen = function (evt) {
+                                    //if (extra_backup_ws[closestBackup].bufferedAmount == 0) {
+                                    extra_backup_ws[closestBackup].send(finalMessage);
+                                    //}
+                                };
+                                extra_backup_ws[closestBackup].onclose = function (evt) {
+                                    console.info(`Closed extra conn ${evt.srcElement.url}`);
+                                }
+                            }
+                        }
+                    }
+
+                    await localbitcoinplusplus.actions.delay(60000);
+
+                    for (const wskey in extra_backup_ws) {
+                        if (extra_backup_ws.hasOwnProperty(wskey)) {
+                            const conn = extra_backup_ws[wskey];
+                            conn.close();
+                            delete extra_backup_ws[wskey];
+                        }
+                    }
+
+                } catch(e) {
+                    console.warn(e);
+                }
+            });
+
+            reactor.addEventListener('redistribute_crypto_shares_to_backups', async function(id_list=[]) {
+                try {
+                    const RM_WALLET = new localbitcoinplusplus.wallets;
+                    const promise_list = [];
+                    const all_chunks = readAllDB('supernode_private_key_chunks');
+                    promise_list.push(all_chunks);
+                    for (let backup_db in localbitcoinplusplus.myClosestSupernodes) {
+                        if (
+                            typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+                            "object" && backup_db !== localbitcoinplusplus.wallets.my_local_flo_address
+                        ) {
+                            promise_list.push(localbitcoinplusplus.newBackupDatabase.db[backup_db]
+                            .backup_readAllDB('supernode_private_key_chunks'));
+                        }
+                    }
+                    const resolved_list = await Promise.all(promise_list);
+                    const all_shares = resolved_list.reduce((acc, cv)=>acc.concat(cv), []);
+                    const unique_set = [...new Set(all_shares)];
+                    console.log(unique_set);
+                    const extra_backup_ws = {};
+                    for (const chunk of unique_set) {
+                        const primarySuObj = await localbitcoinplusplus.kademlia
+                                        .determineClosestSupernode(chunk.trader_flo_address);
+                        const primarySu = primarySuObj[0].data.id;
+                        const closestNodesToPrimary = await localbitcoinplusplus.kademlia.determineClosestSupernode(
+                            "",
+                            "",
+                            "",
+                            primarySu
+                        );
+                        const primarySuBackups = closestNodesToPrimary.map(m=>m.data.id)
+                        .splice(1, localbitcoinplusplus.master_configurations.MaxBackups);
+
+                        console.log(primarySuBackups);
+                        
+                        for (const closestBackup of primarySuBackups) {
+
+                            // If you yourself are the backup save the data in owner's primarySu
+                            if(closestBackup===localbitcoinplusplus.wallets.my_local_flo_address) {
+                                localbitcoinplusplus.newBackupDatabase.db[primarySu]
+                                .backup_updateinDB('supernode_private_key_chunks', chunk);  
+                                continue;
+                            }
+
+                            const msg_obj = {};
+                            msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+                            msg_obj.event = 'redistribute_crypto_shares_to_backups_event';
+                            msg_obj.data = { request: "REDISTRIBUTE_CRYPTO_SHARES" };
+                            msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
+                            msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                            msg_obj.db_name = primarySu;
+                            msg_obj.trader_flo_address = chunk.trader_flo_address;
+                            msg_obj.hash = Crypto.SHA256(msg_obj);
+                            msg_obj.sign = RM_WALLET.sign(
+                                msg_obj.hash,
+                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                            );
+
+                            const finalMessage = msg_obj;
+                            
+                            if (typeof localbitcoinplusplus.backupWS[closestBackup] == "object"
+                                && localbitcoinplusplus.backupWS[closestBackup].ws_connection.readyState == WebSocket.OPEN) {
+
+                                localbitcoinplusplus.backupWS[closestBackup].ws_connection.send(finalMessage);
+
+                            } else if (typeof extra_backup_ws[closestBackup] == "object") {
+
+                                extra_backup_ws[closestBackup].send(finalMessage);
+
+                            } else {
+                                const url = `${WS}://${localbitcoinplusplus.myClosestSupernodes[closestBackup].ip}`;
+
+                                if (closestBackup == localbitcoinplusplus.wallets.my_local_flo_address) return;
+
+                                extra_backup_ws[closestBackup] = new WebSocket(url);
+                                extra_backup_ws[closestBackup].onopen = function (evt) {
+                                    //if (extra_backup_ws[closestBackup].bufferedAmount == 0) {
+                                    extra_backup_ws[closestBackup].send(finalMessage);
+                                    //}
+                                };
+                                extra_backup_ws[closestBackup].onclose = function (evt) {
+                                    console.info(`Closed extra conn ${evt.srcElement.url}`);
+                                }
+                            }
+                        }
+
+                        
+                    }
+
+                    for (const wskey in extra_backup_ws) {
+                        if (extra_backup_ws.hasOwnProperty(wskey)) {
+                            const conn = extra_backup_ws[wskey];
+                            conn.close();
+                            delete extra_backup_ws[wskey];
+                        }
+                    }
+
+                } catch(e) {
+                    console.warn(e);
+                }
+            });
 
             reactor.addEventListener("new_supernode_connected", async function (evt) {
                 const switchMyWS = new backupSupernodesWebSocketObject();
@@ -14500,6 +14719,9 @@
                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
                     let tempWS = {};
                     for (let sn in localbitcoinplusplus.myClosestSupernodes) {
+                        if(typeof msg_obj.receivers_list !=="undefined" 
+                        && msg_obj.receivers_list.length>0 
+                        && !msg_obj.receivers_list.includes(sn)) continue;
                         (function () {
                             if ((sn !== localbitcoinplusplus.wallets.my_local_flo_address
                                 && sn !== msg_obj.subject_flo_id)
@@ -22534,6 +22756,61 @@
                                         }, old_idx*60000);
                                     }
                                     break;
+
+                                    case "do_you_have_these_crypto_shares":
+                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                        && 
+                                        localbitcoinplusplus.wallets.my_local_flo_address
+                                        === res_obj.receiverFloAddress
+                                    ) {
+
+                                        const absent_ids = [];
+                                        if (
+                                        typeof localbitcoinplusplus.newBackupDatabase.db[res_obj.db_name] ==
+                                        "object" && res_obj.db_name !== localbitcoinplusplus.wallets.my_local_flo_address
+                                        ) {
+                                            for (const share_id of res_obj.data) {
+                                                localbitcoinplusplus.newBackupDatabase.db[res_obj.db_name]
+                                                .backup_readDB('supernode_private_key_chunks', share_id).then(res=>{
+                                                    if(typeof res!=="object" || res==null) absent_ids.push(share_id);
+                                                });
+                                            }
+                                            console.log(absent_ids);
+                                        }
+
+                                        const msg_obj = {};
+                                        msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
+                                        msg_obj.event = 'give_me_these_crypto_shares';
+                                        msg_obj.data = absent_ids;
+                                        msg_obj.initialSender = localbitcoinplusplus.wallets.my_local_flo_address;
+                                        msg_obj.su_pubKey = localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                        msg_obj.db_name = res_obj.db_name;
+                                        msg_obj.trader_flo_address = res_obj.db_name;
+                                        msg_obj.receiverFloAddress = res_obj.initialSender;
+                                        msg_obj.receivers_list = [res_obj.initialSender];
+                                        msg_obj.hash = Crypto.SHA256(msg_obj);
+                                        msg_obj.sign = RM_WALLET.sign(
+                                            msg_obj.hash,
+                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                        );
+
+                                        const finalMessage = JSON.stringify(msg_obj);
+                                        console.log(finalMessage);
+                                        reactor.dispatchEvent('informAllSuperNode', msg_obj);                                            
+                                    }
+                                break;
+
+                                case "give_me_these_crypto_shares":
+                                    if (localbitcoinplusplus.master_configurations.supernodesPubKeys
+                                        .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)
+                                        && 
+                                        localbitcoinplusplus.wallets.my_local_flo_address
+                                        === res_obj.receiverFloAddress
+                                    ) {
+                                        console.log(res_obj)
+                                    }
+                                break;
 
                                 default:
                                     break;
