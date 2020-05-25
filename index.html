@@ -16846,7 +16846,7 @@
 
                                                 // Check how much Cash user can withdraw
                                                 const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
-                                                readDB("cash_balances", trader_cash_id).then(function (
+                                                readDB("cash_balances", trader_cash_id).then(async function (
                                                     cash_balances_res
                                                 ) {
                                                     try {
@@ -18628,7 +18628,7 @@
                                                 const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
                                                 backup_server_db_instance
                                                     .backup_readDB("cash_balances", trader_cash_id)
-                                                    .then(function (cash_balances_res) {
+                                                    .then(async function (cash_balances_res) {
                                                         try {
                                                             if (
                                                                 typeof cash_balances_res == "object" &&
@@ -21770,6 +21770,10 @@
                     btn = document.getElementById(btn);
                 if (btn.disabled)
                     btn.disabled = false;
+                if(btn.nodeName!=="BUTTON") {
+                    let childbtn=btn.getElementsByTagName('button')[0];
+                    childbtn.disabled=false;
+                }
             }
 
             function disableBtn(btn) {
@@ -21777,6 +21781,10 @@
                     btn = document.getElementById(btn);
                 if (!btn.disabled)
                     btn.disabled = true;
+                if(btn.nodeName!=="BUTTON") {
+                    let childbtn=btn.getElementsByTagName('button')[0];
+                    childbtn.disabled=true;
+                }
             }
             function btnLoading(btn, option) {
                 if (typeof btn === 'string')
@@ -24640,7 +24648,7 @@
                                     break;
 
                                 case "update_all_cash_deposit_success":
-                                    if (res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_public_key
+                                    if (res_obj.params[0].trader_flo_address !== localbitcoinplusplus.wallets.my_local_flo_address
                                         ||
                                         !localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                                             res_obj.nodePubKey)
@@ -24666,7 +24674,8 @@
                                             update_cash_balance_obj_res_verification === true) {
 
                                             updateinDB('cash_balances', deposit_success_response.depositor_cash_data,
-                                                deposit_success_response.depositor_cash_data.id, false, false);
+                                                deposit_success_response.depositor_cash_data.id, false, false)
+                                            .then(res=>displayBalances(localbitcoinplusplus.wallets.my_local_flo_address));
                                             removeinDB('cash_deposits', deposit_success_response.deposit_req_id);
 
                                             return true;
@@ -30612,51 +30621,52 @@
                 get_crypto_svg_selection_html('withdraw_assets_type', withdraw_crypto_div);
 
                 withdrawCryptoButton.addEventListener("click", function (params) {
-                    this.getElementsByTagName('button')[0].disabled = true;
-                    let parentPopup = this.closest('.popup');
-                    let asset_type = document.querySelector("input[name='crypto']:checked").value;
-                    let receivinAddress = document.getElementById('withdraw_recving_addr').value
-                    let withdraw_amount_box = document.getElementById('crypto_withdraw_amount')
-                    if (receivinAddress == null || receivinAddress.trim() == "") {
-                        this.getElementsByTagName('button')[0].disabled = false;
-                        err_msg = `You must specify a valid ${asset_type} address to continue.`;
-                        notify(err_msg, 'error');
-                        throw new Error(err_msg);
-                    }
+                    try {
+                        disableBtn('withdrawCryptoButton');
+                        let parentPopup = this.closest('.popup');
+                        let asset_type = document.querySelector("input[name='crypto']:checked").value;
+                        let receivinAddress = document.getElementById('withdraw_recving_addr').value
+                        let withdraw_amount_box = document.getElementById('crypto_withdraw_amount')
+                        if (receivinAddress == null || receivinAddress.trim() == "") {
+                            err_msg = `You must specify a valid ${asset_type} address to continue.`;
+                            notify(err_msg, 'error');
+                            throw new Error(err_msg);
+                        }
 
-                    let withdraw_amount = helper_functions.truncateDecimals(withdraw_amount_box.value);
-                    let fiatCurrency = localStorage.getItem('defaultCurrency');
+                        let withdraw_amount = helper_functions.truncateDecimals(withdraw_amount_box.value);
+                        let fiatCurrency = localStorage.getItem('defaultCurrency');
 
-                    if (
-                        typeof userFLOaddress == undefined ||
-                        userFLOaddress.trim().length < 1
-                    ) {
+                        if (
+                            typeof userFLOaddress == undefined ||
+                            userFLOaddress.trim().length < 1
+                        ) {
+                            err_msg = "Invalid or empty user FLO address.";
+                            notify(err_msg, 'error');
+                            throw new Error(err_msg);
+                        }
+
+                        if (
+                            typeof localbitcoinplusplus.master_configurations.tradableAsset1 !==
+                            "undefined" &&
+                            localbitcoinplusplus.master_configurations.tradableAsset1
+                                .includes(asset_type)
+                        ) {
+
+                            RM_TRADE.withdrawAsset(
+                                asset_type,
+                                withdraw_amount,
+                                receivinAddress,
+                                userFLOaddress,
+                                fiatCurrency
+                            );
+                            localbitcoinplusplus.actions.delay(60000).then(() => enableBtn('withdrawCryptoButton'));
+                        } else {
+                            err_msg = `Error: Withdraw of Crypto failed. Invalid asset type ${asset_type} provided.`;
+                            notify(err_msg, 'error');
+                            throw new Error(err_msg);
+                        }
+                    } catch(e) {
                         enableBtn('withdrawCryptoButton')
-                        err_msg = "Invalid or empty user FLO address.";
-                        notify(err_msg, 'error');
-                        throw new Error(err_msg);
-                    }
-
-                    if (
-                        typeof localbitcoinplusplus.master_configurations.tradableAsset1 !==
-                        "undefined" &&
-                        localbitcoinplusplus.master_configurations.tradableAsset1
-                            .includes(asset_type)
-                    ) {
-
-                        RM_TRADE.withdrawAsset(
-                            asset_type,
-                            withdraw_amount,
-                            receivinAddress,
-                            userFLOaddress,
-                            fiatCurrency
-                        );
-                        localbitcoinplusplus.actions.delay(60000).then(() => enableBtn('withdrawCryptoButton'));
-                    } else {
-                        enableBtn('withdrawCryptoButton')
-                        err_msg = `Error: Withdraw of Crypto failed. Invalid asset type ${asset_type} provided.`;
-                        notify(err_msg, 'error');
-                        throw new Error(err_msg);
                     }
                 });
 
@@ -30672,113 +30682,117 @@
                 let user_deposited_cash = 0; // false  
 
                 depositCashButton.addEventListener("click", function () {
-                    disableBtn('withdrawCashButton');
-                    user_deposited_cash === 0 ? user_deposited_cash = 1 : user_deposited_cash = 0;
-                    if (user_deposited_cash == 1) {
-                        this.firstElementChild.textContent = 'done';
-                        let parentPopup = this.closest('.popup'),
-                            user_upi = parentPopup.querySelector("input[name='upiAddr']").value,
-                            tradeAmount = parentPopup.querySelector("input[name='amount']").value;
+                    try {
+                        disableBtn('depositCashButton');
+                        user_deposited_cash === 0 ? user_deposited_cash = 1 : user_deposited_cash = 0;
+                        if (user_deposited_cash == 1) {
+                            this.firstElementChild.textContent = 'done';
+                            let parentPopup = this.closest('.popup'),
+                                user_upi = parentPopup.querySelector("input[name='upiAddr']").value,
+                                tradeAmount = parentPopup.querySelector("input[name='amount']").value;
 
-                        if (typeof user_upi !== "string" || user_upi.length < 1) {
-                            enableBtn('withdrawCashButton')
-                            err_msg = "Invalid or empty UPI id.";
+                            if (typeof user_upi !== "string" || user_upi.length < 1) {
+                                err_msg = "Invalid or empty UPI id.";
+                                notify(err_msg, 'error');
+                                throw new Error(err_msg);
+                            }
+                            tradeAmount = Number(tradeAmount);
+                            let asset_type = localStorage.getItem('defaultCurrency');
+                            let fiatCurrency = localStorage.getItem('defaultCurrency');
+                            if (
+                                typeof userFLOaddress == undefined ||
+                                userFLOaddress.trim().length < 1
+                            ) {
+                                err_msg = "Invalid or empty user FLO address.";
+                                notify(err_msg, 'error');
+                                throw new Error(err_msg);
+                            }
+                            if (
+                                typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
+                                "undefined" &&
+                                localbitcoinplusplus.master_configurations.tradableAsset2.includes(
+                                    asset_type
+                                )
+                            ) {
+                                RM_TRADE.depositCash(
+                                    tradeAmount,
+                                    fiatCurrency,
+                                    userFLOaddress,
+                                    user_upi
+                                );
+                                localbitcoinplusplus.actions.delay(20000).then(() => enableBtn('depositCashButton'));
+                            } else {
+                                err_msg = "Error:  Deposit of Cash failed.";
+                                notify(err_msg, 'error');
+                                throw new Error(err_msg);
+                            }
+
+                        } else {
+                            this.firstElementChild.textContent = 'deposit';
+                            hidePopup()
+                            return;
+                        }
+                    } catch(e) {
+                        enableBtn('depositCashButton');
+                    }
+                });
+
+                // Withdraw Cash function
+                withdrawCashButton.addEventListener("click", function (params) {
+                    try {
+                        disableBtn('withdrawCashButton');
+                        let parentPopup = this.closest('.popup')
+                        let receivinAddress = parentPopup.querySelector("input[name='upiAddr']").value;
+                        if (receivinAddress == null || receivinAddress.trim == "") {
+                            err_msg = "You must specify your valid UPI Id to withdraw cash.";
                             notify(err_msg, 'error');
                             throw new Error(err_msg);
                         }
-                        tradeAmount = Number(tradeAmount);
-                        let asset_type = localStorage.getItem('defaultCurrency');
-                        let fiatCurrency = localStorage.getItem('defaultCurrency');
+
+                        const asset_type = localStorage.getItem('defaultCurrency');
+                        const tradeAmount = parseFloat(parentPopup.querySelector("input[name='amount']").value);
+                        const fiatCurrency = localStorage.getItem('defaultCurrency');
+
                         if (
                             typeof userFLOaddress == undefined ||
                             userFLOaddress.trim().length < 1
                         ) {
-                            enableBtn('withdrawCashButton')
                             err_msg = "Invalid or empty user FLO address.";
                             notify(err_msg, 'error');
                             throw new Error(err_msg);
                         }
                         if (
-                            typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
-                            "undefined" &&
                             localbitcoinplusplus.master_configurations.tradableAsset2.includes(
                                 asset_type
                             )
                         ) {
-                            RM_TRADE.depositCash(
+                            if (tradeAmount <= 0) {
+                                err_msg = "Invalid Fiat Value.";
+                                notify(err_msg, 'error');
+                                throw new Error(err_msg);
+                            }
+                        }
+                        if (
+                            typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
+                            "undefined" &&
+                            localbitcoinplusplus.master_configurations.tradableAsset2
+                                .includes(asset_type)
+                        ) {
+                            RM_TRADE.withdrawAsset(
+                                asset_type,
                                 tradeAmount,
-                                fiatCurrency,
+                                receivinAddress,
                                 userFLOaddress,
-                                user_upi
+                                fiatCurrency
                             );
-                            localbitcoinplusplus.actions.delay(60000).then(() => enableBtn('withdrawCashButton'));
+                            localbitcoinplusplus.actions.delay(20000).then(() => enableBtn('withdrawCashButton'));
                         } else {
-                            enableBtn('withdrawCashButton')
-                            err_msg = "Error:  Deposit of Cash failed.";
+                            err_msg = "Error: Withdraw cash failed. Invalid currency specified.";
                             notify(err_msg, 'error');
                             throw new Error(err_msg);
                         }
-
-                    } else {
-                        this.firstElementChild.textContent = 'deposit';
-                        hidePopup()
-                        return;
-                    }
-
-                });
-
-                // Withdraw Cash function
-                withdrawCashButton.addEventListener("click", function (params) {
-                    let parentPopup = this.closest('.popup')
-                    let receivinAddress = parentPopup.querySelector("input[name='upiAddr']").value;
-                    if (receivinAddress == null || receivinAddress.trim == "") {
-                        err_msg = "You must specify your valid UPI Id to withdraw cash.";
-                        notify(err_msg, 'error');
-                        throw new Error(err_msg);
-                    }
-
-                    const asset_type = localStorage.getItem('defaultCurrency');
-                    const tradeAmount = parseFloat(parentPopup.querySelector("input[name='amount']").value);
-                    const fiatCurrency = localStorage.getItem('defaultCurrency');
-
-                    if (
-                        typeof userFLOaddress == undefined ||
-                        userFLOaddress.trim().length < 1
-                    ) {
-                        err_msg = "Invalid or empty user FLO address.";
-                        notify(err_msg, 'error');
-                        throw new Error(err_msg);
-                    }
-                    if (
-                        localbitcoinplusplus.master_configurations.tradableAsset2.includes(
-                            asset_type
-                        )
-                    ) {
-                        if (tradeAmount <= 0) {
-                            err_msg = "Invalid Fiat Value.";
-                            notify(err_msg, 'error');
-                            throw new Error(err_msg);
-                        }
-                    }
-                    if (
-                        typeof localbitcoinplusplus.master_configurations.tradableAsset2 !==
-                        "undefined" &&
-                        localbitcoinplusplus.master_configurations.tradableAsset2
-                            .includes(asset_type)
-                    ) {
-                        btnLoading(this, 'start');
-                        RM_TRADE.withdrawAsset(
-                            asset_type,
-                            tradeAmount,
-                            receivinAddress,
-                            userFLOaddress,
-                            fiatCurrency
-                        );
-
-                    } else {
-                        err_msg = "Error: Withdraw cash failed. Invalid currency specified.";
-                        notify(err_msg, 'error');
-                        throw new Error(err_msg);
+                    } catch (e) {
+                        enableBtn('withdrawCashButton');
                     }
                 });
 
