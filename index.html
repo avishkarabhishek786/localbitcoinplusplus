@@ -88,9 +88,14 @@
                 <path d="M72.5,36.5c0,19.88-16.12,36-36,36s-36-16.12-36-36s16.12-36,36-36S72.5,16.62,72.5,36.5"/>
             </svg>
         </div>
-        <p class="light-text">
-            Don't have private key, get it from <a href="https://flo-webwallet.duckdns.org/" target="_blank">here</a>.
-        </p>
+        <div class="action expand" id="newUserSignInBtn">
+            <button class="primary-btn expand" type="submit">
+                New User Sign In
+            </button>
+            <svg viewBox="0 0 73 73" class="loader">
+                <path d="M72.5,36.5c0,19.88-16.12,36-36,36s-36-16.12-36-36s16.12-36,36-36S72.5,16.62,72.5,36.5"/>
+            </svg>
+        </div>
     </div>
     </div> 
 
@@ -15365,50 +15370,85 @@
                         document.querySelector('main').classList.add('hide-completely')
                         notify('Please provide your FLO private key to Sign in.');
                         showPopup('sign_in_popup', 'no');
-                        const signInBtn = document.getElementById('signInBtn');
-                        signInBtn.onclick = function () {
+                        
+                        async function app_login() {
 
-                            const RM_WALLET = new localbitcoinplusplus.wallets();
-                            const pk_manual = document.getElementById('get_priv_key_field').value;
-                            let gen_new_keys = RM_WALLET.generateFloKeys(pk_manual);
+                            try {
+                                const RM_WALLET = new localbitcoinplusplus.wallets();
+                                let pk_manual = document.getElementById('get_priv_key_field').value;
+                                const usr_details = await readDB('localbitcoinUser', '00-01');
+                                let gen_new_keys = RM_WALLET.generateFloKeys(pk_manual);
 
-                            Object.defineProperty(
-                                localbitcoinplusplus.wallets,
-                                "MY_SUPERNODE_PRIVATE_KEY",
-                                {
-                                    value: gen_new_keys.privateKeyWIF,
-                                    writable: false,
-                                    configurable: false,
-                                    enumerable: false
+                                if(typeof usr_details.myLocalFLOAddress=="string" 
+                                && usr_details.myLocalFLOAddress.length>0) {
+                                    if(gen_new_keys.address!==usr_details.myLocalFLOAddress) {
+                                        notify('Incorrect private key. Please provide your FLO private key to Sign in.', 'error');
+                                        return resolve(false);
+                                    }
+                                } else {
+                                    notify(`This is your LOGIN PRIVATE KEY:
+                                        
+                                        ${gen_new_keys.privateKeyWIF}  
+                                        
+                                        Please copy & save it securely somewhere.
+
+                                        You can use it to login or recover your account. 
+                                        
+                                        DO NOT SHARE OR LOSE THIS PRIVATE KEY.
+                                        
+                                        Else you can lose your desposited assets like Bitcoins or Cash forever.
+                                    `, '', true, true, true);
                                 }
-                            );
-                            Object.defineProperty(
-                                localbitcoinplusplus.wallets,
-                                "my_local_flo_address",
-                                {
-                                    value: gen_new_keys.address,
-                                    writable: false,
-                                    configurable: false,
-                                    enumerable: false
-                                }
-                            );
-                            Object.defineProperty(
-                                localbitcoinplusplus.wallets,
-                                "my_local_flo_public_key",
-                                {
-                                    value: gen_new_keys.pubKeyHex,
-                                    writable: false,
-                                    configurable: false,
-                                    enumerable: false
-                                }
-                            );
 
-                            notify('Signed in successfully.')
-                            document.querySelector('main').classList.remove('hide-completely')
-                            hidePopup();
+                                Object.defineProperty(
+                                    localbitcoinplusplus.wallets,
+                                    "MY_SUPERNODE_PRIVATE_KEY",
+                                    {
+                                        value: gen_new_keys.privateKeyWIF,
+                                        writable: false,
+                                        configurable: false,
+                                        enumerable: false
+                                    }
+                                );
+                                Object.defineProperty(
+                                    localbitcoinplusplus.wallets,
+                                    "my_local_flo_address",
+                                    {
+                                        value: gen_new_keys.address,
+                                        writable: false,
+                                        configurable: false,
+                                        enumerable: false
+                                    }
+                                );
+                                Object.defineProperty(
+                                    localbitcoinplusplus.wallets,
+                                    "my_local_flo_public_key",
+                                    {
+                                        value: gen_new_keys.pubKeyHex,
+                                        writable: false,
+                                        configurable: false,
+                                        enumerable: false
+                                    }
+                                );
 
-                            return resolve(gen_new_keys.privateKeyWIF);
+                                notify('Signed in successfully.')
+                                document.querySelector('main').classList.remove('hide-completely')
+                                hidePopup();
+
+                                return resolve(gen_new_keys.privateKeyWIF);
+                            } catch(e) {
+                                notify('Incorrect private key. Please provide your FLO private key to Sign in.', 'error');
+                                return resolve(false);
+                            }
+                            
                         }
+                    
+                        const signInBtn = document.getElementById('signInBtn');
+                        signInBtn.onclick=app_login;
+
+                        const newUserSignInBtn = document.getElementById('newUserSignInBtn');
+                        newUserSignInBtn.onclick=app_login;
+                    
                     });
 
                 },
@@ -22986,8 +23026,8 @@
                                                 console.log(finalMessage);
 
                                                 reactor.dispatchEvent("informAllSuperNode", msg_obj);
-                                                showMessage("Sent Crypto shares to "+req_params.initialSender);
-                                                console.info("Sent Crypto shares to "+req_params.initialSender);
+                                                showMessage("Sent Crypto shares to "+res_obj.initialSender);
+                                                console.info("Sent Crypto shares to "+res_obj.initialSender);
                                             });
                                         }
 
@@ -23186,6 +23226,13 @@
                                                             ) {
                                                                 notify(received_resp.server_msg, '', false, true, true);
                                                                 showMessage(received_resp.server_msg);
+                                                                addDB('my_inbox', {
+                                                                    id: helper_functions.unique_id(),
+                                                                    trader_flo_address: received_resp.receiver_flo_address,
+                                                                    sender: res_obj.nodePubKey,
+                                                                    msg: received_resp.server_msg,
+                                                                    datetime: + new Date()
+                                                                });
                                                                 return false;
                                                             }
                                                         } else {
@@ -24888,6 +24935,13 @@
                                                         ) {
                                                             notify(received_resp.server_msg, '', false, true, true);
                                                             showMessage(received_resp.server_msg);
+                                                            addDB('my_inbox', {
+                                                                id: helper_functions.unique_id(),
+                                                                trader_flo_address: received_resp.receiver_flo_address,
+                                                                sender: res_obj.nodePubKey,
+                                                                msg: received_resp.server_msg,
+                                                                datetime: + new Date()
+                                                            });
                                                             return false;
                                                         }
                                                     } else {
@@ -30253,6 +30307,16 @@
                                 }
                             );
                         }
+
+                        readAllDB('my_inbox').then(resp=>{
+                            resp.map(m=>{
+                                if(localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(m.sender) 
+                                && m.trader_flo_address===localbitcoinplusplus.wallets.my_local_flo_address
+                                && m.datetime<2*24*60*60*1000) {
+                                    notify(m.msg, '', false, false, true);
+                                }
+                            });
+                        });
 
                         hidePopup(); // hide main_loader
 
