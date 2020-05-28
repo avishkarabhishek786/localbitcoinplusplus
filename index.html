@@ -285,6 +285,9 @@
                 <h3 id="user_type" class="light-text">
                   User
                 </h3>
+                <button id="logout_btn">
+                    Sign Out
+                </button>
                 <button id="admin_panel_btn" class="hide">
                     Admin Panel
                 </button>
@@ -12619,24 +12622,33 @@
                     return false;
                 },
 
-                reset_flo_keys: () => {
-                    const promise1 = updateinDB(
-                        "localbitcoinUser",
-                        {
-                            id: "00-01",
-                            myLocalFLOAddress: "",
-                            myLocalFLOPublicKey: "",
-                            myAddressTrustLevel: 1
-                        },
-                        "00-01"
-                    );
+                reset_flo_keys: async () => {
+                    try {
 
-                    const promise2 = removeAllinDB("my_supernode_private_key_chunks");
-                    const promise3 = removeAllinDB("myClosestSupernodes");
+                        if(!localbitcoinplusplus.master_configurations.supernodesPubKeys
+                        .includes(localbitcoinplusplus.wallets.my_local_flo_address)) {
 
-                    return Promise.all([promise1, promise2, promise3])
-                        .then(() => true)
-                        .catch(e => false);
+                            await clearDatabase(db);
+
+                            await updateinDB(
+                                "localbitcoinUser",
+                                {
+                                    id: "00-01",
+                                    myLocalFLOAddress: "",
+                                    myLocalFLOPublicKey: "",
+                                    myAddressTrustLevel: 1
+                                },
+                                "00-01"
+                            );
+
+                            BitBang();
+
+                            return true;
+                        }
+                    } catch(e) {
+                        notify(`Reset failed. Please refresh the page.`, 'error');
+                        return false;
+                    }
                 },
 
                 // https://stackoverflow.com/a/39538518/5348972
@@ -14401,7 +14413,6 @@
                     } else {
                         if (typeof conn_su_flo_id == "string") {
                             my_local_data.lastConnectedTime = +new Date();
-                            my_local_data.lastConnectedSupernode = conn_su_flo_id;
                             updateinDB("localbitcoinUser", my_local_data);
                         } else {
                             mss = `WARNING: Failed to update current supernode connected status in localbitcoinUser.`;
@@ -15370,9 +15381,8 @@
                         document.querySelector('main').classList.add('hide-completely')
                         notify('Please provide your FLO private key to Sign in.');
                         showPopup('sign_in_popup', 'no');
-                        
-                        async function app_login() {
 
+                        async function app_login() {
                             try {
                                 const RM_WALLET = new localbitcoinplusplus.wallets();
                                 let pk_manual = document.getElementById('get_priv_key_field').value;
@@ -15383,7 +15393,7 @@
                                 && usr_details.myLocalFLOAddress.length>0) {
                                     if(gen_new_keys.address!==usr_details.myLocalFLOAddress) {
                                         notify('Incorrect private key. Please provide your FLO private key to Sign in.', 'error');
-                                        return resolve(false);
+                                        return reject(false);
                                     }
                                 } else {
                                     notify(`This is your LOGIN PRIVATE KEY:
@@ -15437,10 +15447,10 @@
 
                                 return resolve(gen_new_keys.privateKeyWIF);
                             } catch(e) {
+                                console.error(e);
                                 notify('Incorrect private key. Please provide your FLO private key to Sign in.', 'error');
-                                return resolve(false);
+                                return false;
                             }
-                            
                         }
                     
                         const signInBtn = document.getElementById('signInBtn');
@@ -28645,7 +28655,6 @@
                 myLocalFLOAddress: "",
                 myLocalFLOPublicKey: "",
                 myAddressTrustLevel: 1,
-                lastConnectedSupernode: "",
                 lastConnectedTime: ""
             };
 
@@ -30091,8 +30100,6 @@
                     const localbitcoinuserdiv = document.getElementById("localbitcoinuserdiv");
                     localbitcoinuserdiv.innerHTML = `${my_flo_id}`;
 
-                    // showMessage ->updating your balances
-                    displayBalances(my_flo_id);
                 });
             };
 
@@ -30178,7 +30185,6 @@
                                 typeof localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS == "string"
                             ) {
                                 idbData.lastConnectedTime = +new Date();
-                                idbData.lastConnectedSupernode = localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS;
                                 updateinDB("localbitcoinUser", idbData);
                             } else {
                                 mss = `WARNING: Failed to update current supernode connected status in localbitcoinUser.`;
@@ -30206,8 +30212,7 @@
                                         trader_flo_address: MY_LOCAL_FLO_ADDRESS
                                     }
                                 );
-                                console.log(addNewKNode);
-
+                     
                                 doSend(addNewKNode);
                             });
 
@@ -30264,10 +30269,6 @@
                             }
                         });
 
-                        // Check last connected supernode, if not primary then
-                        // update the user data from other su first
-                        //wsUri = await localbitcoinplusplus.kademlia.getSupernodeSeed(idbData.myLocalFLOAddress);
-
                         // Show balances
                         displayBalances(idbData.myLocalFLOAddress);
 
@@ -30287,7 +30288,11 @@
                         displayTradeOrders(idbData.myLocalFLOAddress);
 
                         // Send Tx UI
-                        buildBroadcastTxUI();
+                        buildBroadcastTxUI(); 
+
+                        // logout
+                        const logout_btn = document.getElementById('logout_btn');
+                        logout_btn.addEventListener('click', localbitcoinplusplus.actions.reset_flo_keys);
 
                         if (
                             localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
