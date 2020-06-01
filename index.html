@@ -2,10 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <link rel="shortcut icon" href="#">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local Bitcoin++</title>
-    <style type="text/css">
-        @import url("https://fonts.googleapis.com/css?family=Barlow:400,500,600,700&display=swap");
+    <!-- <link rel="stylesheet" href="/home/aks/Documents/p2p/localbitcoinplusplus/supernode/server/web/playground/main.css"> -->
+    <style>
+
+@import url("https://fonts.googleapis.com/css?family=Barlow:400,500,600,700&display=swap");
         @import url("https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap");
         @import url("https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap");
         * {
@@ -1569,8 +1572,6 @@
         }
         }
         /*# sourceMappingURL=main.css.map */
-    
-    
     </style>
 </head>
 <body data-theme='light'>
@@ -14420,9 +14421,7 @@
 
                                         extra_backup_ws[closestSu[0].data.id] = new WebSocket(url);
                                         extra_backup_ws[closestSu[0].data.id].onopen = function (evt) {
-                                            //if (extra_backup_ws[closestSu[0].data.id].bufferedAmount == 0) {
                                             extra_backup_ws[closestSu[0].data.id].send(finalMessage);
-                                            //}
                                         };
                                         extra_backup_ws[closestSu[0].data.id].onclose = function (evt) {
                                             console.info(`Closed extra conn ${evt.srcElement.url}`);
@@ -15876,20 +15875,6 @@
                         // Also refresh deposited crypto balances 
                         RM_WALLET.refresh_reserved_crypto_balances(
                             localbitcoinplusplus.wallets.my_local_flo_address);
-                        // Inform left side Supernodes you are back
-                        const msg_obj = {};
-                        msg_obj.protocol = '__ALL_SUPERNODES_MSG__';
-                        msg_obj.event = 'supernode_came_back';
-                        msg_obj.data = { subject_flo_id: userKeysObj.address };
-                        msg_obj.initialSender = userKeysObj.address;
-                        msg_obj.su_pubKey = userKeysObj.pubKeyHex;
-                        msg_obj.hash = Crypto.SHA256(msg_obj);
-                        msg_obj.sign = RM_WALLET.sign(
-                            msg_obj.hash,
-                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                        );
-                        reactor.dispatchEvent("informLeftSuperNode", msg_obj,
-                            n = localbitcoinplusplus.master_configurations.MaxBackups);
                     }
                 } catch (error) {
                     throw new Error(error);
@@ -16109,12 +16094,9 @@
 
                                 tempWS[sn] = new WebSocket(url);
                                 tempWS[sn].onopen = async function (evt) {
-                                    //await localbitcoinplusplus.actions.delay(5000);
-                                    //if (tempWS[sn].bufferedAmount == 0) {
                                     tempWS[sn].send(JSON.stringify(msg_obj));
                                     await localbitcoinplusplus.actions.delay(5000);
                                     tempWS[sn].close();
-                                    //}
                                 };
                                 tempWS[sn].onclose = function (evt) {
                                     console.info(`Closed ${evt.srcElement.url}`);
@@ -16655,9 +16637,7 @@
 
                                 extra_backup_ws[closestBackup] = new WebSocket(url);
                                 extra_backup_ws[closestBackup].onopen = function (evt) {
-                                    //if (extra_backup_ws[closestBackup].bufferedAmount == 0) {
                                     extra_backup_ws[closestBackup].send(finalMessage);
-                                    //}
                                 };
                                 extra_backup_ws[closestBackup].onclose = function (evt) {
                                     console.info(`Closed extra conn ${evt.srcElement.url}`);
@@ -16680,7 +16660,6 @@
                     console.warn(e);
                 }
             });
-
 
             // SECTION: Misc functions
             function removeWhiteSpaces(text = '') {
@@ -16946,7 +16925,7 @@
                         notify('Please provide your FLO private key to Sign in.');
                         showPopup('sign_in_popup', 'no');
 
-                        async function app_login() {
+                        async function app_login(show_pk=true) {
                             try {
                                 const RM_WALLET = new localbitcoinplusplus.wallets();
                                 let pk_manual = document.getElementById('get_priv_key_field').value;
@@ -16960,18 +16939,20 @@
                                         return reject(false);
                                     }
                                 } else {
-                                    notify(`This is your LOGIN PRIVATE KEY:
-                                        
-                                        <span class="breakable">${gen_new_keys.privateKeyWIF}</span>  
-                                        
-                                        Please copy & save it securely somewhere.
+                                    if(show_pk===true) {
+                                        notify(`This is your LOGIN PRIVATE KEY:
+                                            
+                                            <span class="breakable">${gen_new_keys.privateKeyWIF}</span>  
+                                            
+                                            Please copy & save it securely somewhere.
 
-                                        You can use it to login or recover your account. 
-                                        
-                                        DO NOT SHARE OR LOSE THIS PRIVATE KEY.
-                                        
-                                        Else you can lose your deposited assets like Bitcoins or Cash forever.
-                                    `, '', true, true, true);
+                                            You can use it to login or recover your account. 
+                                            
+                                            DO NOT SHARE OR LOSE THIS PRIVATE KEY.
+                                            
+                                            Else you can lose your deposited assets like Bitcoins or Cash forever.
+                                        `, '', true, true, true);
+                                    }
                                 }
 
                                 Object.defineProperty(
@@ -17018,10 +16999,14 @@
                         }
                     
                         const signInBtn = document.getElementById('signInBtn');
-                        signInBtn.onclick=app_login;
+                        signInBtn.addEventListener('click', function() {
+                            app_login(false);
+                        }, false);
 
                         const newUserSignInBtn = document.getElementById('newUserSignInBtn');
-                        newUserSignInBtn.onclick=app_login;
+                        newUserSignInBtn.addEventListener('click', function() {
+                            app_login(true);
+                        }, false);
                     
                     });
 
@@ -24103,12 +24088,28 @@
             ) {
                 this.ws_url = ws_url;
                 this.ws_connection = null;
+                this.ping_interval;
+                this.ping_timeout;
             });
             backupSupernodesWebSocketObject.prototype = {
                 connectWS() {
                     this.ws_connection = new WebSocket(this.ws_url);
                     const switchMyWS = new backupSupernodesWebSocketObject();
+                    ping= ()=> {
+                        this.ws_connection.send('__ping__');
+                        this.ping_timeout = setTimeout(function () {
+                            console.log('----timout----', this.ws_connection);
+                            this.ws_connection.close();
+                            reactor.dispatchEvent("resolve_backup_ws_connections");
+                        }.bind(this), 125000);
+                    },
+                    pong=()=> {
+                        clearTimeout(this.ping_timeout);
+                        console.log('recvd pong', this.ws_connection);
+                    },
                     this.ws_connection.onopen = async function (evt) {
+
+                        this.ping_interval = setInterval(ping, 30000);
 
                         await reactor.dispatchEvent("backup_supernode_up", evt.srcElement.url);
                         await reactor.dispatchEvent("remove_extra_backup_connections");
@@ -24120,6 +24121,7 @@
 
                     }.bind(this);
                     this.ws_connection.onclose = function (evt) {
+                        clearInterval(this.ping_interval);
                         reactor.dispatchEvent("backup_supernode_down", evt);
                         limit_function_calls(async function () {
                             await localbitcoinplusplus.actions.refresh_live_status_of_supernodes(true);
@@ -24127,6 +24129,10 @@
                     }.bind(this);
                     this.ws_connection.onmessage = function (evt) {
                         let response = evt.data;
+                        if (response == '__pong__') {
+                            pong();
+                            return;
+                        }
                         console.log(`backup message: ${response}`);
                         let is_corona_positive = quarantineCoronaElements(response);
                         if (is_corona_positive === true) throw new Error("Response failed sanitization test.");
@@ -24288,7 +24294,6 @@
                         return Promise.reject(ms);
                     }
 
-                    //ideal_supernode = `ws://${nextClosestSupernodeElem[0].ip}:${nextClosestSupernodeElem[0].port}`;
                     ideal_supernode = `${WS}://${nextClosestSupernodeElem[0].ip}`;
 
                     await startWebSocket(ideal_supernode);
@@ -24334,6 +24339,7 @@
             function startWebSocket(wsUri) {
                 return new Promise((resolve, reject) => {
                     websocket = new WebSocket(wsUri);
+
                     websocket.onopen = function (evt) {
                         resolve(onOpen(evt));
                     };
@@ -24361,6 +24367,9 @@
 
                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
+
+                    // Inform everyone you are back
+                    await localbitcoinplusplus.actions.refresh_live_status_of_supernodes(true);
                     // delete buy and sell orders
                     let remove_promises = [];
                     remove_promises.push(removeAllinDB('buyOrders'));
@@ -24391,21 +24400,27 @@
             }
 
             function onClose(evt) {
-                // Also close the backup ws conns
+                console.warn(`[close] Connection closed, code=${evt.code} reason=${evt.reason}`);
                 if (localbitcoinplusplus.master_configurations.supernodesPubKeys
                     .includes(localbitcoinplusplus.wallets.my_local_flo_public_key)) {
-                    // for (conn in localbitcoinplusplus.backupWS) {
-                    //     localbitcoinplusplus.backupWS[conn].ws_connection.close();
-                    // }
+                    // Try to reconnect back
                     startWebSocket(evt.srcElement.url);
                 } else {
                     reactor.dispatchEvent("primary_supernode_down", evt);
                 }
             }
 
+            function send_pong() {
+                websocket.send('__pong__');
+            }
+
             // SECTION: PRIMARY CONNECTION MESSAGES
             async function onMessage(evt) {
                 var response = evt.data || evt;
+
+                if (response === '__ping__') {
+                    return send_pong();
+                }
                 console.log("RESPONSE: " + response);
 
                 // Check if request is clean or not
@@ -24536,6 +24551,7 @@
 
                                 case "refresh_all_supernodes_status":
                                     reactor.dispatchEvent('resolve_backup_ws_connections');
+                                    localbitcoinplusplus.actions.refresh_live_status_of_supernodes(false);
                                     break;
                                 
                                 case "delete_this_user_data_from_backup":
@@ -30181,6 +30197,8 @@
                     finalMessage = JSON.stringify(msgObj);
                 }
 
+                let setIntervalVal;
+
                 // The message is for a specific supernode only
                 if (user_flo_id !== "" && user_flo_id.length > 0) {
                     try {
@@ -30193,6 +30211,7 @@
                                 return;
                             }
                             wsConn.send(finalMessage);
+                            
                         } else if (user_flo_id === localbitcoinplusplus.wallets.my_local_flo_address) {
                             websocket.send(finalMessage);
                         }
