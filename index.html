@@ -13190,12 +13190,16 @@
 
             Object.defineProperty(localbitcoinplusplus, "server", {
                 value: {
-                    btc_mainnet: "https://insight.bitpay.com",
-                    btc_testnet: "https://test-insight.bitpay.com",
-                    flo_mainnet: "https://flosight.duckdns.org",
-                    flo_testnet: "https://testnet-flosight.duckdns.org",
-                    flo_api_mainnet: "https://ranchimallflo.duckdns.org",
-                    flo_api_testnet: "https://ranchimallflo-testnet.duckdns.org",
+                    btc_mainnet: ["https://insight.bitpay.com"],
+                    btc_testnet: ["https://test-insight.bitpay.com"],
+                    flo_mainnet: ["https://flosight.duckdns.org", 
+                                  "https://explorer.mediciland.com/",
+                                  "https://livenet.flocha.in/",
+                                  "http://livenet-explorer.floexperiments.com/"],
+                    flo_testnet: ["https://testnet-flosight.duckdns.org",
+                                  "https://testnet.flocha.in/"],
+                    flo_api_mainnet: ["https://ranchimallflo.duckdns.org"],
+                    flo_api_testnet: ["https://ranchimallflo-testnet.duckdns.org"],
                 },
                 writable: false,
                 configurable: false,
@@ -13801,10 +13805,10 @@
 
                     if (ENVR === 'LIVE') {
                         master_data = await helper_functions
-                            .ajaxGet(`${localbitcoinplusplus.server.flo_mainnet}/api/txs/?address=${localbitcoinplusplus.RM_FLO_SENDING_ADDR}`);
+                            .chainAjaxRequest("TXES_BY_ADDRESS", localbitcoinplusplus.server.flo_mainnet, [localbitcoinplusplus.RM_FLO_SENDING_ADDR]);
                     } else {
                         master_data = await helper_functions
-                            .ajaxGet(`${localbitcoinplusplus.server.flo_testnet}/api/txs/?address=${localbitcoinplusplus.RM_FLO_SENDING_ADDR}`);
+                            .chainAjaxRequest("TXES_BY_ADDRESS", localbitcoinplusplus.server.flo_testnet, [localbitcoinplusplus.RM_FLO_SENDING_ADDR]);
                     }
 
                     if (typeof master_data === "object" && typeof master_data.txs === "object") {
@@ -16437,8 +16441,8 @@
                                     }
                                     const orderslife = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife)
                                     let timenow = + new Date();
-                                    let url = `${blockchain_explorer}/api/addr/${deposit_dl.btc_address}/utxo`;
-                                    let deposited_crypto_balance_req = await helper_functions.ajaxGet(url);
+                                    let deposited_crypto_balance_req = await helper_functions.chainAjaxRequest(
+                                        "UTXOS_BY_ADDRESS",blockchain_explorer, [deposit_dl.btc_address]);
 
                                     if (typeof deposited_crypto_balance_req == "undefined"
                                         || timenow - deposit_dl.timestamp < orderslife.cryptoDeposit) continue;
@@ -17227,9 +17231,7 @@
                                     break;
                             }
 
-                            let url = `${explorer}/api/addr/${crypto_address}/balance`;
-                            console.log(url);
-                            let balance = await helper_functions.ajaxGet(url);
+                            let balance = await helper_functions.chainAjaxRequest("BALANCE_BY_ADDRESS", explorer, [crypto_address]);
                             if (!isNaN(balance) && parseFloat(balance) >= 0) {
                                 balance = helper_functions.truncateDecimals(balance / decimal);
                                 console.log(balance);
@@ -18884,7 +18886,7 @@
                                                 for (const utxo_pk of params.btc_private_key_array) {
                                                     let utxo_addr = RM_WALLET.generateFloKeys(utxo_pk, withdraw_res.product).address;
                                                     const bal_url = `${explorer}/api/addr/${utxo_addr}/balance`;
-                                                    total_balance_promises.push(helper_functions.ajaxGet(bal_url));
+                                                    total_balance_promises.push(helper_functions.chainAjaxRequest("BALANCE_BY_ADDRESS", explorer, [utxo_addr]));
                                                 }
                                                 let total_balance_promises_resp = await Promise.all(total_balance_promises);
                                                 current_utxos_balance = total_balance_promises_resp.reduce((acc, c) => acc + c, 0);
@@ -19010,7 +19012,7 @@
                                                                     (async function validateWithdrawTxidInBlockchain() {
                                                                         await localbitcoinplusplus.actions.delay(180000);
                                                                         const validate_withdraw_txid = await helper_functions
-                                                                            .ajaxGet(`${explorer}/api/tx/${resp_txid}`);
+                                                                            .chainAjaxRequest("TX_DETAIL", explorer, [resp_txid]);
                                                                         console.log(validate_withdraw_txid);
                                                                         if (typeof validate_withdraw_txid == "object"
                                                                             && validate_withdraw_txid.txid === resp_txid
@@ -20729,8 +20731,7 @@
                                                 let total_balance_promises = [];
                                                 for (const utxo_pk of params.btc_private_key_array) {
                                                     let utxo_addr = RM_WALLET.generateFloKeys(utxo_pk, withdraw_res.product).address;
-                                                    const bal_url = `${explorer}/api/addr/${utxo_addr}/balance`;
-                                                    total_balance_promises.push(helper_functions.ajaxGet(bal_url));
+                                                    total_balance_promises.push(helper_functions.chainAjaxRequest("BALANCE_BY_ADDRESS", explorer, [utxo_addr]));
                                                 }
                                                 let total_balance_promises_resp = await Promise.all(total_balance_promises);
                                                 current_utxos_balance = total_balance_promises_resp.reduce((acc, c) => acc + c, 0);
@@ -20855,7 +20856,7 @@
                                                                     (async function validateWithdrawTxidInBlockchain() {
                                                                         await localbitcoinplusplus.actions.delay(180000);
                                                                         const validate_withdraw_txid = await helper_functions
-                                                                            .ajaxGet(`${explorer}/api/tx/${resp_txid}`);
+                                                                            .chainAjaxRequest("TX_DETAIL", explorer, [resp_txid]);
                                                                         console.log(validate_withdraw_txid);
                                                                         if (typeof validate_withdraw_txid == "object"
                                                                             && validate_withdraw_txid.txid === resp_txid
@@ -21199,15 +21200,13 @@
 
                                         let txidUrlDeposit = '';
                                         if (ENVR === "LIVE") {
-                                            txidUrlDeposit = `${localbitcoinplusplus.server
-                                                .flo_api_mainnet}/api/v1.0/getTransactionDetails/${params.flo_txid}`;
+                                            txidUrlDeposit = localbitcoinplusplus.server.flo_api_mainnet;
                                         } else {
-                                            txidUrlDeposit = `${localbitcoinplusplus.server
-                                                .flo_api_testnet}/api/v1.0/getTransactionDetails/${params.flo_txid}`;
+                                            txidUrlDeposit = localbitcoinplusplus.server.flo_api_testnet;
                                         }
 
                                         // Validate Flo txid
-                                        const validate_flo_txid = await helper_functions.ajaxGet(txidUrlDeposit);
+                                        const validate_flo_txid = await helper_functions.chainAjaxRequest("TOKEN_TX_DETAIL", txidUrlDeposit, [params.flo_txid]);
 
                                         if (typeof validate_flo_txid !== "object"
                                             || typeof validate_flo_txid.transactionDetails !== "object"
@@ -21964,10 +21963,9 @@
                 usd_to_fiat_exchange_rate(currency_code = "INR") {
                     return new Promise((resolve, reject) => {
                         helper_functions
-                            .ajaxGet(
-                                `${localbitcoinplusplus.server.flo_api_mainnet}/api/v1.0/getPrices`
-                            )
-                            .then(res => {
+                            .chainAjaxRequest("GET_PRICES", 
+                                localbitcoinplusplus.server.flo_api_mainnet
+                            ).then(res => {
                                 if (
                                     typeof res == "object" &&
                                     typeof res.prices.USDINR == "number"
@@ -22055,7 +22053,7 @@
                             crypto_code = "FLO";
                         }
                         helper_functions
-                            .ajaxGet(`${localbitcoinplusplus.server.flo_api_mainnet}/api/v1.0/getPrices`)
+                            .chainAjaxRequest("GET_PRICES", localbitcoinplusplus.server.flo_api_mainnet)
                             .then(async res => {
                                 if (
                                     typeof res == "object" &&
@@ -22221,8 +22219,7 @@
                     for (const pk of utxo_addr_wif) {
                         let keygen = RM_WALLET.generateFloKeys(pk, crypto_type);
                         let utxo_addr = keygen.address;
-                        let url = `${blockchain_explorer}/api/addr/${utxo_addr}/utxo`;
-                        utxo_list_req.push(helper_functions.ajaxGet(url));
+                        utxo_list_req.push(helper_functions.chainAjaxRequest("UTXOS_BY_ADDRESS", blockchain_explorer, [utxo_addr]));
                     }
 
                     Promise.all(utxo_list_req).then(all_utxos => {
@@ -22885,30 +22882,81 @@
 
             // SECTION: Helper functions
             let helper_functions = {
+
+                chainAjaxRequest: async function(requestType='', domainList=[], params=[]) {
+                    try {
+                        if(typeof requestType!=="string"
+                        || requestType.length<1
+                        || domainList.length<1) {
+                            console.error('chainAjaxRequest failed to produce result');
+                            return false;
+                        }
+
+                        const domain = JSON.parse(JSON.stringify(domainList));
+
+                        let url = ``;
+                        let domainName = domain.splice(0,1);
+                    
+                        switch (requestType) {
+                            case "TXES_BY_ADDRESS":
+                                url = `${domainName}/api/txs/?address=${params[0]}`;
+                            break;
+
+                            case "UTXOS_BY_ADDRESS":
+                                url = `${domainName}/api/addr/${params[0]}/utxo`;
+                            break;
+
+                            case "BALANCE_BY_ADDRESS":
+                                url = `${domainName}/api/addr/${params[0]}/balance`;
+                            break;
+
+                            case "TX_DETAIL":
+                                url = `${domainName}/api/tx/${params[0]}`;
+                            break;
+
+                            case "TOKEN_TX_DETAIL":
+                                url = `${domainName}/api/v1.0/getTransactionDetails/${params[0]}`;
+                            break;
+
+                            case "GET_PRICES":
+                                url = `${domainName}/api/v1.0/getPrices`
+                            break;
+
+                            default:
+                                console.warn('Unknown request');
+                            break;
+                        }
+
+                        if(url=='') return false;
+
+                        let result = await helper_functions.ajaxGet(url);
+                        console.log(result);
+
+                        if(result!==false) {
+                            return result;
+                        } else {
+                            helper_functions.chainAjaxRequest(requestType, domain, params);
+                        }
+                    } catch(e) {
+                        console.error(e);
+                        helper_functions.chainAjaxRequest(requestType, domain, params);
+                    }
+                },
                 // AJAX Get
-                ajaxGet: async function (url) {
+                ajaxGet: async function (url='') {
                     try {
                         //await the response of the fetch call
                         let response = await fetch(url);
                         if (!response.ok) {
-                           throw new Error('Network response was not ok');
+                           return false
                         }
                         //proceed once the first promise is resolved.
                         let data = await response.json();
                         //proceed only when the second promise is resolved
                         return data;
                     } catch (error) {
-                        var xhr = new XMLHttpRequest();
-                        xhr.open("GET", url);
-                        xhr.onload = function () {
-                            if (xhr.status === 200) {
-                                return xhr.responseText;
-                            } else {
-                                showMessage(`WARNING: Failed to get data from ${url} with status ${xhr.status}.`);
-                                return false;
-                            }
-                        };
-                        xhr.send();
+                        console.error(error);
+                        return false;
                     }
                 },
 
@@ -22961,9 +23009,8 @@
                                 break;
                         }
 
-                        let url = `${explorer}/api/addr/${crypto_address}/balance`;
-                        console.log(url);
-                        helper_functions.ajaxGet(url).then(async balance => {
+                        helper_functions.chainAjaxRequest("BALANCE_BY_ADDRESS", explorer, [crypto_address])
+                        .then(async balance => {
                             if (!isNaN(balance) && parseFloat(balance) > 0) {
                                 balance = helper_functions.truncateDecimals(balance / decimal);
                                 console.log(balance);
@@ -32342,16 +32389,16 @@
 
                                             if (asset_type === 'BTC') {
                                                 txdata = await helper_functions
-                                                    .ajaxGet(`${localbitcoinplusplus.server.btc_mainnet}/api/tx/${resp_txid}`);
+                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.btc_mainnet, [resp_txid]);
                                             } else if (asset_type === 'BTC_TEST') {
                                                 txdata = await helper_functions
-                                                    .ajaxGet(`${localbitcoinplusplus.server.btc_testnet}/api/tx/${resp_txid}`);
+                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.btc_testnet, [resp_txid]);
                                             } else if (asset_type === 'FLO') {
                                                 txdata = await helper_functions
-                                                    .ajaxGet(`${localbitcoinplusplus.server.flo_mainnet}/api/tx/${resp_txid}`);
+                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.flo_mainnet, [resp_txid]);
                                             } else if (asset_type === 'FLO_TEST') {
                                                 txdata = await helper_functions
-                                                    .ajaxGet(`${localbitcoinplusplus.server.flo_testnet}/api/tx/${resp_txid}`);
+                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.flo_testnet, [resp_txid]);
                                             }
 
                                             if (typeof txdata !== "object"
@@ -32719,132 +32766,102 @@
                         break;
                 }
                 try {
-                    let url = `${explorer}/api/addr/${trader_deposits.btc_address}/balance`;
-                    console.log(url);
-                    helper_functions.ajaxGet(url).then(async balance => {
+                    helper_functions.chainAjaxRequest("BALANCE_BY_ADDRESS", explorer, [trader_deposits.btc_address])
+                    .then(async balance => {
                         if (!isNaN(balance) && parseFloat(balance) > 0) {
                             balance = helper_functions.truncateDecimals(balance / decimal);
                             console.log(balance);
+                            trader_deposits.status = 2;
+                            trader_deposits.bitcoinToBePaid = balance;
+                            const trader_deposit_updated = await _updateinDB(
+                                "deposit",
+                                trader_deposits,
+                                trader_deposits.trader_flo_address
+                            );
 
-                            /************************ Case of dispute *****************/
-                            // if (
-                            //     trader_deposits.depositing_amount - balance > miners_fee
-                            // ) {
-                            //     console.log(
-                            //         trader_deposits.depositing_amount,
-                            //         trader_deposits.bitcoinToBePaid,
-                            //         balance,
-                            //         miners_fee
-                            //     );
-                            //     let more_depositing_crypto_amount = helper_functions.truncateDecimals(trader_deposits.depositing_amount) - helper_functions.truncateDecimals(balance);
-
-                            //     err_msg = `Incomplete Crypto Deposit Error: You claimed to send ${trader_deposits.depositing_amount} ${trader_deposits.product} but
-                            //     deposited only ${balance} ${trader_deposits.product}. Please send more ${more_depositing_crypto_amount} ${trader_deposits.product}
-                            //     to ${trader_deposits.btc_address}`;
-
-                            //     err_response = {
-                            //         user_flo_addr: trader_deposits.trader_flo_address,
-                            //         msg: err_msg
-                            //     }
-                            //     reactor.dispatchEvent('message_for_user', err_response);
-                            //     console.warn("User sent less cryptos");
-                            //     return false;
-
-                            // } else {
-                                //Deposit successful. Update user balance and status to 2. Its Private key can be
-                                // now given to a random trader
-                                trader_deposits.status = 2;
-                                trader_deposits.bitcoinToBePaid = balance;
-                                const trader_deposit_updated = await _updateinDB(
-                                    "deposit",
-                                    trader_deposits,
-                                    trader_deposits.trader_flo_address
-                                );
-
-                                let trader_depositor_cash_id = `${trader_deposits.trader_flo_address}_${trader_deposits.product}`;
-                                let updatedCryptobalances = {
-                                    id: trader_depositor_cash_id,
-                                    trader_flo_address: trader_deposits.trader_flo_address,
-                                    crypto_balance: balance,
-                                    crypto_currency: trader_deposits.product
-                                };
-                                _readDB("crypto_balances", trader_depositor_cash_id).then(
-                                    function (res_btc_balances) {
-                                        if (
-                                            typeof res_btc_balances == "object" &&
-                                            typeof res_btc_balances.crypto_balance == "number"
-                                        ) {
-                                            updatedCryptobalances = null;
-                                            updatedCryptobalances = JSON.parse(JSON.stringify(res_btc_balances));
-                                            updatedCryptobalances.crypto_balance =
-                                                helper_functions.truncateDecimals(res_btc_balances.crypto_balance)
-                                                + helper_functions.truncateDecimals(balance)
-                                        }
-                                        // Update crypto balance of user in crypto_balances
-                                        _updateinDB(
-                                            "crypto_balances",
-                                            updatedCryptobalances,
-                                            trader_deposits.btc_address
-                                        ).then(updatedBTCBalanceObject => {
-                                            const RM_WALLET = new localbitcoinplusplus.wallets();
-                                            const RM_RPC = new localbitcoinplusplus.rpc();
-
-                                            const updatedBTCBalanceObjectString = JSON.stringify(
-                                                updatedBTCBalanceObject
-                                            );
-                                            const updatedBTCBalanceObjectStringHash = Crypto.SHA256(
-                                                updatedBTCBalanceObjectString
-                                            );
-
-                                            const updatedBTCBalanceObjectSign = RM_WALLET.sign(
-                                                updatedBTCBalanceObjectStringHash,
-                                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                            );
-
-                                            const updateUserCryptoBalanceObject = {
-                                                updatedBTCBalanceObject: updatedBTCBalanceObject,
-                                                updatedBTCBalanceObjectSign: updatedBTCBalanceObjectSign,
-                                                trader_flo_address: trader_deposits.trader_flo_address,
-                                                receiver_flo_address: trader_deposits.trader_flo_address
-                                            };
-
-                                            RM_RPC.send_rpc(
-                                                "updateUserCryptoBalanceRequest",
-                                                updateUserCryptoBalanceObject
-                                            ).then(updateUserCryptoBalanceRequestObject =>
-                                                doSend(updateUserCryptoBalanceRequestObject)
-                                            );
-
-                                            const traderDepositsObjectString = JSON.stringify(
-                                                trader_deposit_updated
-                                            );
-                                            const traderDepositsObjectStringHash = Crypto.SHA256(
-                                                traderDepositsObjectString
-                                            );
-
-                                            const traderDepositsObjectSign = RM_WALLET.sign(
-                                                traderDepositsObjectStringHash,
-                                                localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                            );
-
-                                            const updatedDepositObject = {
-                                                updatedTraderDepositObject: trader_deposit_updated,
-                                                updatedDepositsObjectSign: traderDepositsObjectSign,
-                                                trader_flo_address: trader_deposit_updated.trader_flo_address,
-                                                receiver_flo_address: trader_deposit_updated.trader_flo_address
-                                            };
-
-                                            RM_RPC.send_rpc(
-                                                "updateUsertraderDepositsRequest",
-                                                updatedDepositObject
-                                            ).then(updateUsertraderDepositsRequestObject =>
-                                                doSend(updateUsertraderDepositsRequestObject)
-                                            );
-
-                                        });
+                            let trader_depositor_cash_id = `${trader_deposits.trader_flo_address}_${trader_deposits.product}`;
+                            let updatedCryptobalances = {
+                                id: trader_depositor_cash_id,
+                                trader_flo_address: trader_deposits.trader_flo_address,
+                                crypto_balance: balance,
+                                crypto_currency: trader_deposits.product
+                            };
+                            _readDB("crypto_balances", trader_depositor_cash_id).then(
+                                function (res_btc_balances) {
+                                    if (
+                                        typeof res_btc_balances == "object" &&
+                                        typeof res_btc_balances.crypto_balance == "number"
+                                    ) {
+                                        updatedCryptobalances = null;
+                                        updatedCryptobalances = JSON.parse(JSON.stringify(res_btc_balances));
+                                        updatedCryptobalances.crypto_balance =
+                                            helper_functions.truncateDecimals(res_btc_balances.crypto_balance)
+                                            + helper_functions.truncateDecimals(balance)
                                     }
-                                );
-                            //}
+                                    // Update crypto balance of user in crypto_balances
+                                    _updateinDB(
+                                        "crypto_balances",
+                                        updatedCryptobalances,
+                                        trader_deposits.btc_address
+                                    ).then(updatedBTCBalanceObject => {
+                                        const RM_WALLET = new localbitcoinplusplus.wallets();
+                                        const RM_RPC = new localbitcoinplusplus.rpc();
+
+                                        const updatedBTCBalanceObjectString = JSON.stringify(
+                                            updatedBTCBalanceObject
+                                        );
+                                        const updatedBTCBalanceObjectStringHash = Crypto.SHA256(
+                                            updatedBTCBalanceObjectString
+                                        );
+
+                                        const updatedBTCBalanceObjectSign = RM_WALLET.sign(
+                                            updatedBTCBalanceObjectStringHash,
+                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                        );
+
+                                        const updateUserCryptoBalanceObject = {
+                                            updatedBTCBalanceObject: updatedBTCBalanceObject,
+                                            updatedBTCBalanceObjectSign: updatedBTCBalanceObjectSign,
+                                            trader_flo_address: trader_deposits.trader_flo_address,
+                                            receiver_flo_address: trader_deposits.trader_flo_address
+                                        };
+
+                                        RM_RPC.send_rpc(
+                                            "updateUserCryptoBalanceRequest",
+                                            updateUserCryptoBalanceObject
+                                        ).then(updateUserCryptoBalanceRequestObject =>
+                                            doSend(updateUserCryptoBalanceRequestObject)
+                                        );
+
+                                        const traderDepositsObjectString = JSON.stringify(
+                                            trader_deposit_updated
+                                        );
+                                        const traderDepositsObjectStringHash = Crypto.SHA256(
+                                            traderDepositsObjectString
+                                        );
+
+                                        const traderDepositsObjectSign = RM_WALLET.sign(
+                                            traderDepositsObjectStringHash,
+                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                        );
+
+                                        const updatedDepositObject = {
+                                            updatedTraderDepositObject: trader_deposit_updated,
+                                            updatedDepositsObjectSign: traderDepositsObjectSign,
+                                            trader_flo_address: trader_deposit_updated.trader_flo_address,
+                                            receiver_flo_address: trader_deposit_updated.trader_flo_address
+                                        };
+
+                                        RM_RPC.send_rpc(
+                                            "updateUsertraderDepositsRequest",
+                                            updatedDepositObject
+                                        ).then(updateUsertraderDepositsRequestObject =>
+                                            doSend(updateUsertraderDepositsRequestObject)
+                                        );
+
+                                    });
+                                }
+                            );
                         }
                     });
                 } catch (error) {
