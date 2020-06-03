@@ -6,9 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local Bitcoin++</title>
     <!-- <link rel="stylesheet" href="/home/aks/Documents/p2p/localbitcoinplusplus/supernode/server/web/playground/main.css"> -->
-    <style>
-
-@import url("https://fonts.googleapis.com/css?family=Barlow:400,500,600,700&display=swap");
+    <style type="text/css">
+        @import url("https://fonts.googleapis.com/css?family=Barlow:400,500,600,700&display=swap");
         @import url("https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap");
         @import url("https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap");
         * {
@@ -18469,16 +18468,15 @@
                                                 readDB("cash_balances", trader_cash_id).then(async function (
                                                     cash_balances_res
                                                 ) {
-                                                    try {
-
-                                                        if (
-                                                            typeof cash_balances_res == "object" &&
-                                                            typeof cash_balances_res.trader_flo_address ==
-                                                            "string" &&
-                                                            typeof cash_balances_res.cash_balance == "number" &&
-                                                            cash_balances_res.cash_balance > 0
-                                                        ) {
-                                                            let old_cash_balances_res = JSON.parse(JSON.stringify(cash_balances_res));
+                                                    if (
+                                                        typeof cash_balances_res == "object" &&
+                                                        typeof cash_balances_res.trader_flo_address ==
+                                                        "string" &&
+                                                        typeof cash_balances_res.cash_balance == "number" &&
+                                                        cash_balances_res.cash_balance > 0
+                                                    ) {
+                                                        const old_cash_balances_res = JSON.parse(JSON.stringify(cash_balances_res));
+                                                        try {
                                                             let withdrawer_cash_balance = helper_functions.truncateDecimals(
                                                                 cash_balances_res.cash_balance, 2
                                                             );
@@ -18504,8 +18502,7 @@
 
                                                                 // Get a cashier
                                                                 const cashiersList = JSON.parse(
-                                                                    localbitcoinplusplus.master_configurations
-                                                                        .cashiers
+                                                                    localbitcoinplusplus.master_configurations.cashiers
                                                                 );
 
                                                                 const cashiersPubKeysArray = Object.keys(cashiersList);
@@ -18551,157 +18548,128 @@
                                                                     status: 1 // withdraw request called
                                                                 };
 
-                                                                readDB("localbitcoinUser", "00-01").then(function (
-                                                                    su_data
+                                                                const su_data = await readDB("localbitcoinUser", "00-01");
+                                                                if (
+                                                                    typeof su_data == "object" &&
+                                                                    typeof su_data.myLocalFLOPublicKey ==
+                                                                    "string" &&
+                                                                    su_data.myLocalFLOPublicKey.length > 0 &&
+                                                                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                                                        su_data.myLocalFLOPublicKey
+                                                                    )
                                                                 ) {
-                                                                    if (
-                                                                        typeof su_data == "object" &&
-                                                                        typeof su_data.myLocalFLOPublicKey ==
-                                                                        "string" &&
-                                                                        su_data.myLocalFLOPublicKey.length > 0 &&
-                                                                        localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                                            su_data.myLocalFLOPublicKey
-                                                                        )
-                                                                    ) {
-                                                                        let withdraw_request_db_object_hash = Crypto.SHA256(
-                                                                            JSON.stringify(withdraw_request_db_object)
-                                                                        );
-                                                                        withdraw_request_db_object[
-                                                                            "withdrawDataHash"
-                                                                        ] = withdraw_request_db_object_hash;
-                                                                        withdraw_request_db_object[
-                                                                            "order_validator_sign"
-                                                                        ] = RM_WALLET.sign(
-                                                                            withdraw_request_db_object_hash,
-                                                                            localbitcoinplusplus.wallets
-                                                                                .MY_SUPERNODE_PRIVATE_KEY
-                                                                        );
-                                                                        withdraw_request_db_object[
-                                                                            "order_validator_public_key"
-                                                                        ] = su_data.myLocalFLOPublicKey;
+                                                                    let withdraw_request_db_object_hash = Crypto.SHA256(
+                                                                        JSON.stringify(withdraw_request_db_object)
+                                                                    );
+                                                                    withdraw_request_db_object[
+                                                                        "withdrawDataHash"
+                                                                    ] = withdraw_request_db_object_hash;
+                                                                    withdraw_request_db_object[
+                                                                        "order_validator_sign"
+                                                                    ] = RM_WALLET.sign(
+                                                                        withdraw_request_db_object_hash,
+                                                                        localbitcoinplusplus.wallets
+                                                                            .MY_SUPERNODE_PRIVATE_KEY
+                                                                    );
+                                                                    withdraw_request_db_object[
+                                                                        "order_validator_public_key"
+                                                                    ] = su_data.myLocalFLOPublicKey;
 
-                                                                        try {
-                                                                            // Transfer Token
-                                                                            RM_TRADE.sendMultipleInputsTransaction(
-                                                                                localbitcoinplusplus.BASE_BLOCKCHAIN,
-                                                                                [localbitcoinplusplus.wallets
-                                                                                    .MY_SUPERNODE_PRIVATE_KEY],
-                                                                                cashierFloAddr,
-                                                                                0.01,
-                                                                                localbitcoinplusplus.wallets
-                                                                                    .my_local_flo_address,
-                                                                                async function (res) {
-                                                                                    console.log(res);
-                                                                                    if (typeof res == "object") {
-                                                                                        try {
-                                                                                            let msg = "";
-                                                                                            let resp_txid = "";
-                                                                                            if (
-                                                                                                typeof res.txid == "string" &&
-                                                                                                res.txid.length > 0
-                                                                                            ) {
-                                                                                                resp_obj = JSON.parse(res.txid);
-                                                                                                resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                                                                                msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
-                                                                                            } else {
-                                                                                                console.log(res);
-                                                                                                err_response = {
-                                                                                                    user_flo_addr: cashierFloAddr,
-                                                                                                    msg: `Failed to transfer token for withdraw order ${withdraw_request_db_object.id}`
-                                                                                                }
-                                                                                                reactor.dispatchEvent('message_for_user', err_response);
-                                                                                                throw new Errror(`ERROR: Failed to transfer token for withdraw order ${withdraw_request_db_object.id}.`);
-                                                                                                return false;
-                                                                                            }
+                                                                    // Transfer Token
+                                                                    const transfer_token_response = await RM_TRADE.sendMultipleInputsTransaction(
+                                                                        localbitcoinplusplus.BASE_BLOCKCHAIN,
+                                                                        [localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY],
+                                                                        cashierFloAddr,
+                                                                        0.01,
+                                                                        localbitcoinplusplus.wallets.my_local_flo_address,
+                                                                        flo_withdraw_comment
+                                                                    );
 
-                                                                                            if (msg.length > 0) {
-                                                                                            
-                                                                                                const update_cash_balance_obj = {
-                                                                                                    withdrawer_cash_data: withdrawer_cash_data
-                                                                                                };
-                                                                                                const update_cash_balance_str = JSON.stringify(
-                                                                                                    update_cash_balance_obj
-                                                                                                );
-                                                                                                const update_cash_balance_hash = Crypto.SHA256(
-                                                                                                    update_cash_balance_str
-                                                                                                );
-                                                                                                const update_cash_balance_sign = RM_WALLET.sign(
-                                                                                                    update_cash_balance_hash,
-                                                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                                                );
+                                                                    if (typeof transfer_token_response == "object") {
+                                                                        
+                                                                            let msg = "";
+                                                                            let resp_txid = "";
+                                                                            if (
+                                                                                typeof transfer_token_response.txid == "string" &&
+                                                                                transfer_token_response.txid.length > 0
+                                                                            ) {
+                                                                                resp_obj = transfer_token_response.txid;
+                                                                                resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                                msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
+                                                                            } else {
+                                                                                console.log(transfer_token_response);
+                                                                                err_response = {
+                                                                                    user_flo_addr: cashierFloAddr,
+                                                                                    msg: `Failed to transfer token for withdraw order ${withdraw_request_db_object.id}`
+                                                                                }
+                                                                                reactor.dispatchEvent('message_for_user', err_response);
+                                                                                throw new Errror(`ERROR: Failed to transfer token for withdraw order ${withdraw_request_db_object.id}.`);
+                                                                            }
 
-                                                                                                update_cash_balance_obj.publicKey =
-                                                                                                    localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                                                                                update_cash_balance_obj.sign = update_cash_balance_sign;
-                                                                                                update_cash_balance_obj.hash = update_cash_balance_hash;
-                                                                                                update_cash_balance_obj.trader_flo_address = cash_balances_res.trader_flo_address;
+                                                                            if (msg.length > 0) {
+                                                                            
+                                                                                const update_cash_balance_obj = {
+                                                                                    withdrawer_cash_data: withdrawer_cash_data
+                                                                                };
+                                                                                const update_cash_balance_str = JSON.stringify(
+                                                                                    update_cash_balance_obj
+                                                                                );
+                                                                                const update_cash_balance_hash = Crypto.SHA256(
+                                                                                    update_cash_balance_str
+                                                                                );
+                                                                                const update_cash_balance_sign = RM_WALLET.sign(
+                                                                                    update_cash_balance_hash,
+                                                                                    localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                                                );
 
-                                                                                                RM_RPC.send_rpc
-                                                                                                    .call(
-                                                                                                        this,
-                                                                                                        "update_all_new_cash_withdraw_recorded_in_db",
-                                                                                                        update_cash_balance_obj
-                                                                                                    )
-                                                                                                    .then(update_cash_balance_req =>
-                                                                                                        doSend(
-                                                                                                            update_cash_balance_req
-                                                                                                        )
-                                                                                                    );
+                                                                                update_cash_balance_obj.publicKey =
+                                                                                    localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                                                update_cash_balance_obj.sign = update_cash_balance_sign;
+                                                                                update_cash_balance_obj.hash = update_cash_balance_hash;
+                                                                                update_cash_balance_obj.trader_flo_address = cash_balances_res.trader_flo_address;
 
-                                                                                                //add the request to supernode db
-                                                                                                withdraw_request_db_object.token_transfer_txid = resp_txid;
+                                                                                RM_RPC.send_rpc
+                                                                                    .call(
+                                                                                        this,
+                                                                                        "update_all_new_cash_withdraw_recorded_in_db",
+                                                                                        update_cash_balance_obj
+                                                                                    )
+                                                                                    .then(update_cash_balance_req =>
+                                                                                        doSend(
+                                                                                            update_cash_balance_req
+                                                                                        )
+                                                                                    );
 
-                                                                                                // Add record in Db
-                                                                                                const withdraw_request_db_object_res = await addDB(
-                                                                                                    "withdraw_cash",
-                                                                                                    withdraw_request_db_object
-                                                                                                );
+                                                                                //add the request to supernode db
+                                                                                withdraw_request_db_object.token_transfer_txid = resp_txid;
 
-                                                                                                // return back the response to client
-                                                                                                withdraw_request_db_object_res.receiver_flo_address =
-                                                                                                    params.trader_flo_address;
-                                                                                                withdraw_request_db_object_res.trader_flo_address =
-                                                                                                    params.trader_flo_address;
-                                                                                                RM_RPC.send_rpc
-                                                                                                    .call(
-                                                                                                        this,
-                                                                                                        "withdrawal_request_response",
-                                                                                                        withdraw_request_db_object_res
-                                                                                                    )
-                                                                                                    .then(
-                                                                                                        withdrawal_request_response =>
-                                                                                                            doSend(
-                                                                                                                withdrawal_request_response
-                                                                                                            )
-                                                                                                    );
-                                                                                            } else {
-                                                                                                throw new Errror(
-                                                                                                    `ERROR: Failed to make transaction. Message length is 0: ${msg}`
-                                                                                                );
-                                                                                                return false;
-                                                                                            }
-                                                                                        } catch (e) {
-                                                                                            updateinDB("cash_balances", 
-                                                                                                old_cash_balances_res, 
-                                                                                                old_cash_balances_res.id, 
-                                                                                                false, false
-                                                                                            );
-                                                                                            throw new Error(e);
-                                                                                        }
-                                                                                    }
-                                                                                },
-                                                                                flo_withdraw_comment
-                                                                            );
-                                                                        } catch (error) {
-                                                                            updateinDB("cash_balances", 
-                                                                                old_cash_balances_res, 
-                                                                                old_cash_balances_res.id, 
-                                                                                false, false
-                                                                            );
-                                                                            throw new Error(error);
+                                                                                // Add record in Db
+                                                                                const withdraw_request_db_object_res = await addDB(
+                                                                                    "withdraw_cash",
+                                                                                    withdraw_request_db_object
+                                                                                );
+
+                                                                                // return back the response to client
+                                                                                withdraw_request_db_object_res.receiver_flo_address =
+                                                                                    params.trader_flo_address;
+                                                                                withdraw_request_db_object_res.trader_flo_address =
+                                                                                    params.trader_flo_address;
+                                                                                RM_RPC.send_rpc
+                                                                                    .call(
+                                                                                        this,
+                                                                                        "withdrawal_request_response",
+                                                                                        withdraw_request_db_object_res
+                                                                                    )
+                                                                                    .then(
+                                                                                        withdrawal_request_response =>
+                                                                                            doSend(
+                                                                                                withdrawal_request_response
+                                                                                            )
+                                                                                    );
+                                                                            }
                                                                         }
                                                                     }
-                                                                });
+                                                                
                                                             } else {
                                                                 // Return error to the requester
                                                                 err_msg =
@@ -18713,17 +18681,15 @@
                                                                 reactor.dispatchEvent('message_for_user', err_response);
                                                                 throw new Error(err_msg);
                                                             }
+                                                        } catch(e) {
+                                                            console.error(e);
+                                                            updateinDB("cash_balances", 
+                                                                old_cash_balances_res, 
+                                                                old_cash_balances_res.id, 
+                                                                false, false
+                                                            );
                                                         }
-
-                                                    } catch(e) {
-                                                        console.error(e);
-                                                        updateinDB("cash_balances", 
-                                                            old_cash_balances_res, 
-                                                            old_cash_balances_res.id, 
-                                                            false, false
-                                                        );
                                                     }
-                                                    
                                                 });
                                             } else {
                                                 err_msg = "Unknown asset withdraw request error.";
@@ -18735,9 +18701,8 @@
                                                 throw new Error(err_msg);
                                             }
                                         }
-                                    }
-                                );
-                                break;
+                                    });
+                            break;
 
                             case "cancel_trade":
 
@@ -18929,175 +18894,145 @@
                                                     withdrawer_crypto_bal_id
                                                 );
 
-                                                RM_TRADE.sendMultipleInputsTransaction(
+                                                const withdraw_crypto_response = 
+                                                await RM_TRADE.sendMultipleInputsTransaction(
                                                     withdraw_res.product,
                                                     params.btc_private_key_array,
                                                     withdraw_res.receiverBTCAddress,
                                                     totalWithdrawingAmount,
-                                                    withdraw_res.utxo_addr[0],
-                                                    async function (res) {
-                                                        console.log(res);
-                                                        try {
-                                                            if (typeof res == "object") {
-                                                                let msg = "";                                                                
-                                                                let emsg = '';
-                                                                let respo_obj = JSON.parse(res.txid);
-                                                                if((typeof respo_obj.txid!=="string"
-                                                                && typeof respo_obj.txid.result!=="string")
-                                                                && res.error==true) {
-                                                                    emsg = 'Failed to send Transaction.';
-                                                                    if(typeof res.msg == "string") {
-                                                                        emsg = res.msg;
-                                                                    }
-                                                                    console.error(emsg);
-                                                                    RM_RPC.send_rpc
-                                                                    .call(this, "supernode_message", {
-                                                                        trader_flo_address:
-                                                                            withdraw_res.trader_flo_address,
-                                                                        receiver_flo_address:
-                                                                            withdraw_res.trader_flo_address,
-                                                                        server_msg: emsg
-                                                                    })
-                                                                    .then(server_response =>
-                                                                        doSend(server_response)
-                                                                    );
-                                                                    throw new Error(emsg);
-                                                                }
-                                                                
-                                                                if (
-                                                                    typeof res.txid == "string" &&
-                                                                    res.txid.length > 0
-                                                                ) {
-                                                                    resp_obj = JSON.parse(res.txid);
-                                                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                                                    msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
-
-                                                                    const RM_RPC = new localbitcoinplusplus.rpc();
-                                                                    RM_RPC.send_rpc
-                                                                        .call(this, "supernode_message", {
-                                                                            trader_flo_address:
-                                                                                withdraw_res.trader_flo_address,
-                                                                            receiver_flo_address:
-                                                                                withdraw_res.trader_flo_address,
-                                                                            server_msg: msg
-                                                                        })
-                                                                        .then(server_response =>
-                                                                            doSend(server_response)
-                                                                        );
-
-                                                                    const res_obj_str = JSON.stringify(updated_crypto_balance);
-                                                                    const res_obj_hash = Crypto.SHA256(res_obj_str);
-                                                                    const res_obj_sign = RM_WALLET.sign(
-                                                                        res_obj_hash,
-                                                                        localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                    );
-
-                                                                    const updateUserCryptoBalanceObject = {
-                                                                        updatedBTCBalanceObject: updated_crypto_balance,
-                                                                        updatedBTCBalanceObjectSign: res_obj_sign,
-                                                                        trader_flo_address: withdraw_res.trader_flo_address,
-                                                                        receiver_flo_address: withdraw_res.trader_flo_address
-                                                                    };
-
-                                                                    RM_RPC.send_rpc(
-                                                                        "updateUserCryptoBalanceRequest",
-                                                                        updateUserCryptoBalanceObject
-                                                                    ).then(
-                                                                        updateUserCryptoBalanceRequestObject =>
-                                                                            doSend(updateUserCryptoBalanceRequestObject)
-                                                                    );
-
-                                                                    // Validate txid
-                                                                    let withdrawTxCounter = 1;
-                                                                    (async function validateWithdrawTxidInBlockchain() {
-                                                                        await localbitcoinplusplus.actions.delay(180000);
-                                                                        const validate_withdraw_txid = await helper_functions
-                                                                            .chainAjaxRequest("TX_DETAIL", explorer, [resp_txid]);
-                                                                        console.log(validate_withdraw_txid);
-                                                                        if (typeof validate_withdraw_txid == "object"
-                                                                            && validate_withdraw_txid.txid === resp_txid
-                                                                            && validate_withdraw_txid.confirmations > 0) {
-
-                                                                            const deposited_utxos_latest_status =
-                                                                                await RM_WALLET.refresh_reserved_crypto_balances(
-                                                                                    withdraw_res.trader_flo_address,
-                                                                                    withdraw_res.utxo_addr
-                                                                                );
-
-                                                                            // Send the resp to backups
-                                                                            RM_RPC.send_rpc(
-                                                                                "update_deposited_crypto_instance",
-                                                                                {
-                                                                                    deposit_data: deposited_utxos_latest_status,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        withdraw_res.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
-
-                                                                            removeinDB("withdraw_btc", withdraw_id);
-
-                                                                            RM_RPC.send_rpc(
-                                                                                "delete_deposited_crypto_instance",
-                                                                                {
-                                                                                    withdraw_btc_id: withdraw_id,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        withdraw_res.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
-
-                                                                        } else if (n <= 20) {
-                                                                            validateWithdrawTxidInBlockchain();
-                                                                            withdrawTxCounter++;
-                                                                        } else {
-                                                                            throw new Error(`Txid ${resp_txid} not registered in ${withdraw_res.product} Blockhain`);
-                                                                        }
-                                                                    })();
-
-                                                                } else {
-                                                                    console.log(res);
-                                                                    throw new Errror(`ERROR: Failed to make transaction.`);
-                                                                }
-                                                            } else {
-                                                                console.error("Waithdraw transaction is not an object");
-                                                                //throw new Errror(`ERROR: Failed to make transaction.`);
-                                                            }
-
-                                                        } catch (error) {
-                                                            console.warn(error);
-                                                            err_response = {
-                                                                user_flo_addr: params.trader_flo_address,
-                                                                msg: `Withdraw of crypto failed. Network issue:- Please try again after 30 minutes.`
-                                                            }
-                                                            reactor.dispatchEvent('message_for_user', err_response);
-
-                                                            // update deposits status back to 2 in db
-                                                            for (const deposited_utxo_idx in withdraw_res.utxo_addr) {
-                                                                let deposited_utxo_addr = withdraw_res.utxo_addr[deposited_utxo_idx];
-                                                                const deposit_arr_resp = await readDBbyIndex(
-                                                                    "deposit",
-                                                                    "btc_address",
-                                                                    deposited_utxo_addr
-                                                                )
-                                                                if (typeof deposit_arr_resp[0] == "object") {
-                                                                    deposit_arr_resp[0].status = 2; // UTXO ready to be used again
-                                                                    await updateinDB(
-                                                                        "deposit",
-                                                                        deposit_arr_resp[0],
-                                                                        deposit_arr_resp[0].id
-                                                                    );
-                                                                }
-                                                            }
-                                                            await removeinDB("withdraw_btc", withdraw_id);
-
-                                                        }
-                                                    }
+                                                    withdraw_res.utxo_addr[0]
                                                 );
+
+                                                console.log(withdraw_crypto_response);
+
+                                                if (typeof withdraw_crypto_response == "object") {
+                                                    let msg = "";
+                                                    let emsg = '';
+                                                    let respo_obj = withdraw_crypto_response.txid;
+                                                    if ((typeof respo_obj.txid !== "string"
+                                                        && typeof respo_obj.txid.result !== "string")
+                                                        && withdraw_crypto_response.error == true) {
+                                                        emsg = 'Failed to send Transaction.';
+                                                        if (typeof withdraw_crypto_response.msg == "string") {
+                                                            emsg = withdraw_crypto_response.msg;
+                                                        }
+                                                        console.error(emsg);
+                                                        RM_RPC.send_rpc
+                                                            .call(this, "supernode_message", {
+                                                                trader_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                receiver_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                server_msg: emsg
+                                                            })
+                                                            .then(server_response =>
+                                                                doSend(server_response)
+                                                            );
+                                                        throw new Error(emsg);
+                                                    }
+
+                                                    if (
+                                                        typeof withdraw_crypto_response.txid == "string" &&
+                                                        withdraw_crypto_response.txid.length > 0
+                                                    ) {
+                                                        resp_obj = JSON.parse(withdraw_crypto_response.txid);
+                                                        resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                        msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
+
+                                                        const RM_RPC = new localbitcoinplusplus.rpc();
+                                                        RM_RPC.send_rpc
+                                                            .call(this, "supernode_message", {
+                                                                trader_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                receiver_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                server_msg: msg
+                                                            })
+                                                            .then(server_response =>
+                                                                doSend(server_response)
+                                                            );
+
+                                                        const res_obj_str = JSON.stringify(updated_crypto_balance);
+                                                        const res_obj_hash = Crypto.SHA256(res_obj_str);
+                                                        const res_obj_sign = RM_WALLET.sign(
+                                                            res_obj_hash,
+                                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                        );
+
+                                                        const updateUserCryptoBalanceObject = {
+                                                            updatedBTCBalanceObject: updated_crypto_balance,
+                                                            updatedBTCBalanceObjectSign: res_obj_sign,
+                                                            trader_flo_address: withdraw_res.trader_flo_address,
+                                                            receiver_flo_address: withdraw_res.trader_flo_address
+                                                        };
+
+                                                        RM_RPC.send_rpc(
+                                                            "updateUserCryptoBalanceRequest",
+                                                            updateUserCryptoBalanceObject
+                                                        ).then(
+                                                            updateUserCryptoBalanceRequestObject =>
+                                                                doSend(updateUserCryptoBalanceRequestObject)
+                                                        );
+
+                                                        // Validate txid
+                                                        let withdrawTxCounter = 1;
+                                                        (async function validateWithdrawTxidInBlockchain() {
+                                                            await localbitcoinplusplus.actions.delay(180000);
+                                                            const validate_withdraw_txid = await helper_functions
+                                                                .chainAjaxRequest("TX_DETAIL", explorer, [resp_txid]);
+                                                            console.log(validate_withdraw_txid);
+                                                            if (typeof validate_withdraw_txid == "object"
+                                                                && validate_withdraw_txid.txid === resp_txid
+                                                                && validate_withdraw_txid.confirmations > 0) {
+
+                                                                const deposited_utxos_latest_status =
+                                                                    await RM_WALLET.refresh_reserved_crypto_balances(
+                                                                        withdraw_res.trader_flo_address,
+                                                                        withdraw_res.utxo_addr
+                                                                    );
+
+                                                                // Send the resp to backups
+                                                                RM_RPC.send_rpc(
+                                                                    "update_deposited_crypto_instance",
+                                                                    {
+                                                                        deposit_data: deposited_utxos_latest_status,
+                                                                        db_inst: params.db_inst,
+                                                                        trader_flo_address:
+                                                                            withdraw_res.trader_flo_address
+                                                                    }
+                                                                ).then(delRequestObject =>
+                                                                    doSend(delRequestObject)
+                                                                );
+
+                                                                removeinDB("withdraw_btc", withdraw_id);
+
+                                                                RM_RPC.send_rpc(
+                                                                    "delete_deposited_crypto_instance",
+                                                                    {
+                                                                        withdraw_btc_id: withdraw_id,
+                                                                        db_inst: params.db_inst,
+                                                                        trader_flo_address:
+                                                                            withdraw_res.trader_flo_address
+                                                                    }
+                                                                ).then(delRequestObject =>
+                                                                    doSend(delRequestObject)
+                                                                );
+
+                                                            } else if (withdrawTxCounter <= 20) {
+                                                                validateWithdrawTxidInBlockchain();
+                                                                withdrawTxCounter++;
+                                                            } else {
+                                                                throw new Error(`Txid ${resp_txid} not registered in ${withdraw_res.product} Blockhain`);
+                                                            }
+                                                        })();
+
+                                                    } else {
+                                                        console.log(withdraw_crypto_response);
+                                                        throw new Errror(`ERROR: Failed to make transaction.`);
+                                                    }
+                                                } else {
+                                                    throw new Errror("Waithdraw transaction is not an object");
+                                                }
                                             }
 
                                         } catch (error) {
@@ -19129,7 +19064,12 @@
                                                 false
                                             );
 
-                                            throw new Error(error);
+                                            err_response = {
+                                                user_flo_addr: params.trader_flo_address,
+                                                msg: `Withdraw of crypto failed. Please try again later. ${error}`
+                                            }
+                                            reactor.dispatchEvent('message_for_user', err_response);
+                                            return false;
                                         }
                                     }
                                 );
@@ -20272,267 +20212,247 @@
                                                 // Check how much Cash user can withdraw
                                                 const trader_cash_id = `${params.trader_flo_address}_${params.currency}`;
                                                 backup_server_db_instance
-                                                    .backup_readDB("cash_balances", trader_cash_id)
-                                                    .then(async function (cash_balances_res) {
-                                                        try {
+                                                .backup_readDB("cash_balances", trader_cash_id)
+                                                .then(async function (cash_balances_res) {
+                                                    try {
+                                                        if (
+                                                            typeof cash_balances_res == "object" &&
+                                                            typeof cash_balances_res.trader_flo_address ==
+                                                            "string" &&
+                                                            typeof cash_balances_res.cash_balance ==
+                                                            "number" &&
+                                                            cash_balances_res.cash_balance > 0
+                                                        ) {
+                                                            let old_cash_balances_res = JSON.parse(JSON.stringify(cash_balances_res));
+                                                            let withdrawer_cash_balance = helper_functions.truncateDecimals(
+                                                                cash_balances_res.cash_balance, 2
+                                                            );
+                                                            let withdrawing_cash_amount = helper_functions.truncateDecimals(
+                                                                params.withdrawing_amount, 2
+                                                            );
+                                                            let bank_details = params.receivinAddress.trim(); // user UPI
+
                                                             if (
-                                                                typeof cash_balances_res == "object" &&
-                                                                typeof cash_balances_res.trader_flo_address ==
-                                                                "string" &&
-                                                                typeof cash_balances_res.cash_balance ==
-                                                                "number" &&
-                                                                cash_balances_res.cash_balance > 0
+                                                                withdrawer_cash_balance > 0 &&
+                                                                withdrawing_cash_amount > 0 &&
+                                                                withdrawer_cash_balance >=
+                                                                withdrawing_cash_amount
                                                             ) {
-                                                                let old_cash_balances_res = JSON.parse(JSON.stringify(cash_balances_res));
-                                                                let withdrawer_cash_balance = helper_functions.truncateDecimals(
-                                                                    cash_balances_res.cash_balance, 2
+                                                                // Deduct balance of withdrawer
+                                                                cash_balances_res.cash_balance -= helper_functions.truncateDecimals(
+                                                                    withdrawing_cash_amount, 2
                                                                 );
-                                                                let withdrawing_cash_amount = helper_functions.truncateDecimals(
-                                                                    params.withdrawing_amount, 2
+                                                                const withdrawer_cash_data = await backup_server_db_instance.backup_updateinDB(
+                                                                    "cash_balances",
+                                                                    cash_balances_res
                                                                 );
-                                                                let bank_details = params.receivinAddress.trim(); // user UPI
+                                                                // Get a cashier
+                                                                const cashiersList = JSON.parse(
+                                                                    localbitcoinplusplus.master_configurations.cashiers
+                                                                );
+                                                                const cashiersPubKeysArray = Object.keys(cashiersList);
+                                                                const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
+                                                                const cashierFloAddr = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
+                                                                    getAPaymentHandler
+                                                                );
 
+                                                                if (!cashiersPubKeysArray.includes(getAPaymentHandler)) {
+                                                                    throw new Error(
+                                                                        `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`
+                                                                    );
+                                                                }
+
+                                                                const encoded_bank_details = localbitcoinplusplus.encrypt.encryptMessage(
+                                                                    bank_details,
+                                                                    getAPaymentHandler
+                                                                );
+
+                                                                let token_transfer_currency = "";
+                                                                if (params.currency == "INR") {
+                                                                    token_transfer_currency = "rupee";
+                                                                }
+
+                                                                const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${params.trader_flo_address}.`;
+
+                                                                // Add it to cash withdrawal table
+                                                                let withdraw_request_db_object = {
+                                                                    id: helper_functions.unique_id(),
+                                                                    trader_flo_address: params.trader_flo_address,
+                                                                    withdraw_amount: withdrawing_cash_amount,
+                                                                    currency: params.currency,
+                                                                    receivinAddress: encoded_bank_details,
+                                                                    cashier_pubKey: getAPaymentHandler,
+                                                                    status: 1 // withdraw request called
+                                                                };
+
+                                                                const su_data = await readDB("localbitcoinUser", "00-01");
                                                                 if (
-                                                                    withdrawer_cash_balance > 0 &&
-                                                                    withdrawing_cash_amount > 0 &&
-                                                                    withdrawer_cash_balance >=
-                                                                    withdrawing_cash_amount
-                                                                ) {
-                                                                    // Deduct balance of withdrawer
-                                                                    cash_balances_res.cash_balance -= helper_functions.truncateDecimals(
-                                                                        withdrawing_cash_amount, 2
-                                                                    );
-                                                                    const withdrawer_cash_data = await backup_server_db_instance.backup_updateinDB(
-                                                                        "cash_balances",
-                                                                        cash_balances_res
-                                                                    );
-                                                                    // Get a cashier
-                                                                    const cashiersList = JSON.parse(
-                                                                        localbitcoinplusplus.master_configurations
-                                                                            .cashiers
-                                                                    );
-                                                                    const cashiersPubKeysArray = Object.keys(cashiersList);
-                                                                    const getAPaymentHandler = randomNoRepeats(cashiersPubKeysArray)();
-                                                                    const cashierFloAddr = bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(
-                                                                        getAPaymentHandler
-                                                                    );
-
-                                                                    if (!cashiersPubKeysArray.includes(
-                                                                        getAPaymentHandler
+                                                                    typeof su_data == "object" &&
+                                                                    typeof su_data.myLocalFLOPublicKey ==
+                                                                    "string" &&
+                                                                    su_data.myLocalFLOPublicKey.length > 0 &&
+                                                                    localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
+                                                                        su_data.myLocalFLOPublicKey
                                                                     )
-                                                                    ) {
-                                                                        throw new Error(
-                                                                            `ERROR: ${getAPaymentHandler} is not recognized as any Cashier's Public Key.`
-                                                                        );
-                                                                    }
-
-                                                                    const encoded_bank_details = localbitcoinplusplus.encrypt.encryptMessage(
-                                                                        bank_details,
-                                                                        getAPaymentHandler
+                                                                ) {
+                                                                    let withdraw_request_db_object_hash = Crypto.SHA256(
+                                                                        JSON.stringify(
+                                                                            withdraw_request_db_object
+                                                                        )
                                                                     );
+                                                                    withdraw_request_db_object[
+                                                                        "withdrawDataHash"
+                                                                    ] = withdraw_request_db_object_hash;
+                                                                    withdraw_request_db_object[
+                                                                        "order_validator_sign"
+                                                                    ] = RM_WALLET.sign(
+                                                                        withdraw_request_db_object_hash,
+                                                                        localbitcoinplusplus.wallets
+                                                                            .MY_SUPERNODE_PRIVATE_KEY
+                                                                    );
+                                                                    withdraw_request_db_object[
+                                                                        "order_validator_public_key"
+                                                                    ] = su_data.myLocalFLOPublicKey;
 
-                                                                    let token_transfer_currency = "";
-                                                                    if (params.currency == "INR") {
-                                                                        token_transfer_currency = "rupee";
-                                                                    }
+                                                                    // Transfer Token
+                                                                    const flo_withdraw_tx_res =
+                                                                        await RM_TRADE.sendMultipleInputsTransaction(
+                                                                            localbitcoinplusplus.BASE_BLOCKCHAIN,
+                                                                            [localbitcoinplusplus.wallets
+                                                                                .MY_SUPERNODE_PRIVATE_KEY],
+                                                                            cashierFloAddr,
+                                                                            0.01,
+                                                                            localbitcoinplusplus.wallets
+                                                                                .my_local_flo_address,
+                                                                            flo_withdraw_comment
+                                                                        );
 
-                                                                    const flo_withdraw_comment = `transfer ${withdrawing_cash_amount} ${token_transfer_currency}# to ${params.trader_flo_address}.`;
-
-                                                                    // Add it to cash withdrawal table
-                                                                    let withdraw_request_db_object = {
-                                                                        id: helper_functions.unique_id(),
-                                                                        trader_flo_address: params.trader_flo_address,
-                                                                        withdraw_amount: withdrawing_cash_amount,
-                                                                        currency: params.currency,
-                                                                        receivinAddress: encoded_bank_details,
-                                                                        cashier_pubKey: getAPaymentHandler,
-                                                                        status: 1 // withdraw request called
-                                                                    };
-
-                                                                    readDB("localbitcoinUser", "00-01").then(
-                                                                        function (su_data) {
+                                                                    console.log(flo_withdraw_tx_res);
+                                                                    if (typeof flo_withdraw_tx_res == "object") {
+                                                                        try {
+                                                                            let msg = "";
+                                                                            let resp_txid = "";
                                                                             if (
-                                                                                typeof su_data == "object" &&
-                                                                                typeof su_data.myLocalFLOPublicKey ==
-                                                                                "string" &&
-                                                                                su_data.myLocalFLOPublicKey.length > 0 &&
-                                                                                localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
-                                                                                    su_data.myLocalFLOPublicKey
-                                                                                )
+                                                                                typeof flo_withdraw_tx_res.txid == "string" &&
+                                                                                flo_withdraw_tx_res.txid.length > 0
                                                                             ) {
-                                                                                let withdraw_request_db_object_hash = Crypto.SHA256(
-                                                                                    JSON.stringify(
-                                                                                        withdraw_request_db_object
-                                                                                    )
+                                                                                resp_obj = flo_withdraw_tx_res.txid
+                                                                                resp_txid =
+                                                                                    resp_obj.txid.result ||
+                                                                                    resp_obj.txid;
+                                                                                msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
+                                                                            } else {
+                                                                                err_response = {
+                                                                                    user_flo_addr: cashierFloAddr,
+                                                                                    msg: `Failed to transfer token for withdraw id ${withdraw_request_db_object.id}`
+                                                                                }
+                                                                                reactor.dispatchEvent('message_for_user', err_response);
+                                                                                throw new Errror(`ERROR: Failed to make transaction.`);
+                                                                            }
+
+                                                                            if (msg.length > 0) {
+
+                                                                                const update_cash_balance_obj = {
+                                                                                    withdrawer_cash_data: withdrawer_cash_data
+                                                                                };
+                                                                                const update_cash_balance_str = JSON.stringify(
+                                                                                    update_cash_balance_obj
                                                                                 );
-                                                                                withdraw_request_db_object[
-                                                                                    "withdrawDataHash"
-                                                                                ] = withdraw_request_db_object_hash;
-                                                                                withdraw_request_db_object[
-                                                                                    "order_validator_sign"
-                                                                                ] = RM_WALLET.sign(
-                                                                                    withdraw_request_db_object_hash,
+                                                                                const update_cash_balance_hash = Crypto.SHA256(
+                                                                                    update_cash_balance_str
+                                                                                );
+                                                                                const update_cash_balance_sign = RM_WALLET.sign(
+                                                                                    update_cash_balance_hash,
                                                                                     localbitcoinplusplus.wallets
                                                                                         .MY_SUPERNODE_PRIVATE_KEY
                                                                                 );
-                                                                                withdraw_request_db_object[
-                                                                                    "order_validator_public_key"
-                                                                                ] = su_data.myLocalFLOPublicKey;
 
-                                                                                try {
-                                                                                    // Transfer Token
-                                                                                    RM_TRADE.sendMultipleInputsTransaction(
-                                                                                        localbitcoinplusplus.BASE_BLOCKCHAIN,
-                                                                                        [localbitcoinplusplus.wallets
-                                                                                            .MY_SUPERNODE_PRIVATE_KEY],
-                                                                                        cashierFloAddr,
-                                                                                        0.01,
-                                                                                        localbitcoinplusplus.wallets
-                                                                                            .my_local_flo_address,
-                                                                                        async function (res) {
-                                                                                            console.log(res);
-                                                                                            if (typeof res == "object") {
-                                                                                                try {
-                                                                                                    let msg = "";
-                                                                                                    let resp_txid = "";
-                                                                                                    if (
-                                                                                                        typeof res.txid == "string" &&
-                                                                                                        res.txid.length > 0
-                                                                                                    ) {
-                                                                                                        resp_obj = JSON.parse(
-                                                                                                            res.txid
-                                                                                                        );
-                                                                                                        resp_txid =
-                                                                                                            resp_obj.txid.result ||
-                                                                                                            resp_obj.txid;
-                                                                                                        msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
-                                                                                                    } else {
-                                                                                                        err_response = {
-                                                                                                            user_flo_addr: cashierFloAddr,
-                                                                                                            msg: `Failed to transfer token for withdraw id ${withdraw_request_db_object.id}`
-                                                                                                        }
-                                                                                                        reactor.dispatchEvent('message_for_user', err_response);
-                                                                                                        throw new Errror(
-                                                                                                            `ERROR: Failed to make transaction.`
-                                                                                                        );
-                                                                                                        return false;
-                                                                                                    }
+                                                                                update_cash_balance_obj.publicKey =
+                                                                                    localbitcoinplusplus.wallets.my_local_flo_public_key;
+                                                                                update_cash_balance_obj.sign = update_cash_balance_sign;
+                                                                                update_cash_balance_obj.hash = update_cash_balance_hash;
+                                                                                update_cash_balance_obj.trader_flo_address = cash_balances_res.trader_flo_address;
 
-                                                                                                    if (msg.length > 0) {
-                                                                                                        
-                                                                                                        const update_cash_balance_obj = {
-                                                                                                            withdrawer_cash_data: withdrawer_cash_data
-                                                                                                        };
-                                                                                                        const update_cash_balance_str = JSON.stringify(
-                                                                                                            update_cash_balance_obj
-                                                                                                        );
-                                                                                                        const update_cash_balance_hash = Crypto.SHA256(
-                                                                                                            update_cash_balance_str
-                                                                                                        );
-                                                                                                        const update_cash_balance_sign = RM_WALLET.sign(
-                                                                                                            update_cash_balance_hash,
-                                                                                                            localbitcoinplusplus.wallets
-                                                                                                                .MY_SUPERNODE_PRIVATE_KEY
-                                                                                                        );
-
-                                                                                                        update_cash_balance_obj.publicKey =
-                                                                                                            localbitcoinplusplus.wallets.my_local_flo_public_key;
-                                                                                                        update_cash_balance_obj.sign = update_cash_balance_sign;
-                                                                                                        update_cash_balance_obj.hash = update_cash_balance_hash;
-                                                                                                        update_cash_balance_obj.trader_flo_address = cash_balances_res.trader_flo_address;
-
-                                                                                                        RM_RPC.send_rpc
-                                                                                                            .call(
-                                                                                                                this,
-                                                                                                                "update_all_new_cash_withdraw_recorded_in_db",
-                                                                                                                update_cash_balance_obj
-                                                                                                            )
-                                                                                                            .then(
-                                                                                                                update_cash_balance_req =>
-                                                                                                                    doSend(
-                                                                                                                        update_cash_balance_req
-                                                                                                                    )
-                                                                                                            );
-
-                                                                                                        //add the request to supernode db
-                                                                                                        withdraw_request_db_object.token_transfer_txid =
-                                                                                                            resp_txid ||
-                                                                                                            res.signedTxHash;
-
-                                                                                                        // Add record in Db
-                                                                                                        const withdraw_request_db_object_res = await backup_server_db_instance.backup_addDB(
-                                                                                                            "withdraw_cash",
-                                                                                                            withdraw_request_db_object
-                                                                                                        );
-
-                                                                                                        // return back the response to client
-                                                                                                        withdraw_request_db_object_res.receiver_flo_address =
-                                                                                                            params.trader_flo_address;
-                                                                                                        withdraw_request_db_object_res.trader_flo_address =
-                                                                                                            params.trader_flo_address;
-                                                                                                        RM_RPC.send_rpc
-                                                                                                            .call(
-                                                                                                                this,
-                                                                                                                "withdrawal_request_response",
-                                                                                                                withdraw_request_db_object_res
-                                                                                                            )
-                                                                                                            .then(
-                                                                                                                withdrawal_request_response =>
-                                                                                                                    doSend(
-                                                                                                                        withdrawal_request_response
-                                                                                                                    )
-                                                                                                            );
-                                                                                                    } else {
-                                                                                                        throw new Errror(
-                                                                                                            `ERROR: Failed to make transaction. Message length is 0: ${msg}`
-                                                                                                        );
-                                                                                                        return false;
-                                                                                                    }
-                                                                                                } catch (e) {
-                                                                                                    console.error(e);
-                                                                                                    backup_server_db_instance.backup_updateinDB("cash_balances", 
-                                                                                                        old_cash_balances_res, 
-                                                                                                        old_cash_balances_res.id, 
-                                                                                                        false, false
-                                                                                                    );
-                                                                                                }
-                                                                                            }
-                                                                                        },
-                                                                                        flo_withdraw_comment
+                                                                                RM_RPC.send_rpc
+                                                                                    .call(
+                                                                                        this,
+                                                                                        "update_all_new_cash_withdraw_recorded_in_db",
+                                                                                        update_cash_balance_obj
+                                                                                    )
+                                                                                    .then(
+                                                                                        update_cash_balance_req =>
+                                                                                            doSend(
+                                                                                                update_cash_balance_req
+                                                                                            )
                                                                                     );
-                                                                                } catch (error) {
-                                                                                    console.error(error);
-                                                                                    backup_server_db_instance.backup_updateinDB("cash_balances", 
-                                                                                        old_cash_balances_res, 
-                                                                                        old_cash_balances_res.id, 
-                                                                                        false, false
+
+                                                                                //add the request to supernode db
+                                                                                withdraw_request_db_object.token_transfer_txid =
+                                                                                    resp_txid ||
+                                                                                    flo_withdraw_tx_res.signedTxHash;
+
+                                                                                // Add record in Db
+                                                                                const withdraw_request_db_object_res = await backup_server_db_instance.backup_addDB(
+                                                                                    "withdraw_cash",
+                                                                                    withdraw_request_db_object
+                                                                                );
+
+                                                                                // return back the response to client
+                                                                                withdraw_request_db_object_res.receiver_flo_address =
+                                                                                    params.trader_flo_address;
+                                                                                withdraw_request_db_object_res.trader_flo_address =
+                                                                                    params.trader_flo_address;
+                                                                                RM_RPC.send_rpc
+                                                                                    .call(
+                                                                                        this,
+                                                                                        "withdrawal_request_response",
+                                                                                        withdraw_request_db_object_res
+                                                                                    )
+                                                                                    .then(
+                                                                                        withdrawal_request_response =>
+                                                                                            doSend(
+                                                                                                withdrawal_request_response
+                                                                                            )
                                                                                     );
-                                                                                }
+                                                                            } else {
+                                                                                throw new Errror(
+                                                                                    `ERROR: Failed to make transaction. Message length is 0: ${msg}`
+                                                                                );
                                                                             }
+                                                                        } catch (e) {
+                                                                            console.error(e);
+                                                                            backup_server_db_instance.backup_updateinDB("cash_balances",
+                                                                                old_cash_balances_res,
+                                                                                old_cash_balances_res.id,
+                                                                                false, false
+                                                                            );
                                                                         }
-                                                                    );
-                                                                } else {
-                                                                    // Return error to the requester
-                                                                    err_msg =
-                                                                        "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account.";
-                                                                    err_response = {
-                                                                        user_flo_addr: params.trader_flo_address,
-                                                                        msg: err_msg
                                                                     }
-                                                                    reactor.dispatchEvent('message_for_user', err_response);
-                                                                    throw new Error(err_msg);
-                                                                }
-                                                            }
-                                                        } catch(e) {
-                                                            console.error(e);
-                                                            backup_server_db_instance.backup_updateinDB("cash_balances", 
-                                                                old_cash_balances_res, 
-                                                                old_cash_balances_res.id, 
-                                                                false, false
-                                                            );
-                                                        }
 
-                                                    });
+                                                                }
+
+                                                            } else {
+                                                                // Return error to the requester
+                                                                err_msg =
+                                                                    "Withdrawal request failed: You are trying to withdraw more cash than you have in localbitcoinplusplus account.";
+                                                                err_response = {
+                                                                    user_flo_addr: params.trader_flo_address,
+                                                                    msg: err_msg
+                                                                }
+                                                                reactor.dispatchEvent('message_for_user', err_response);
+                                                                throw new Error(err_msg);
+                                                            }
+                                                        }
+                                                    } catch (e) {
+                                                        console.error(e);
+                                                        backup_server_db_instance.backup_updateinDB("cash_balances",
+                                                            old_cash_balances_res,
+                                                            old_cash_balances_res.id,
+                                                            false, false
+                                                        );
+                                                    }
+
+                                                })
                                             } else {
                                                 err_msg = "withdraw request error";
                                                 showMessage(err_msg);
@@ -20774,179 +20694,146 @@
                                                     withdrawer_crypto_bal_id
                                                 );
 
-                                                RM_TRADE.sendMultipleInputsTransaction(
+                                                const withdraw_tx_response = 
+                                                await RM_TRADE.sendMultipleInputsTransaction(
                                                     withdraw_res.product,
                                                     params.btc_private_key_array,
                                                     withdraw_res.receiverBTCAddress,
                                                     totalWithdrawingAmount,
-                                                    withdraw_res.utxo_addr[0],
-                                                    async function (res) {
-                                                        console.log(res);
-                                                        try {
-                                                            if (typeof res == "object") {
-                                                                let msg = "";
-                                                                let emsg = '';
-                                                                let respo_obj = JSON.parse(res.txid);
-                                                                if((typeof respo_obj.txid!=="string"
-                                                                && typeof respo_obj.txid.result!=="string")
-                                                                && res.error==true) {
-                                                                    emsg = 'Failed to send Transaction.';
-                                                                    if(typeof res.msg == "string") {
-                                                                        emsg = res.msg;
-                                                                    }
-                                                                    console.error(emsg);
-                                                                    RM_RPC.send_rpc
-                                                                    .call(this, "supernode_message", {
-                                                                        trader_flo_address:
-                                                                            withdraw_res.trader_flo_address,
-                                                                        receiver_flo_address:
-                                                                            withdraw_res.trader_flo_address,
-                                                                        server_msg: emsg
-                                                                    })
-                                                                    .then(server_response =>
-                                                                        doSend(server_response)
-                                                                    );
-                                                                    throw new Error(emsg);
-                                                                }
-                                                                if (
-                                                                    typeof res.txid == "string" &&
-                                                                    res.txid.length > 0
-                                                                ) {
-                                                                    resp_obj = JSON.parse(res.txid);
-                                                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                                                    msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
-
-                                                                    const RM_RPC = new localbitcoinplusplus.rpc();
-                                                                    RM_RPC.send_rpc
-                                                                        .call(this, "supernode_message", {
-                                                                            trader_flo_address:
-                                                                                withdraw_res.trader_flo_address,
-                                                                            receiver_flo_address:
-                                                                                withdraw_res.trader_flo_address,
-                                                                            server_msg: msg
-                                                                        })
-                                                                        .then(server_response =>
-                                                                            doSend(server_response)
-                                                                        );
-
-                                                                    const res_obj_str = JSON.stringify(updated_crypto_balance);
-                                                                    const res_obj_hash = Crypto.SHA256(res_obj_str);
-                                                                    const res_obj_sign = RM_WALLET.sign(
-                                                                        res_obj_hash,
-                                                                        localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
-                                                                    );
-
-                                                                    const updateUserCryptoBalanceObject = {
-                                                                        updatedBTCBalanceObject: updated_crypto_balance,
-                                                                        updatedBTCBalanceObjectSign: res_obj_sign,
-                                                                        trader_flo_address: withdraw_res.trader_flo_address,
-                                                                        receiver_flo_address: withdraw_res.trader_flo_address
-                                                                    };
-
-                                                                    RM_RPC.send_rpc(
-                                                                        "updateUserCryptoBalanceRequest",
-                                                                        updateUserCryptoBalanceObject
-                                                                    ).then(
-                                                                        updateUserCryptoBalanceRequestObject =>
-                                                                            doSend(updateUserCryptoBalanceRequestObject)
-                                                                    );
-
-                                                                    // Validate txid
-                                                                    let withdrawTxCounter = 1;
-                                                                    (async function validateWithdrawTxidInBlockchain() {
-                                                                        await localbitcoinplusplus.actions.delay(180000);
-                                                                        const validate_withdraw_txid = await helper_functions
-                                                                            .chainAjaxRequest("TX_DETAIL", explorer, [resp_txid]);
-                                                                        console.log(validate_withdraw_txid);
-                                                                        if (typeof validate_withdraw_txid == "object"
-                                                                            && validate_withdraw_txid.txid === resp_txid
-                                                                            && validate_withdraw_txid.confirmations > 0) {
-
-                                                                            const deposited_utxos_latest_status =
-                                                                                await RM_WALLET.refresh_reserved_crypto_balances(
-                                                                                    withdraw_res.trader_flo_address,
-                                                                                    withdraw_res.utxo_addr
-                                                                                );
-
-                                                                            // Send the resp to backups
-                                                                            RM_RPC.send_rpc(
-                                                                                "update_deposited_crypto_instance",
-                                                                                {
-                                                                                    deposit_data: deposited_utxos_latest_status,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        withdraw_res.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
-
-                                                                            backup_server_db_instance
-                                                                                .backup_removeinDB("withdraw_btc", withdraw_id);
-
-                                                                            RM_RPC.send_rpc(
-                                                                                "delete_deposited_crypto_instance",
-                                                                                {
-                                                                                    withdraw_btc_id: withdraw_id,
-                                                                                    db_inst: params.db_inst,
-                                                                                    trader_flo_address:
-                                                                                        withdraw_res.trader_flo_address
-                                                                                }
-                                                                            ).then(delRequestObject =>
-                                                                                doSend(delRequestObject)
-                                                                            );
-
-                                                                        } else if (n <= 20) {
-                                                                            validateWithdrawTxidInBlockchain();
-                                                                            withdrawTxCounter++;
-                                                                        } else {
-                                                                            throw new Error(`Txid ${resp_txid} not registered in ${withdraw_res.product} Blockhain`);
-                                                                        }
-                                                                    })();
-                                                                    return true;
-
-                                                                } else {
-                                                                    console.log(res);
-                                                                    throw new Errror(`ERROR: Failed to make transaction.`);
-                                                                }
-                                                            } else {
-                                                                console.error("Waithdraw transaction is not an object");
-                                                                throw new Errror(`ERROR: Failed to make transaction.`);
-                                                            }
-
-                                                        } catch (error) {
-                                                            console.warn(error);
-                                                            err_response = {
-                                                                user_flo_addr: params.trader_flo_address,
-                                                                msg: `Withdraw of crypto failed. Network issue:- Please try again after 30 minutes.`
-                                                            }
-                                                            reactor.dispatchEvent('message_for_user', err_response);
-
-                                                            // update deposits status back to 2 in db
-                                                            for (const deposited_utxo_idx in withdraw_res.utxo_addr) {
-                                                                let deposited_utxo_addr = withdraw_res.utxo_addr[deposited_utxo_idx];
-                                                                const deposit_arr_resp = await backup_server_db_instance
-                                                                    .backup_readDBbyIndex(
-                                                                        "deposit",
-                                                                        "btc_address",
-                                                                        deposited_utxo_addr
-                                                                    )
-                                                                if (typeof deposit_arr_resp[0] == "object") {
-                                                                    deposit_arr_resp[0].status = 2; // UTXO ready to be used again
-                                                                    await backup_server_db_instance
-                                                                        .backup_updateinDB(
-                                                                            "deposit",
-                                                                            deposit_arr_resp[0],
-                                                                            deposit_arr_resp[0].id
-                                                                        );
-                                                                }
-                                                            }
-                                                            await backup_server_db_instance
-                                                                .backup_removeinDB("withdraw_btc", withdraw_id);
-
-                                                        }
-                                                    }
+                                                    withdraw_res.utxo_addr[0]
                                                 );
+
+                                                console.log(withdraw_tx_response);
+                                                if (typeof withdraw_tx_response == "object" && withdraw_tx_response !== null) {
+                                                    let msg = "";
+                                                    let emsg = '';
+                                                    let respo_obj = withdraw_tx_response.txid;
+                                                    if ((typeof respo_obj.txid !== "string"
+                                                        && typeof respo_obj.txid.result !== "string")
+                                                        && withdraw_tx_response.error == true) {
+                                                        emsg = 'Failed to send Transaction.';
+                                                        if (typeof withdraw_tx_response.msg == "string") {
+                                                            emsg = withdraw_tx_response.msg;
+                                                        }
+                                                        RM_RPC.send_rpc
+                                                            .call(this, "supernode_message", {
+                                                                trader_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                receiver_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                server_msg: emsg
+                                                            })
+                                                            .then(server_response =>
+                                                                doSend(server_response)
+                                                            );
+                                                        throw new Error(emsg);
+                                                    }
+                                                    if (
+                                                        typeof withdraw_tx_response.txid == "string" &&
+                                                        withdraw_tx_response.txid.length > 0
+                                                    ) {
+                                                        resp_obj = JSON.parse(withdraw_tx_response.txid);
+                                                        resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                        msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
+
+                                                        const RM_RPC = new localbitcoinplusplus.rpc();
+                                                        RM_RPC.send_rpc
+                                                            .call(this, "supernode_message", {
+                                                                trader_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                receiver_flo_address:
+                                                                    withdraw_res.trader_flo_address,
+                                                                server_msg: msg
+                                                            })
+                                                            .then(server_response =>
+                                                                doSend(server_response)
+                                                            );
+
+                                                        const res_obj_str = JSON.stringify(updated_crypto_balance);
+                                                        const res_obj_hash = Crypto.SHA256(res_obj_str);
+                                                        const res_obj_sign = RM_WALLET.sign(
+                                                            res_obj_hash,
+                                                            localbitcoinplusplus.wallets.MY_SUPERNODE_PRIVATE_KEY
+                                                        );
+
+                                                        const updateUserCryptoBalanceObject = {
+                                                            updatedBTCBalanceObject: updated_crypto_balance,
+                                                            updatedBTCBalanceObjectSign: res_obj_sign,
+                                                            trader_flo_address: withdraw_res.trader_flo_address,
+                                                            receiver_flo_address: withdraw_res.trader_flo_address
+                                                        };
+
+                                                        RM_RPC.send_rpc(
+                                                            "updateUserCryptoBalanceRequest",
+                                                            updateUserCryptoBalanceObject
+                                                        ).then(
+                                                            updateUserCryptoBalanceRequestObject =>
+                                                                doSend(updateUserCryptoBalanceRequestObject)
+                                                        );
+
+                                                        // Validate txid
+                                                        let withdrawTxCounter = 1;
+                                                        (async function validateWithdrawTxidInBlockchain() {
+                                                            await localbitcoinplusplus.actions.delay(180000);
+                                                            const validate_withdraw_txid = await helper_functions
+                                                                .chainAjaxRequest("TX_DETAIL", explorer, [resp_txid]);
+                                                            console.log(validate_withdraw_txid);
+                                                            if (typeof validate_withdraw_txid == "object"
+                                                                && validate_withdraw_txid.txid === resp_txid
+                                                                && validate_withdraw_txid.confirmations > 0) {
+
+                                                                const deposited_utxos_latest_status =
+                                                                    await RM_WALLET.refresh_reserved_crypto_balances(
+                                                                        withdraw_res.trader_flo_address,
+                                                                        withdraw_res.utxo_addr
+                                                                    );
+
+                                                                // Send the resp to backups
+                                                                RM_RPC.send_rpc(
+                                                                    "update_deposited_crypto_instance",
+                                                                    {
+                                                                        deposit_data: deposited_utxos_latest_status,
+                                                                        db_inst: params.db_inst,
+                                                                        trader_flo_address:
+                                                                            withdraw_res.trader_flo_address
+                                                                    }
+                                                                ).then(delRequestObject =>
+                                                                    doSend(delRequestObject)
+                                                                );
+
+                                                                backup_server_db_instance
+                                                                    .backup_removeinDB("withdraw_btc", withdraw_id);
+
+                                                                RM_RPC.send_rpc(
+                                                                    "delete_deposited_crypto_instance",
+                                                                    {
+                                                                        withdraw_btc_id: withdraw_id,
+                                                                        db_inst: params.db_inst,
+                                                                        trader_flo_address:
+                                                                            withdraw_res.trader_flo_address
+                                                                    }
+                                                                ).then(delRequestObject =>
+                                                                    doSend(delRequestObject)
+                                                                );
+
+                                                            } else if (withdrawTxCounter <= 20) {
+                                                                validateWithdrawTxidInBlockchain();
+                                                                withdrawTxCounter++;
+                                                            } else {
+                                                                throw new Error(`Txid ${resp_txid} not registered in ${withdraw_res.product} Blockhain`);
+                                                            }
+                                                        })();
+                                                        return true;
+
+                                                    } else {
+                                                        console.log(withdraw_tx_response);
+                                                        throw new Errror(`ERROR: Failed to make transaction.`);
+                                                    }
+                                                } else {
+                                                    console.error("Waithdraw transaction is not an object");
+                                                    throw new Errror(`ERROR: Failed to make transaction.`);
+                                                }
+
                                             }
 
                                         } catch (error) {
@@ -20983,7 +20870,13 @@
                                                     false
                                                 );
 
-                                            throw new Error(error);
+                                            err_response = {
+                                                user_flo_addr: params.trader_flo_address,
+                                                msg: `Withdraw of crypto failed. Please try again after 30 minutes. ${error}`
+                                            }
+                                            reactor.dispatchEvent('message_for_user', err_response);
+
+                                            return false;
                                         }
                                     }
                                 );
@@ -22175,203 +22068,163 @@
                     ];
                 },
                 // Send transaction for multiple inputs and outputs
-                sendMultipleInputsTransaction(
+                async sendMultipleInputsTransaction(
                     crypto_type,
                     utxo_addr_wif,
                     receiver_address,
                     receiving_amount,
                     change_adress,
-                    callback,
                     custom_floData = ""
                 ) {
                     try {
-
-                    let blockchain_explorer;
-                    let miners_fee = 0.0003;
-                    const miner_fee_obj = JSON.parse(
-                        localbitcoinplusplus.master_configurations.miners_fee
-                    );
-                    if (crypto_type == "BTC") {
-                        blockchain_explorer = localbitcoinplusplus.server.btc_mainnet;
-                        miners_fee = miner_fee_obj.btc;
-                    } else if (crypto_type == "BTC_TEST") {
-                        blockchain_explorer = localbitcoinplusplus.server.btc_testnet;
-                        miners_fee = miner_fee_obj.btc;
-                    } else if (crypto_type == "FLO") {
-                        blockchain_explorer = localbitcoinplusplus.server.flo_mainnet;
-                        miners_fee = miner_fee_obj.flo;
-                    } else if (crypto_type == "FLO_TEST") {
-                        blockchain_explorer = localbitcoinplusplus.server.flo_testnet;
-                        miners_fee = miner_fee_obj.flo;
-                    }
-
-                    if (typeof blockchain_explorer !== "string") {
-                        notify(
-                            `WARNING: Please select cryptocurrency/fiat value from select bar.`, 'error'
-                        , 'error');
-                        return false;
-                    }
-
-                    let err_msg;
-                    let utxo_list_req = [];
-                    const RM_WALLET = new localbitcoinplusplus.wallets;
-
-                    for (const pk of utxo_addr_wif) {
-                        let keygen = RM_WALLET.generateFloKeys(pk, crypto_type);
-                        let utxo_addr = keygen.address;
-                        utxo_list_req.push(helper_functions.chainAjaxRequest("UTXOS_BY_ADDRESS", blockchain_explorer, [utxo_addr]));
-                    }
-
-                    Promise.all(utxo_list_req).then(all_utxos => {
-                        all_utxos = all_utxos.filter(f=>![undefined, null].includes(f));
-                        if (all_utxos.length>0) {
-                            try {
-                                const utxo_list = [].concat(...all_utxos);
-                                utxo_list.sort((a, b) => b.confirmations - a.confirmations);
-                                let btc_eq_receiving_amount = Number(receiving_amount);
-
-                                let trx = bitjs[crypto_type].transaction();
-                                let sum = 0;
-                                let signing_private_keys_array = [];
-
-                                for (var key in utxo_list) {
-                                    if (utxo_list[key].confirmations > 0) {
-                                        var obj = utxo_list[key];
-                                        // Find the private key of this utxo (signingPk)
-                                        let signingPk = utxo_addr_wif
-                                            .filter(pk => RM_WALLET.generateFloKeys(pk, crypto_type).address === obj.address);
-
-                                        if (typeof signingPk[0] == "string") {
-                                            signing_private_keys_array.push(signingPk[0]);
-                                        } else continue;
-                                        sum += obj.amount;
-
-                                        if (btc_eq_receiving_amount <= sum) {
-                                            trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
-                                            break;
-                                        } else {
-                                            trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
-                                        }
-                                    }
-                                }
-
-                                if (sum <= 0) {
-                                    console.log(utxo_list);
-                                    throw new Error("ERROR: No amount found in UTXO.");
-                                }
-
-                                // Output cannot be greater than input
-                                if (sum < btc_eq_receiving_amount) {
-                                    //btc_eq_receiving_amount = sum;
-                                    throw new Error(
-                                        `Error: Insufficient balance (${sum}) in exchange. Please try again later.`
-                                    );
-                                }
-
-                                if (btc_eq_receiving_amount - miners_fee <= 0)
-                                    throw new Error(
-                                        `Error: Receiving amount cannot be less than miners_fee.`
-                                    );
-
-                                btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
-
-                                trx.addoutput(receiver_address, btc_eq_receiving_amount);
-
-                                let change_amount = 0;
-                                if (sum - btc_eq_receiving_amount - miners_fee > 0) {
-                                    change_amount = sum - btc_eq_receiving_amount - miners_fee;
-                                }
-
-                                if (change_amount > 0) {
-                                    if (typeof change_adress !== "string"
-                                        || change_adress.length < 1) {
-                                        let change_adress_keygen = RM_WALLET.generateFloKeys(utxo_addr_wif[0], crypto_type);
-                                        change_adress = change_adress_keygen.address;
-                                    }
-                                    trx.addoutput(change_adress, change_amount);
-                                }
-                                var sendFloData = `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
-                                if (custom_floData.length > 0) {
-                                    sendFloData = custom_floData;
-                                }
-                                sendFloData = removeWhiteSpaces(sendFloData);    
-                                if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
-                                    trx.addflodata(sendFloData); // flochange .. create this function
-                                }
-
-                                try {
-                                    console.log(trx);
-
-                                    let signedTxHash = trx.sign(signing_private_keys_array, 1); //SIGHASH_ALL DEFAULT 1
-                                    console.log(signedTxHash);
-
-                                    var http = new XMLHttpRequest();
-                                    var tx_send_url = `${blockchain_explorer}/api/tx/send`;
-                                    var params = `{"rawtx":"${signedTxHash}"}`;
-                                    http.open("POST", tx_send_url, true);
-                                    http.setRequestHeader("Content-type", "application/json");
-                                    http.onreadystatechange = function () {
-                                        if (http.readyState == 4) {
-                                            if (http.status == 200) {
-                                                console.log(http.responseText);
-                                                let response_obj = {
-                                                    error: false,
-                                                    signedTxHash: signedTxHash,
-                                                    txid: http.responseText
-                                                };
-                                                callback(response_obj);
-                                            } else {
-                                                let response_obj = {
-                                                    error: true,
-                                                    msg: 'Explorer returned Empty Txid',
-                                                    signedTxHash: signedTxHash,
-                                                    txid: ""
-                                                };
-                                                callback(response_obj);
-                                            }
-                                        }
-                                    };
-                                    http.onerror = function () {
-                                        let response_obj = {
-                                            error: true,
-                                            msg: `http sending error`,
-                                            signedTxHash: signedTxHash,
-                                            txid: ""
-                                        };
-                                        callback(response_obj);
-                                    };
-                                    http.send(params);
-                                } catch (error) {
-                                    console.error(error);
-                                    let response_obj = {
-                                        error: true,
-                                        msg: error, 
-                                        signedTxHash: "",
-                                        txid: ""
-                                    };
-                                    callback(response_obj);
-                                }
-                            } catch (error) {
-                                console.error(error);
-                                let response_obj = {
-                                    error: true,
-                                    msg: error, 
-                                    signedTxHash: "",
-                                    txid: ""
-                                };
-                                callback(response_obj);
-                            }
+                        let blockchain_explorer;
+                        let miners_fee = 0.0003;
+                        let miner_fee_obj = JSON.parse(
+                            localbitcoinplusplus.master_configurations.miners_fee
+                        );
+                        if (crypto_type == "BTC") {
+                            blockchain_explorer = localbitcoinplusplus.server.btc_mainnet;
+                            miners_fee = miner_fee_obj.btc;
+                        } else if (crypto_type == "BTC_TEST") {
+                            blockchain_explorer = localbitcoinplusplus.server.btc_testnet;
+                            miners_fee = miner_fee_obj.btc;
+                        } else if (crypto_type == "FLO") {
+                            blockchain_explorer = localbitcoinplusplus.server.flo_mainnet;
+                            miners_fee = miner_fee_obj.flo;
+                        } else if (crypto_type == "FLO_TEST") {
+                            blockchain_explorer = localbitcoinplusplus.server.flo_testnet;
+                            miners_fee = miner_fee_obj.flo;
                         }
-                    });
-                    } catch(e) {
-                        console.error(error);
-                        let response_obj = {
+
+                        if (typeof blockchain_explorer[0] !== "string") {
+                            notify(
+                                `WARNING: Please select cryptocurrency/fiat value from select bar.`, 'error'
+                                , 'error');
+                            return false;
+                        }
+
+                        let utxo_list_req = [];
+                        const RM_WALLET = new localbitcoinplusplus.wallets;
+
+                        for (const pk of utxo_addr_wif) {
+                            let keygen = RM_WALLET.generateFloKeys(pk, crypto_type);
+                            let utxo_addr = keygen.address;
+                            utxo_list_req.push(helper_functions.chainAjaxRequest("UTXOS_BY_ADDRESS", blockchain_explorer, [utxo_addr]));
+                        }
+
+                        let all_utxos = await Promise.all(utxo_list_req);
+                        all_utxos = all_utxos.filter(f => ![undefined, null].includes(f));
+                        if (all_utxos.length > 0) {
+
+                            let utxo_list = [].concat(...all_utxos);
+                            utxo_list.sort((a, b) => b.confirmations - a.confirmations);
+                            let btc_eq_receiving_amount = Number(receiving_amount);
+
+                            let trx = bitjs[crypto_type].transaction();
+                            let sum = 0;
+                            let signing_private_keys_array = [];
+
+                            for (var key in utxo_list) {
+                                if (utxo_list[key].confirmations > 0) {
+                                    var obj = utxo_list[key];
+                                    // Find the private key of this utxo (signingPk)
+                                    let signingPk = utxo_addr_wif
+                                        .filter(pk => RM_WALLET.generateFloKeys(pk, crypto_type).address === obj.address);
+
+                                    if (typeof signingPk[0] == "string") {
+                                        signing_private_keys_array.push(signingPk[0]);
+                                    } else continue;
+                                    sum += obj.amount;
+
+                                    if (btc_eq_receiving_amount <= sum) {
+                                        trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
+                                        break;
+                                    } else {
+                                        trx.addinput(obj.txid, obj.vout, obj.scriptPubKey);
+                                    }
+                                }
+                            }
+
+                            if (sum <= 0) {
+                                console.log(utxo_list);
+                                throw new Error("ERROR: No amount found in UTXO.");
+                            }
+
+                            // Output cannot be greater than input
+                            if (sum < btc_eq_receiving_amount) {
+                                throw new Error(
+                                    `Error: Insufficient balance (${sum}) in exchange. Please try again later.`
+                                );
+                            }
+
+                            if (btc_eq_receiving_amount - miners_fee <= 0)
+                                throw new Error(
+                                    `Error: Receiving amount cannot be less than miners_fee.`
+                                );
+
+                            btc_eq_receiving_amount = btc_eq_receiving_amount - miners_fee;
+
+                            trx.addoutput(receiver_address, btc_eq_receiving_amount);
+
+                            let change_amount = 0;
+                            if (sum - btc_eq_receiving_amount - miners_fee > 0) {
+                                change_amount = sum - btc_eq_receiving_amount - miners_fee;
+                            }
+
+                            if (change_amount > 0) {
+                                if (typeof change_adress !== "string"
+                                    || change_adress.length < 1) {
+                                    let change_adress_keygen = RM_WALLET.generateFloKeys(utxo_addr_wif[0], crypto_type);
+                                    change_adress = change_adress_keygen.address;
+                                }
+                                trx.addoutput(change_adress, change_amount);
+                            }
+                            var sendFloData = `localbitcoinpluslus tx: Send ${btc_eq_receiving_amount} ${crypto_type} to ${receiver_address}.`; //flochange adding place for flodata -- need a validation of 1024 chars
+                            if (custom_floData.length > 0) {
+                                sendFloData = custom_floData;
+                            }
+                            sendFloData = removeWhiteSpaces(sendFloData);
+                            if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
+                                trx.addflodata(sendFloData); // flochange .. create this function
+                            }
+
+                            console.log(trx);
+
+                            let signedTxHash = trx.sign(signing_private_keys_array, 1); //SIGHASH_ALL DEFAULT 1
+                            console.log(signedTxHash);
+
+                            var tx_send_url = `${blockchain_explorer[0]}/api/tx/send`;
+                            var params = { "rawtx": signedTxHash };
+
+                            const tx_resp = await helper_functions.ajaxPost(tx_send_url, params);
+
+                            let response_obj = {};
+
+                            console.log(tx_resp);
+
+                            if (typeof tx_resp == "object" && tx_resp !== null) {
+                                response_obj = {
+                                    error: false,
+                                    signedTxHash: signedTxHash,
+                                    txid: tx_resp
+                                };
+                                return response_obj;
+                            } else {
+                                throw new Error('Explorer returned Empty Txid');
+                            }
+
+                        } else {
+                            throw new Error('No utxos found');
+                        }
+
+                    } catch (e) {
+                        console.error(e);
+                        return {
                             error: true,
-                            msg: error, 
+                            msg: e,
                             signedTxHash: "",
                             txid: ""
                         };
-                        callback(response_obj);
                     }
                 },
                 /*Finds the best buy sell id match for a trade*/
@@ -22888,7 +22741,7 @@
                         if(typeof requestType!=="string"
                         || requestType.length<1
                         || domainList.length<1) {
-                            console.error('chainAjaxRequest failed to produce result');
+                            console.error('All API servers are down for request '+requestType);
                             return false;
                         }
 
@@ -22945,7 +22798,6 @@
                 // AJAX Get
                 ajaxGet: async function (url='') {
                     try {
-                        //await the response of the fetch call
                         let response = await fetch(url);
                         if (!response.ok) {
                            return false
@@ -22961,20 +22813,21 @@
                 },
 
                 //AJAX Post
-                ajaxPost: function (url = ``, data = {}) {
-                    return fetch(url, {
-                        method: "POST", // *GET, POST, PUT, DELETE, etc.
-                        mode: "cors", // no-cors, cors, *same-origin
-                        cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
-                        credentials: "same-origin", // include, *same-origin, omit
-                        headers: {
-                            "Content-Type": "application/json"
-                            // "Content-Type": "application/x-www-form-urlencoded",
-                        },
-                        redirect: "follow", // manual, *follow, error
-                        referrer: "no-referrer", // no-referrer, *client
-                        body: JSON.stringify(data) // body data type must match "Content-Type" header
-                    }).then(response => response.json()); // parses response to JSON
+                ajaxPost: async function (url = ``, data = {}) {
+                    try {
+                        
+                        const response = await fetch(url, {
+                            method: 'POST', 
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(data),
+                        });
+
+                        return response.json();
+                    } catch(e) {
+                        return false;
+                    }
                 },
 
                 // Create unique id
@@ -23741,7 +23594,7 @@
             }
 
             const sendCryptoBtn = document.getElementById('sendCryptoBtn');
-            function sendCrypto() {
+            async function sendCrypto() {
                 let btn = this;
                 let parentPopup = btn.closest('.popup'),
                     send_crypto_type = document.querySelector("input[name='crypto']:checked").value,
@@ -23753,41 +23606,41 @@
                 btnLoading(btn, 'start')
 
                 const RM_TRADE = new localbitcoinplusplus.trade();
-                RM_TRADE.sendMultipleInputsTransaction(
+                const send_crypto_res = await RM_TRADE.sendMultipleInputsTransaction(
                     send_crypto_type,
                     [utxo_addr_wif_input],
                     receiver_address_input,
                     receiving_crypto_amount_input,
                     utxo_addr_input,
-                    async function (res) {
-                        console.log(res);
-                        if (typeof res == "object") {
-                            try {
-                                let resp_txid = '';
-                                let msg = '';
-                                let resp_obj = JSON.parse(res.txid);
-                                if((typeof resp_obj.txid!=="string"
-                                && typeof resp_obj.txid.result!=="string")
-                                && res.error==true) {
-                                    if(typeof res.msg == "string") {
-                                        msg = res.msg;
-                                    }
-                                } else {
-                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                    msg = `Transaction Id for your deposited crypto asset: ${resp_txid}`;
-                                }
-                                showMessage(msg);
-                                notify(msg);
-                                btnLoading(btn, 'stop')
-                                hidePopup();
-                                return true;
-                            } catch (error) {
-                                console.warn(error);
-                                showMessage(error);
-                                notify(error, 'error');
+                );
+
+                btnLoading(btn, 'stop');
+
+                console.log(send_crypto_res);
+                if (typeof send_crypto_res == "object") {
+                    try {
+                        let resp_txid = '';
+                        let msg = '';
+                        let resp_obj = send_crypto_res.txid;
+                        if((typeof resp_obj.txid!=="string"
+                        && typeof resp_obj.txid.result!=="string")
+                        && send_crypto_res.error==true) {
+                            if(typeof send_crypto_res.msg == "string") {
+                                msg = send_crypto_res.msg;
                             }
+                        } else {
+                            resp_txid = resp_obj.txid.result || resp_obj.txid;
+                            msg = `Transaction Id for your deposited crypto asset: ${resp_txid}`;
                         }
-                    });
+                        notify(msg, '', true, true, true);
+                        hidePopup();
+                        return true;
+                    } catch (error) {
+                        console.warn(error);
+                        notify(error, 'error', true, true, true);
+                    }
+                }
+
             }
             sendCryptoBtn.addEventListener('click', sendCrypto);
 
@@ -32278,7 +32131,7 @@
                         })
                     }
                 })
-                depositCryptoButton.addEventListener('click', function () {
+                depositCryptoButton.addEventListener('click', async function () {
                     depositCryptoButtonClicked++;
                     let parentPopup = depositCryptoButton.closest('.popup'),
                         sendCryptoHiddenSection = document.getElementById('send_crypto_hidden_section'),
@@ -32351,77 +32204,76 @@
                             return false;
                         }
 
-                        RM_TRADE.sendMultipleInputsTransaction(
+                        const crypto_sent_resp = await RM_TRADE
+                        .sendMultipleInputsTransaction(
                             asset_type,
                             [sendersPrivKey],
                             receiver_address,
                             tradeAmount,
-                            sendersFloId,
-                            function (crypto_sent_resp) {
-                                let emsg = '';
-                                let respo_obj = JSON.parse(crypto_sent_resp.txid);
-                                if((typeof respo_obj.txid!=="string"
-                                && typeof respo_obj.txid.result!=="string")
-                                && crypto_sent_resp.error==true) {
-                                    emsg = 'Failed to send Transaction.';
-                                    if(typeof crypto_sent_resp.msg == "string") {
-                                        emsg = crypto_sent_resp.msg;
-                                    }
-                                    return notify(emsg, 'error', true, true, true);
-                                }
-                                (async function validateDepositedCrypto() {
-                                    if (typeof crypto_sent_resp == "object") {
-                                        let msg = "";
-                                        if (
-                                            typeof crypto_sent_resp.txid == "string" &&
-                                            crypto_sent_resp.txid.length > 0
-                                        ) {
-                                            resp_obj = JSON.parse(crypto_sent_resp.txid);
-                                            resp_txid = resp_obj.txid.result || resp_obj.txid;
-                                            msg = `Transaction Id for your deposited crypto asset: ${resp_txid}.`;
-
-                                            let txdata = '';
-
-                                            notify(`Waiting for deposit txid ${resp_txid} for at least 2 confirmations. 
-                                            Please do not close or refresh the window until the process completes.`, 
-                                            '', true, false, false);
-                                            await localbitcoinplusplus.actions.delay(60000);
-
-                                            if (asset_type === 'BTC') {
-                                                txdata = await helper_functions
-                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.btc_mainnet, [resp_txid]);
-                                            } else if (asset_type === 'BTC_TEST') {
-                                                txdata = await helper_functions
-                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.btc_testnet, [resp_txid]);
-                                            } else if (asset_type === 'FLO') {
-                                                txdata = await helper_functions
-                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.flo_mainnet, [resp_txid]);
-                                            } else if (asset_type === 'FLO_TEST') {
-                                                txdata = await helper_functions
-                                                    .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.flo_testnet, [resp_txid]);
-                                            }
-
-                                            if (typeof txdata !== "object"
-                                                || typeof txdata == "null"
-                                                || typeof txdata.txid !== "string"
-                                                || typeof txdata.confirmations !== "number"
-                                                || txdata.confirmations < 2) {
-                                                notify(`${txdata.confirmations} of 2 confirmations achieved for txid ${resp_txid}. 
-                                            Please do not close or refresh the window until the process completes.`,
-                                            '', true, false, false);
-                                                validateDepositedCrypto();
-                                            } else {
-                                                cnf_crypto_deposit();
-                                                notify(`Deposit txid ${resp_txid} confirmed.`, '', true);
-                                            }
-
-                                        }
-                                    }
-
-                                })()
-
-                            }
+                            sendersFloId
                         );
+
+                        let emsg = '';
+                        const respo_obj = crypto_sent_resp.txid;
+                        if((typeof respo_obj.txid!=="string"
+                        && typeof respo_obj.txid.result!=="string")
+                        && crypto_sent_resp.error==true) {
+                            emsg = 'Failed to send Transaction.';
+                            if(typeof crypto_sent_resp.msg == "string") {
+                                emsg = crypto_sent_resp.msg;
+                            }
+                            return notify(emsg, 'error', true, true, true);
+                        }
+                        (async function validateDepositedCrypto() {
+                            if (typeof crypto_sent_resp == "object") {
+                                let msg = "";
+                                if (
+                                    typeof crypto_sent_resp.txid == "string" &&
+                                    crypto_sent_resp.txid.length > 0
+                                ) {
+                                    resp_obj = JSON.parse(crypto_sent_resp.txid);
+                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                    msg = `Transaction Id for your deposited crypto asset: ${resp_txid}.`;
+
+                                    let txdata = '';
+
+                                    notify(`Waiting for deposit txid ${resp_txid} for at least 2 confirmations. 
+                                    Please do not close or refresh the window until the process completes.`, 
+                                    '', true, false, false);
+                                    await localbitcoinplusplus.actions.delay(60000);
+
+                                    if (asset_type === 'BTC') {
+                                        txdata = await helper_functions
+                                            .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.btc_mainnet, [resp_txid]);
+                                    } else if (asset_type === 'BTC_TEST') {
+                                        txdata = await helper_functions
+                                            .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.btc_testnet, [resp_txid]);
+                                    } else if (asset_type === 'FLO') {
+                                        txdata = await helper_functions
+                                            .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.flo_mainnet, [resp_txid]);
+                                    } else if (asset_type === 'FLO_TEST') {
+                                        txdata = await helper_functions
+                                            .chainAjaxRequest("TX_DETAIL", localbitcoinplusplus.server.flo_testnet, [resp_txid]);
+                                    }
+
+                                    if (typeof txdata !== "object"
+                                        || typeof txdata == "null"
+                                        || typeof txdata.txid !== "string"
+                                        || typeof txdata.confirmations !== "number"
+                                        || txdata.confirmations < 2) {
+                                        notify(`${txdata.confirmations} of 2 confirmations achieved for txid ${resp_txid}. 
+                                    Please do not close or refresh the window until the process completes.`,
+                                    '', true, false, false);
+                                        validateDepositedCrypto();
+                                    } else {
+                                        cnf_crypto_deposit();
+                                        notify(`Deposit txid ${resp_txid} confirmed.`, '', true);
+                                    }
+
+                                }
+                            }
+
+                        })()
                     }
                 });
 
