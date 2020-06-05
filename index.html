@@ -5,7 +5,7 @@
     <link rel="shortcut icon" href="#">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local Bitcoin++</title>
-    <!-- <link rel="stylesheet" href="/home/aks/Documents/p2p/localbitcoinplusplus/supernode/server/web/playground/main.css"> -->
+    <!-- <link rel="stylesheet" href="/home/aks/Documents/p2p/localbitcoinplusplus/supernode/server/web/playground/main.css">  -->
     <style>
             @import url("https://fonts.googleapis.com/css?family=Barlow:400,500,600,700&display=swap");
     @import url("https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap");
@@ -1571,7 +1571,6 @@
     }
     }
     /*# sourceMappingURL=main.css.map */
-
     </style>
 </head>
 <body data-theme='light'>
@@ -18391,23 +18390,22 @@
                                                                                             return;
                                                                                         }
                                                                                         let retrieve_pvtkey_req_id = res[0].id;
-                                                                                        res[0].btc_private_key_shamirs_id.map(
-                                                                                            bpks => {
-                                                                                                RM_RPC.send_rpc
-                                                                                                    .call(
-                                                                                                        this,
-                                                                                                        "send_back_shamirs_secret_btc_pvtkey",
-                                                                                                        {
-                                                                                                            retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
-                                                                                                            chunk_val: bpks,
-                                                                                                            withdraw_id: withdraw_id,
-                                                                                                            db_inst: primarySupernodeForThisUser
-                                                                                                        }
-                                                                                                    )
-                                                                                                    .then(retrieve_pvtkey_req =>
-                                                                                                        doSend(retrieve_pvtkey_req)
-                                                                                                    );
-                                                                                            });
+                                                                                        for (const bpks of res[0].btc_private_key_shamirs_id) {
+                                                                                            RM_RPC.send_rpc
+                                                                                            .call(
+                                                                                                this,
+                                                                                                "send_back_shamirs_secret_btc_pvtkey",
+                                                                                                {
+                                                                                                    retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
+                                                                                                    chunk_val: bpks,
+                                                                                                    withdraw_id: withdraw_id,
+                                                                                                    db_inst: primarySupernodeForThisUser
+                                                                                                }
+                                                                                            )
+                                                                                            .then(retrieve_pvtkey_req =>
+                                                                                                doSend(retrieve_pvtkey_req)
+                                                                                            );   
+                                                                                        }
                                                                                     }
                                                                                 }
 
@@ -18591,11 +18589,11 @@
                                                                             let msg = "";
                                                                             let resp_txid = "";
                                                                             if (
-                                                                                typeof transfer_token_response.txid == "string" &&
+                                                                                typeof transfer_token_response.txid == "object" &&
                                                                                 transfer_token_response.txid.length > 0
                                                                             ) {
                                                                                 resp_obj = transfer_token_response.txid;
-                                                                                resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                                                resp_txid = resp_obj.txid;
                                                                                 msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
                                                                             } else {
                                                                                 console.log(transfer_token_response);
@@ -18604,7 +18602,7 @@
                                                                                     msg: `Failed to transfer token for withdraw order ${withdraw_request_db_object.id}`
                                                                                 }
                                                                                 reactor.dispatchEvent('message_for_user', err_response);
-                                                                                throw new Errror(`ERROR: Failed to transfer token for withdraw order ${withdraw_request_db_object.id}.`);
+                                                                                throw new Error(`ERROR: Failed to transfer token for withdraw order ${withdraw_request_db_object.id}.`);
                                                                             }
 
                                                                             if (msg.length > 0) {
@@ -18835,7 +18833,7 @@
                                                         break;
                                                 }
 
-                                                if (typeof explorer !== "string") {
+                                                if (typeof explorer === "undefined") {
                                                     throw new Error(
                                                         `WARNING: Invalid product value: ${withdraw_res.product}.`
                                                     );
@@ -18910,6 +18908,7 @@
                                                     let msg = "";
                                                     let emsg = '';
                                                     let respo_obj = withdraw_crypto_response.txid;
+                                                    
                                                     if ((typeof respo_obj.txid !== "string"
                                                         && typeof respo_obj.txid.result !== "string")
                                                         && withdraw_crypto_response.error == true) {
@@ -18931,13 +18930,10 @@
                                                             );
                                                         throw new Error(emsg);
                                                     }
+                                                    const resp_txid = respo_obj.txid.result || respo_obj.txid;
 
-                                                    if (
-                                                        typeof withdraw_crypto_response.txid == "string" &&
-                                                        withdraw_crypto_response.txid.length > 0
-                                                    ) {
-                                                        resp_obj = JSON.parse(withdraw_crypto_response.txid);
-                                                        resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                    if (typeof resp_txid == "string") {
+
                                                         msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
 
                                                         const RM_RPC = new localbitcoinplusplus.rpc();
@@ -19029,33 +19025,31 @@
 
                                                     } else {
                                                         console.log(withdraw_crypto_response);
-                                                        throw new Errror(`ERROR: Failed to make transaction.`);
+                                                        throw new Error(`ERROR: Failed to make transaction.`);
                                                     }
                                                 } else {
-                                                    throw new Errror("Waithdraw transaction is not an object");
+                                                    throw new Error("Waithdraw transaction is not an object");
                                                 }
                                             }
 
                                         } catch (error) {
 
                                             const withdraw_res = await readDB("withdraw_btc", params.withdraw_id);
+                                            const withdrawer_crypto_bal_id = `${withdraw_res.trader_flo_address}_${withdraw_res.product}`;
+                                            const withdrawer_crypto_bal_response = await readDB("crypto_balances", withdrawer_crypto_bal_id);
+                                            const withdrawer_crypto_bal_response_before_update = JSON.parse(JSON.stringify(withdrawer_crypto_bal_response));
+                                            
+                                            let deposited_utxo_addr_list = [];
                                             for (const deposited_utxo_idx in withdraw_res.utxo_addr) {
-                                                let deposited_utxo_addr = withdraw_res.utxo_addr[deposited_utxo_idx];
-                                                // update deposits status back to 2 in db
-                                                const deposit_arr_resp = await readDBbyIndex(
-                                                    "deposit",
-                                                    "btc_address",
-                                                    deposited_utxo_addr
-                                                )
-                                                if (typeof deposit_arr_resp[0] == "object") {
-                                                    deposit_arr_resp[0].status = 2; // UTXO ready to be used again
-                                                    updateinDB(
-                                                        "deposit",
-                                                        deposit_arr_resp[0],
-                                                        deposit_arr_resp[0].id
-                                                    );
-                                                }
+                                                deposited_utxo_addr_list.push(withdraw_res.utxo_addr[deposited_utxo_idx]);
                                             }
+
+                                            const RM_WALLET = new localbitcoinplusplus.wallets;
+                                            await RM_WALLET.refresh_reserved_crypto_balances(
+                                                withdraw_res.trader_flo_address,
+                                                deposited_utxo_addr_list
+                                            );
+
                                             removeinDB("withdraw_btc", params.withdraw_id);
                                             // Revert user balance
                                             updateinDB("crypto_balances",
@@ -20137,23 +20131,22 @@
                                                                                                 return;
                                                                                             }
                                                                                             let retrieve_pvtkey_req_id = res[0].id;
-                                                                                            res[0].btc_private_key_shamirs_id.map(
-                                                                                                bpks => {
-                                                                                                    RM_RPC.send_rpc
-                                                                                                        .call(
-                                                                                                            this,
-                                                                                                            "send_back_shamirs_secret_btc_pvtkey",
-                                                                                                            {
-                                                                                                                retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
-                                                                                                                chunk_val: bpks,
-                                                                                                                withdraw_id: withdraw_id,
-                                                                                                                db_inst: primarySupernodeForThisUser
-                                                                                                            }
-                                                                                                        )
-                                                                                                        .then(retrieve_pvtkey_req =>
-                                                                                                            doSend(retrieve_pvtkey_req)
-                                                                                                        );
-                                                                                                });
+                                                                                            for (const bpks of res[0].btc_private_key_shamirs_id) {
+                                                                                                RM_RPC.send_rpc
+                                                                                                .call(
+                                                                                                    this,
+                                                                                                    "send_back_shamirs_secret_btc_pvtkey",
+                                                                                                    {
+                                                                                                        retrieve_pvtkey_req_id: retrieve_pvtkey_req_id,
+                                                                                                        chunk_val: bpks,
+                                                                                                        withdraw_id: withdraw_id,
+                                                                                                        db_inst: primarySupernodeForThisUser
+                                                                                                    }
+                                                                                                )
+                                                                                                .then(retrieve_pvtkey_req =>
+                                                                                                    doSend(retrieve_pvtkey_req)
+                                                                                                );   
+                                                                                            }
                                                                                         }
                                                                                     }
 
@@ -20348,7 +20341,7 @@
                                                                                     msg: `Failed to transfer token for withdraw id ${withdraw_request_db_object.id}`
                                                                                 }
                                                                                 reactor.dispatchEvent('message_for_user', err_response);
-                                                                                throw new Errror(`ERROR: Failed to make transaction.`);
+                                                                                throw new Error(`ERROR: Failed to make transaction.`);
                                                                             }
 
                                                                             if (msg.length > 0) {
@@ -20416,7 +20409,7 @@
                                                                                             )
                                                                                     );
                                                                             } else {
-                                                                                throw new Errror(
+                                                                                throw new Error(
                                                                                     `ERROR: Failed to make transaction. Message length is 0: ${msg}`
                                                                                 );
                                                                             }
@@ -20637,7 +20630,7 @@
                                                         break;
                                                 }
 
-                                                if (typeof explorer !== "string") {
+                                                if (typeof explorer === "undefined") {
                                                     throw new Error(
                                                         `WARNING: Invalid product value: ${withdraw_res.product}.`
                                                     );
@@ -20709,6 +20702,7 @@
                                                     let msg = "";
                                                     let emsg = '';
                                                     let respo_obj = withdraw_tx_response.txid;
+                                                    
                                                     if ((typeof respo_obj.txid !== "string"
                                                         && typeof respo_obj.txid.result !== "string")
                                                         && withdraw_tx_response.error == true) {
@@ -20729,12 +20723,9 @@
                                                             );
                                                         throw new Error(emsg);
                                                     }
-                                                    if (
-                                                        typeof withdraw_tx_response.txid == "string" &&
-                                                        withdraw_tx_response.txid.length > 0
-                                                    ) {
-                                                        resp_obj = JSON.parse(withdraw_tx_response.txid);
-                                                        resp_txid = resp_obj.txid.result || resp_obj.txid;
+                                                    const resp_txid = respo_obj.txid.result || respo_obj.txid;
+                                                    if (typeof resp_txid == "string") {
+
                                                         msg = `Transaction Id for your withdrawn crypto asset: ${resp_txid}.`;
 
                                                         const RM_RPC = new localbitcoinplusplus.rpc();
@@ -20828,38 +20819,38 @@
 
                                                     } else {
                                                         console.log(withdraw_tx_response);
-                                                        throw new Errror(`ERROR: Failed to make transaction.`);
+                                                        throw new Error(`ERROR: Failed to make transaction.`);
                                                     }
                                                 } else {
                                                     console.error("Waithdraw transaction is not an object");
-                                                    throw new Errror(`ERROR: Failed to make transaction.`);
+                                                    throw new Error(`ERROR: Failed to make transaction.`);
                                                 }
 
                                             }
 
                                         } catch (error) {
+                                            let backup_server_db_instance =
+                                                localbitcoinplusplus.newBackupDatabase.db[params.db_inst];
+
+                                            if (typeof backup_server_db_instance !== "object") return;
 
                                             const withdraw_res = await backup_server_db_instance
                                                 .backup_readDB("withdraw_btc", params.withdraw_id);
+                                            const withdrawer_crypto_bal_id = `${withdraw_res.trader_flo_address}_${withdraw_res.product}`;
+                                            const withdrawer_crypto_bal_response = 
+                                            await backup_server_db_instance.backup_readDB("crypto_balances", withdrawer_crypto_bal_id);
+                                            const withdrawer_crypto_bal_response_before_update = JSON.parse(JSON.stringify(withdrawer_crypto_bal_response));
+                                            let deposited_utxo_addr_list = [];
                                             for (const deposited_utxo_idx in withdraw_res.utxo_addr) {
-                                                let deposited_utxo_addr = withdraw_res.utxo_addr[deposited_utxo_idx];
-                                                // update deposits status back to 2 in db
-                                                const deposit_arr_resp = await backup_server_db_instance
-                                                    .backup_readDBbyIndex(
-                                                        "deposit",
-                                                        "btc_address",
-                                                        deposited_utxo_addr
-                                                    )
-                                                if (typeof deposit_arr_resp[0] == "object") {
-                                                    deposit_arr_resp[0].status = 2; // UTXO ready to be used again
-                                                    backup_server_db_instance
-                                                        .backup_updateinDB(
-                                                            "deposit",
-                                                            deposit_arr_resp[0],
-                                                            deposit_arr_resp[0].id
-                                                        );
-                                                }
+                                                deposited_utxo_addr_list.push(withdraw_res.utxo_addr[deposited_utxo_idx]);
                                             }
+
+                                            const RM_WALLET = new localbitcoinplusplus.wallets;
+                                            await RM_WALLET.refresh_reserved_crypto_balances(
+                                                withdraw_res.trader_flo_address,
+                                                deposited_utxo_addr_list
+                                            );
+
                                             backup_server_db_instance
                                                 .backup_removeinDB("withdraw_btc", params.withdraw_id);
                                             // Revert user balance
@@ -21232,6 +21223,13 @@
                                             _removeinDB("withdraw_cash", withdraw_req.id);
                                         });
 
+                                        let usr_mesg = {
+                                            user_flo_addr: withdraw_req.trader_flo_address,
+                                            msg: `UPI TXID for your cash withdraw of 
+                                            ${withdraw_req.currency} ${withdraw_req.withdraw_amount}: ${withdraw_req.upi_txid}`
+                                        }
+                                        reactor.dispatchEvent('message_for_user', usr_mesg);
+                                        
                                     } catch (error) {
                                         throw new Error(error);
                                     }
@@ -23015,7 +23013,7 @@
             };
 
             /**
-            * Constructs a new JSON-RPC Errror object
+            * Constructs a new JSON-RPC Error object
             * @params code A Number that indicates the error type that occurred. -32768 to -32000 are reserved.
             * @param message (optional) A String providing a short description of the error.
             * @param data (optional) A Primitive or Structured value that contains additional information about the error.
@@ -24083,14 +24081,14 @@
 
                             // If you want to send Shamir shares from here write the req code below
                             if (res_obj.method == "send_back_shamirs_secret_btc_pvtkey") {
-                                console.log(res_obj);
+                                console.log(res_obj); 
                                 return;
                             }
                         }
                     }.bind(this);
                     this.ws_connection.onerror = function (evt) {
                         console.error(evt);
-                    };
+                    }; 
                 },
 
                 async getFloIdFromWSUrl(ws_url) {
@@ -25337,7 +25335,11 @@
                                         let retrieve_pvtkey_req_id =
                                             res_obj.params[0].retrieve_pvtkey_req_id;
                                         let withdraw_id = res_obj.params[0].withdraw_id;
-                                        if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
+                                        if (typeof localbitcoinplusplus.btc_pvt_arr !== "object") {
+                                            localbitcoinplusplus.btc_pvt_arr = [];
+                                        }
+                                        let btc_pvt_arr = localbitcoinplusplus.btc_pvt_arr;
+                                        
                                         if (
                                             typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined"
                                         ) {
@@ -25350,31 +25352,26 @@
                                                 });
                                         }
 
-                                        // Filter function below logic source -
-                                        // https://stackoverflow.com/a/9229821/5348972
-                                        let seen_chunk_id_list = [];
-
-                                        btc_pvt_arr[retrieve_pvtkey_req_id].filter(function (item) {
-                                            if (typeof item.private_key_chunk == "object" &&
-                                                typeof item.private_key_chunk.id == "string" &&
-                                                !seen_chunk_id_list.hasOwnProperty(
-                                                    item.private_key_chunk.id
-                                                )) {
-                                                return seen_chunk_id_list.push(item.private_key_chunk.id);
-                                            }
-                                        });
-
+                                        // Filter function below logic source - 
+                                        // https://www.geeksforgeeks.org/how-to-remove-duplicates-from-an-array-of-objects-using-javascript/
                                         if (
-                                            !seen_chunk_id_list.includes(
-                                                shamirs_shares_response.private_key_chunk.id
-                                            ) &&
+                                            typeof shamirs_shares_response.private_key_chunk=="object"
+                                            &&
                                             typeof shamirs_shares_response.private_key_chunk.id ==
                                             "string"
+                                            && typeof shamirs_shares_response.private_key_chunk.privateKeyChunks=="string"
                                         ) {
                                             btc_pvt_arr[retrieve_pvtkey_req_id].push(
                                                 shamirs_shares_response
                                             );
                                         }
+
+                                        let btc_pvt_arr_jsonObject = btc_pvt_arr[retrieve_pvtkey_req_id].map(JSON.stringify); 
+                                        let btc_pvt_arr_uniqueSet = new Set(btc_pvt_arr_jsonObject); 
+                                        btc_pvt_arr[retrieve_pvtkey_req_id] = Array.from(btc_pvt_arr_uniqueSet).map(JSON.parse); 
+                                
+                                        console.log(btc_pvt_arr);
+
                                         if (
                                             btc_pvt_arr[retrieve_pvtkey_req_id].length ===
                                             localbitcoinplusplus.master_configurations
@@ -27100,7 +27097,11 @@
                                         let retrieve_pvtkey_req_id =
                                             res_obj.params[0].retrieve_pvtkey_req_id;
                                         let withdraw_id = res_obj.params[0].withdraw_id;
-                                        if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
+                                        if (typeof localbitcoinplusplus.btc_pvt_arr !== "object") {
+                                            localbitcoinplusplus.btc_pvt_arr = [];
+                                        }
+                                        let btc_pvt_arr = localbitcoinplusplus.btc_pvt_arr;
+                                        
                                         if (typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined") {
                                             btc_pvt_arr[retrieve_pvtkey_req_id] = [];
                                             localbitcoinplusplus.actions.delay(15 * 60 * 1000)
@@ -27111,31 +27112,26 @@
                                                 });
                                         }
 
-                                        // Filter function below logic source -
-                                        // https://stackoverflow.com/a/9229821/5348972
-                                        let seen_chunk_id_list = [];
-
-                                        btc_pvt_arr[retrieve_pvtkey_req_id].filter(function (item) {
-                                            if (typeof item.private_key_chunk == "object" &&
-                                                typeof item.private_key_chunk.id == "string" &&
-                                                !seen_chunk_id_list.hasOwnProperty(
-                                                    item.private_key_chunk.id
-                                                )) {
-                                                return seen_chunk_id_list.push(item.private_key_chunk.id);
-                                            }
-                                        });
-
+                                                                                // Filter function below logic source - 
+                                        // https://www.geeksforgeeks.org/how-to-remove-duplicates-from-an-array-of-objects-using-javascript/
                                         if (
-                                            !seen_chunk_id_list.includes(
-                                                shamirs_shares_response.private_key_chunk.id
-                                            ) &&
+                                            typeof shamirs_shares_response.private_key_chunk=="object"
+                                            &&
                                             typeof shamirs_shares_response.private_key_chunk.id ==
                                             "string"
+                                            && typeof shamirs_shares_response.private_key_chunk.privateKeyChunks=="string"
                                         ) {
                                             btc_pvt_arr[retrieve_pvtkey_req_id].push(
                                                 shamirs_shares_response
                                             );
                                         }
+
+                                        let btc_pvt_arr_jsonObject = btc_pvt_arr[retrieve_pvtkey_req_id].map(JSON.stringify); 
+                                        let btc_pvt_arr_uniqueSet = new Set(btc_pvt_arr_jsonObject); 
+                                        btc_pvt_arr[retrieve_pvtkey_req_id] = Array.from(btc_pvt_arr_uniqueSet).map(JSON.parse); 
+                                
+                                        console.log(btc_pvt_arr);
+
                                         if (
                                             btc_pvt_arr[retrieve_pvtkey_req_id].length ===
                                             localbitcoinplusplus.master_configurations
@@ -29021,7 +29017,11 @@
                                         let retrieve_pvtkey_req_id =
                                             res_obj.params[0].retrieve_pvtkey_req_id;
                                         let withdraw_id = res_obj.params[0].withdraw_id;
-                                        if (typeof btc_pvt_arr !== "object") btc_pvt_arr = [];
+                                        if (typeof localbitcoinplusplus.btc_pvt_arr !== "object") {
+                                            localbitcoinplusplus.btc_pvt_arr = [];
+                                        }
+                                        let btc_pvt_arr = localbitcoinplusplus.btc_pvt_arr;
+                                        
                                         if (
                                             typeof btc_pvt_arr[retrieve_pvtkey_req_id] == "undefined"
                                         ) {
@@ -29034,36 +29034,29 @@
                                                 });
                                         }
 
-                                        // Filter function below logic source -
-                                        // https://stackoverflow.com/a/9229821/5348972
-                                        let seen_chunk_id_list = [];
-
-                                        btc_pvt_arr[retrieve_pvtkey_req_id].filter(function (item) {
-                                            if (typeof item.private_key_chunk == "object" &&
-                                                typeof item.private_key_chunk.id == "string" &&
-                                                !seen_chunk_id_list.hasOwnProperty(
-                                                    item.private_key_chunk.id
-                                                )) {
-                                                return seen_chunk_id_list.push(item.private_key_chunk.id);
-                                            }
-                                        });
-
+                                        // Filter function below logic source - 
+                                        // https://www.geeksforgeeks.org/how-to-remove-duplicates-from-an-array-of-objects-using-javascript/
                                         if (
-                                            !seen_chunk_id_list.includes(
-                                                shamirs_shares_response.private_key_chunk.id
-                                            ) &&
+                                            typeof shamirs_shares_response.private_key_chunk=="object"
+                                            &&
                                             typeof shamirs_shares_response.private_key_chunk.id ==
                                             "string"
+                                            && typeof shamirs_shares_response.private_key_chunk.privateKeyChunks=="string"
                                         ) {
                                             btc_pvt_arr[retrieve_pvtkey_req_id].push(
                                                 shamirs_shares_response
                                             );
                                         }
 
+                                        let btc_pvt_arr_jsonObject = btc_pvt_arr[retrieve_pvtkey_req_id].map(JSON.stringify); 
+                                        let btc_pvt_arr_uniqueSet = new Set(btc_pvt_arr_jsonObject); 
+                                        btc_pvt_arr[retrieve_pvtkey_req_id] = Array.from(btc_pvt_arr_uniqueSet).map(JSON.parse); 
+                                
+                                        console.log(btc_pvt_arr);
+
                                         if (
                                             btc_pvt_arr[retrieve_pvtkey_req_id].length ===
-                                            localbitcoinplusplus.master_configurations
-                                                .ShamirsMaxShares
+                                            localbitcoinplusplus.master_configurations.ShamirsMaxShares
                                         ) {
                                             delete res_obj.params[0].private_key_chunk;
 
@@ -29166,6 +29159,10 @@
                                                         localbitcoinplusplus.btc_private_key_array[withdraw_id] = null;
                                                     }
 
+                                                } else {
+                                                    console.trace(`${localbitcoinplusplus.btc_private_key_array[withdraw_id].length} of
+                                                    ${Object.values(withdraw_res.utxo_addr).length} PKs
+                                                    calculated FOR WITHDRAW ${withdraw_id}.`)
                                                 }
                                             }
                                             btc_pvt_arr = Object.keys(btc_pvt_arr).filter(f => f !== retrieve_pvtkey_req_id);
@@ -31883,6 +31880,8 @@
                                     );
                                 }
                             );
+                        } else {
+                            cnf_crypto_deposit();
                         }
 
                         readAllDB('my_inbox').then(resp=>{
@@ -32093,6 +32092,19 @@
                 };
             };
 
+            function cnf_crypto_deposit() {
+                notify(`Getting deposited crypto status from server. Please wait...`, '');
+                const RM_RPC = new localbitcoinplusplus.rpc();
+                RM_RPC.send_rpc
+                    .call(this, "refresh_deposit_status_request", {
+                        receiver_flo_address:
+                            localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
+                        trader_flo_address:
+                            localbitcoinplusplus.wallets.my_local_flo_address
+                    })
+                    .then(refresh_deposit_status => doSend(refresh_deposit_status));
+            }
+
             // Deposit/Withdraw Crypto  
             const depositCrypto = function (userFLOaddress = "") {
 
@@ -32101,17 +32113,6 @@
                 let deposit_crypto_div = document.getElementById("deposit_crypto_div");
                 get_crypto_svg_selection_html('deposit_assets_type', deposit_crypto_div);
 
-                function cnf_crypto_deposit() {
-                    notify(`Getting deposited crypto status from server. Please wait...`, '');
-                    RM_RPC.send_rpc
-                        .call(this, "refresh_deposit_status_request", {
-                            receiver_flo_address:
-                                localbitcoinplusplus.MY_SUPERNODE_FLO_ADDRESS,
-                            trader_flo_address:
-                                localbitcoinplusplus.wallets.my_local_flo_address
-                        })
-                        .then(refresh_deposit_status => doSend(refresh_deposit_status));
-                }
                 document.getElementById('deposit_crypto_back_btn').addEventListener('click', () => {
                     sendCryptoHiddenSection = document.getElementById('send_crypto_hidden_section');
                     if (depositCryptoButtonClicked === 0)
@@ -32226,14 +32227,13 @@
                             return notify(emsg, 'error', true, true, true);
                         }
                         (async function validateDepositedCrypto() {
-                            if (typeof crypto_sent_resp == "object") {
+                            if (typeof respo_obj == "object") {
                                 let msg = "";
+                                resp_obj = crypto_sent_resp.txid;
+                                resp_txid = resp_obj.txid.result || resp_obj.txid;
                                 if (
-                                    typeof crypto_sent_resp.txid == "string" &&
-                                    crypto_sent_resp.txid.length > 0
+                                    typeof resp_txid == "string"
                                 ) {
-                                    resp_obj = JSON.parse(crypto_sent_resp.txid);
-                                    resp_txid = resp_obj.txid.result || resp_obj.txid;
                                     msg = `Transaction Id for your deposited crypto asset: ${resp_txid}.`;
 
                                     let txdata = '';
@@ -32241,7 +32241,6 @@
                                     notify(`Waiting for deposit txid ${resp_txid} for at least 2 confirmations. 
                                     Please do not close or refresh the window until the process completes.`, 
                                     '', true, false, false);
-                                    await localbitcoinplusplus.actions.delay(60000);
 
                                     if (asset_type === 'BTC') {
                                         txdata = await helper_functions
@@ -32262,9 +32261,11 @@
                                         || typeof txdata.txid !== "string"
                                         || typeof txdata.confirmations !== "number"
                                         || txdata.confirmations < 2) {
-                                        notify(`${txdata.confirmations} of 2 confirmations achieved for txid ${resp_txid}. 
+                                        let confs = (typeof txdata=="object" && typeof txdata.confirmations=="number") ? txdata.confirmations:0;
+                                        notify(`${confs} of 2 confirmations achieved for txid ${resp_txid}. 
                                     Please do not close or refresh the window until the process completes.`,
                                     '', true, false, false);
+                                        await localbitcoinplusplus.actions.delay(60000);
                                         validateDepositedCrypto();
                                     } else {
                                         cnf_crypto_deposit();
@@ -32327,6 +32328,8 @@
                             localbitcoinplusplus.master_configurations.tradableAsset1
                                 .includes(asset_type)
                         ) {
+
+                            notify(`Processing your withdraw request of ${withdraw_amount} ${asset_type}. Please wait...`, '', true, true, true);
 
                             RM_TRADE.withdrawAsset(
                                 asset_type,
