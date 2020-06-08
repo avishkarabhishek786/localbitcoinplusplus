@@ -16375,7 +16375,7 @@
                                     }
                                     break;
                                 case "deposit":
-                                    reactor.dispatchEvent("remove_redundant_crypto_deposits");
+                                    reactor.dispatchEvent("remove_redundant_crypto_deposits", backup_db);
                                     break;
                                 case "withdraw_btc":
                                     let withdraw_btcData = await _readAllDB(ds);
@@ -16409,10 +16409,25 @@
                 return true;
             });
 
-            reactor.addEventListener("remove_redundant_crypto_deposits", async function (deposit_list = []) {
+            reactor.addEventListener("remove_redundant_crypto_deposits", async function (backup_db="") {
                 try {
-                    if (deposit_list.length == 0)
-                        deposit_list = await readAllDB("deposit");
+
+                    let _readAllDB = readAllDB;
+                    let _removeinDB = removeinDB;
+                    let _readDBbyIndex = readDBbyIndex;
+
+                    if (
+                        typeof localbitcoinplusplus.newBackupDatabase.db[backup_db] ==
+                        "object" && backup_db !== localbitcoinplusplus.wallets.my_local_flo_address
+                    ) {
+                        let foreign_db =
+                            localbitcoinplusplus.newBackupDatabase.db[backup_db];
+                        _readAllDB = foreign_db.backup_readAllDB.bind(foreign_db);
+                        _removeinDB = foreign_db.backup_removeinDB.bind(foreign_db);
+                    }
+
+                    const deposit_list = await _readAllDB("deposit");
+
                     if (
                         typeof deposit_list == "object" &&
                         deposit_list.length > 0
@@ -16451,13 +16466,13 @@
                                         && deposited_crypto_balance_req[0].amount > 0
                                     ) continue;
 
-                                    const res = await readDBbyIndex(
+                                    const res = await _readDBbyIndex(
                                         "system_btc_reserves_private_keys",
                                         "btc_address",
                                         deposit_dl.btc_address
                                     );
                                     if (typeof res[0] !== "object" || typeof res[0].id !== "string") {
-                                        removeinDB("deposit", deposit_dl.id);
+                                        _removeinDB("deposit", deposit_dl.id);
                                         continue;
                                     }
                                     let retrieve_pvtkey_req_id = res[0].id;
@@ -16478,8 +16493,8 @@
                                             );
                                     }
 
-                                    removeinDB("deposit", deposit_dl.id);
-                                    removeinDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
+                                    _removeinDB("deposit", deposit_dl.id);
+                                    _removeinDB("system_btc_reserves_private_keys", retrieve_pvtkey_req_id);
 
                                     RM_RPC.send_rpc(
                                         "delete_deposited_crypto_instance",
@@ -17185,7 +17200,7 @@
                             } else {
                                 if (backup_db !== localbitcoinplusplus.wallets.my_local_flo_address) {
                                     err_msg = `WARNING: Invalid Backup DB Instance Id: ${backup_db}.`;
-                                    showMessage(err_msg);
+                                    console.trace(err_msg);
                                     throw new Error(err_msg);
                                 }
                             }
@@ -31880,6 +31895,7 @@
                                     );
                                 }
                             );
+
                         } else {
                             cnf_crypto_deposit();
                         }
