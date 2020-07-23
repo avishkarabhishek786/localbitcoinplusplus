@@ -1831,15 +1831,36 @@
                 </div>
             </div>
         </div>
+
+        <div id="cash_deposits_panel" class="top-padding top-margin card">
+            <h3 class="light-text bottom-padding bottom-margin">
+                My Cash Deposits Status
+            </h3>
+            <div id="cash_deposits_container"></div>
+            <h3 class="empty-state">
+                No recent activity.
+            </h3>
+        </div>        
+        <div id="cash_withdraw_panel" class="top-padding top-margin card">
+            <h3 class="light-text bottom-padding bottom-margin">
+                My Cash Withdraws Status
+            </h3>
+            <div id="cash_withdraw_container"></div>
+            <h3 class="empty-state">
+                No recent activity.
+            </h3>
+        </div>
+
         <div id="orders_panel" class="top-padding top-margin card">
             <h3 class="light-text bottom-padding bottom-margin">
                 My Orders
-      </h3>
+            </h3>
             <div id="orders_container"></div>
             <h3 class="empty-state">
                 No trade orders yet.
             </h3>
         </div>
+
     </div>
     <div id="right">
             <div id="user_section" class="bottom-margin card">
@@ -2171,7 +2192,7 @@
               </div>
               <label class="input">
                   <input name="upiAddr" pattern="^[a-zA-z0-9]+@[a-zA-z0-9]+" type="text" required>
-                  <div class="label">Depositer's UPI address</div>
+                  <div class="label">Enter Your UPI Address</div>
               </label>
               <label class="input">
                   <input name="amount" type="number" step="0.01" inputmode="numeric" required>
@@ -2199,7 +2220,7 @@
               </div>
               <label class="input">
                   <input name="upiAddr" pattern="^[a-zA-z0-9]+@[a-zA-z0-9]+" type="text" required>
-                  <div class="label">Recieving UPI address</div>
+                  <div class="label">Enter Your UPI Address</div>
               </label>
               <label class="input">
                   <input name="amount" type="number" step="0.01" inputmode="numeric" required>
@@ -18605,17 +18626,14 @@
                                                                         
                                                                             let msg = "";
                                                                             let resp_txid = "";
-                                                                            if (
-                                                                                typeof transfer_token_response.txid == "object" &&
-                                                                                transfer_token_response.txid.length > 0
-                                                                            ) {
+                                                                            if (typeof transfer_token_response.txid == "object") {
                                                                                 resp_obj = transfer_token_response.txid;
-                                                                                resp_txid = resp_obj.txid;
+                                                                                resp_txid = resp_obj.txid.result || resp_obj.txid;
                                                                                 msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
                                                                             } else {
                                                                                 console.log(transfer_token_response);
                                                                                 err_response = {
-                                                                                    user_flo_addr: cashierFloAddr,
+                                                                                    user_flo_addr: params.trader_flo_address,
                                                                                     msg: `Failed to transfer token for withdraw order ${withdraw_request_db_object.id}`
                                                                                 }
                                                                                 reactor.dispatchEvent('message_for_user', err_response);
@@ -20345,18 +20363,13 @@
                                                                         try {
                                                                             let msg = "";
                                                                             let resp_txid = "";
-                                                                            if (
-                                                                                typeof flo_withdraw_tx_res.txid == "string" &&
-                                                                                flo_withdraw_tx_res.txid.length > 0
-                                                                            ) {
+                                                                            if (typeof flo_withdraw_tx_res.txid == "string") {
                                                                                 resp_obj = flo_withdraw_tx_res.txid
-                                                                                resp_txid =
-                                                                                    resp_obj.txid.result ||
-                                                                                    resp_obj.txid;
+                                                                                resp_txid = resp_obj.txid.result || resp_obj.txid;
                                                                                 msg = `Transaction Id for token transfer to ${params.trader_flo_address}: ${resp_txid}.`;
                                                                             } else {
                                                                                 err_response = {
-                                                                                    user_flo_addr: cashierFloAddr,
+                                                                                    user_flo_addr: params.trader_flo_address,
                                                                                     msg: `Failed to transfer token for withdraw id ${withdraw_request_db_object.id}`
                                                                                 }
                                                                                 reactor.dispatchEvent('message_for_user', err_response);
@@ -25021,6 +25034,12 @@
                                                                 }
                                                             }
                                                         }
+                                                        if(tableStoreName=='cash_deposits') {
+                                                            build_deposit_cash_status_ui();
+                                                        }
+                                                        if(tableStoreName==='withdraw_cash') {
+                                                            build_withdraw_cash_status_ui();
+                                                        }
                                                     }
                                                 } catch (error) {
                                                     console.log(error);
@@ -25114,8 +25133,6 @@
                                                 resp.data.order_validator_public_key
                                             )
                                         ) {
-                                            addDB("cash_deposits", resp.data);
-
                                             readDB("localbitcoinUser", "00-01").then(function (user) {
                                                 if (
                                                     typeof user == "object" &&
@@ -25125,6 +25142,7 @@
                                                         ${resp.msg}`;
                                                     showMessage(counterTraderAccountAddress);
                                                     notify(counterTraderAccountAddress, '', true, true, true);
+                                                    addDB("cash_deposits", resp.data).then(()=>build_deposit_cash_status_ui());
                                                 }
                                             });
                                         }
@@ -25159,6 +25177,7 @@
                                                     is placed successfully. It will be processed within 24 hours.`,
                                                     '', true, true, true
                                                 );
+                                                build_withdraw_cash_status_ui();
                                             });
                                         }
                                     }
@@ -26743,6 +26762,12 @@
                                                                 }
                                                             }
                                                         }
+                                                        if(tableStoreName=='cash_deposits') {
+                                                            build_deposit_cash_status_ui();
+                                                        }
+                                                        if(tableStoreName==='withdraw_cash') {
+                                                            build_withdraw_cash_status_ui();
+                                                        }
                                                     }
                                                 } catch (error) {
                                                     console.log(error);
@@ -26854,6 +26879,7 @@
                                     ${resp.msg}`;
                                                     showMessage(counterTraderAccountAddress);
                                                     notify(counterTraderAccountAddress, '', true, true, true);
+                                                    addDB("cash_deposits", resp.data).then(()=>build_deposit_cash_status_ui());
                                                 }
                                             });
 
@@ -26894,6 +26920,7 @@
                                                     is placed successfully. It will be processed within 24 hours.`,
                                                     '', true, true, true
                                                 );
+                                                build_withdraw_cash_status_ui();
                                             });
                                         }
                                     }
@@ -32509,6 +32536,63 @@
                     }
                 });
 
+            }
+
+            // Get Deposit Cash Status
+            async function build_deposit_cash_status_ui(get_cash_deposits=[]) {
+                try {
+                    const cash_deposits_container = document.getElementById('cash_deposits_container');
+                    if(get_cash_deposits.length<1) {
+                        get_cash_deposits = await readAllDB('cash_deposits');
+                    }
+                    let t = `<ul>`;
+                    for (const my_cash_deposits of get_cash_deposits) {
+                        console.log(my_cash_deposits.id, my_cash_deposits.timestamp, 
+                        my_cash_deposits.depositing_amount, my_cash_deposits.cashier_upi);
+
+                        t += `<li>Cash Deposit Request ID: ${my_cash_deposits.id}<li>`;
+                        t += `<li>Time of Deposit Request: ${my_cash_deposits.timestamp}<li>`;
+                        t += `<li>Currency: ${my_cash_deposits.currency}<li>`;
+                        t += `<li>Amount: ${my_cash_deposits.depositing_amount}<li>`;
+                        t += `<li>Sender UPI ID: ${my_cash_deposits.user_upi}<li>`;
+                        t += `<li>Cashier UPI ID: ${my_cash_deposits.cashier_upi}<li>`;
+                        t += `<li>Cashier Blockchain ID: ${bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(my_cash_deposits.cashier_pubKey)}<li>`;
+                        t += `<hr>`;
+                    }
+                    t += `</ul>`;
+
+                    cash_deposits_container.innerHTML = t;
+
+                } catch(e) {
+                    notify(e, 'error');
+                }
+            }
+
+            // Get Deposit Cash Status
+            async function build_withdraw_cash_status_ui(get_cash_withdraws=[]) {
+                try {
+                    const cash_withdraw_container = document.getElementById('cash_withdraw_container');
+                    if(get_cash_withdraws.length<1) {
+                        get_cash_withdraws = await readAllDB('withdraw_cash');
+                    }
+
+                    let t = `<ul>`;
+                    for (const my_cash_withdraws of get_cash_withdraws) {
+                        t += `<li>Cash Withdraw Request ID: ${my_cash_withdraws.id}<li>`;
+                        t += `<li>Currency: ${my_cash_withdraws.currency}<li>`;
+                        t += `<li>Time of Withdraw Request: ${my_cash_withdraws.timestamp}<li>`;
+                        t += `<li>Amount: ${my_cash_withdraws.withdraw_amount}<li>`;
+                        t += `<li>Cashier Blockchain ID: ${bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(my_cash_withdraws.cashier_pubKey)}<li>`;
+                        t += `<li>Token Transfer TXID To Cashier: ${my_cash_withdraws.token_transfer_txid}<li>`;
+                        t += `<hr>`;
+                    }
+                    t += `</ul>`;
+
+                    cash_withdraw_container.innerHTML = t;
+
+                } catch(e) {
+                    notify(e, 'error');
+                }
             }
 
             // Create SVG Radios
