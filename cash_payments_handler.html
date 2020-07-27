@@ -252,6 +252,25 @@
             </table>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-body">
+            <h4 class="alert alert-light" role="alert">
+              Processed Cash Deposits
+            </h4>
+            <div id="processed_cash_deposits_list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+            <h4 class="alert alert-light" role="alert">
+              Processed Cash Withdraws
+            </h4>
+            <div id="processed_cash_withdraws_list"></div>
+        </div>
+      </div>
+
     </main>
 
     <footer class="footer">
@@ -11390,8 +11409,8 @@
             enumerable: false
         });
 
-        const ENVR = 'LIVE'; // LIVE, TEST  
-        const WS = 'wss';
+        const ENVR = 'TEST'; // LIVE, TEST  
+        const WS = 'ws';
         const DBName = "paymentsHandlerDBRemote";
 
       if(ENVR === 'LIVE') {
@@ -13411,10 +13430,11 @@
                     (async function() {
                         let failed_confirms_in_deposits = await readAllDB('failed_deposit_confirms');
                         let failed_confirms_in_deposits_ids = failed_confirms_in_deposits.map(m=>m.deposit_id);
-                        console.log(failed_confirms_in_deposits_ids);
-                        if(failed_confirms_in_deposits_ids.length>0) {
-                            alert("There are some failed deposit requests in DB. Please contact the admin.");
-                        }
+                        // console.log(failed_confirms_in_deposits_ids);
+                        // if(failed_confirms_in_deposits_ids.length>0) {
+                        //     alert("There are some failed deposit requests in DB. Please contact the admin.");
+                        // }
+                        let deposit_promises = [];
                         let t = ``;
                         let deposits_table = document.getElementById("deposits_list");
                         //deposits_table.innerHTML = '';
@@ -13443,6 +13463,7 @@
                                 </td>`;
                             }
                             t += `</tr>`;
+                            deposit_promises.push(addDB('deposits', m));
                         }
                         deposits_table.insertAdjacentHTML("beforeend", t);
                         confirmDepositReceivedFromUser();
@@ -13451,6 +13472,7 @@
 
                 case "list_of_cashier_latest_pending_cash_withdrawals":
                     (async function() {
+                        let withdraw_promises = [];
                         let v = ``;
                         let withdraws_table = document.getElementById("withdraws_list");
                         //withdraws_table.innerHTML = '';
@@ -13477,6 +13499,7 @@
                                     </td>`;
                             }
                             v += `</tr>`;
+                            withdraw_promises.push(addDB('withdraws', m));
                         }
                         withdraws_table.insertAdjacentHTML("beforeend", v);
                         confirmCashierTransferredMoneyToWithdrawer();
@@ -13873,7 +13896,8 @@
 
                 const depositorInfo = document.getElementById(`tr_${deposit_id}`);
                 const depositorInfoVals = depositorInfo.getElementsByTagName('td');
-                const token_transfer_statement = `transfer ${depositorInfoVals[2].innerText} rupee# on behalf of ${depositorInfoVals[1].innerText}`;
+                const depositing_amount = Number(depositorInfoVals[2].innerText);
+                const token_transfer_statement = `transfer ${depositing_amount} rupee# on behalf of ${depositorInfoVals[1].innerText}`;
                 const tx_amount = 0.01;
 
                 if(typeof websocket_name!=="string" || typeof requesting_supernode!=="string") return;
@@ -13881,8 +13905,9 @@
                 const confirmTx = confirm(token_transfer_statement);
                 if(!confirmTx) return;
 
-                // Get the closest Supernode alive for this user
+                const deposit_req = await readDB('deposits', deposit_id);
                 
+                // Get the closest Supernode alive for this user
                 let closestSuList = await localbitcoinplusplus.kademlia
                     .determineClosestSupernode(websocket_name, 
                     localbitcoinplusplus.master_configurations.supernodesPubKeys.length);
@@ -13922,7 +13947,6 @@
                 }
                 if (typeof flo_txid!=="string" || flo_txid.length < 1) return;
                 
-
                 let req_body = {
                     trader_flo_address:
                     localbitcoinplusplus.wallets.my_local_flo_address,
@@ -13945,6 +13969,8 @@
                     .flo_api_testnet}/api/v1.0/getTransactionDetails/${flo_txid}`;
                 }
 
+                deposit_req.token_transfer_txid = flo_txid;
+
                 let n=1;
                 (async function validateTxidInBlockchain() {
                     // Validate Flo txid
@@ -13958,7 +13984,10 @@
                     ) {
                         RM_RPC.send_rpc
                         .call(this, "cashier_confirms_user_cash_deposit", req_body)
-                        .then(resp => doSend(websocket_conn, resp));
+                        .then(resp => doSend(websocket_conn, resp))
+                    
+                        deposit_req.token_transfer_success = true;
+                        updateinDB('deposits', deposit_req);
 
                         btn.classList.remove('cnf_deposits');
                         btn.classList.remove('btn-info');
@@ -13968,11 +13997,22 @@
                         return true;
 
                     } else if(n<=20) {
-                        validateTxidInBlockchain();
-                        n++;
+                         validateTxidInBlockchain();
+                         n++;
                     } else {
                         // Failed to validate token transfer. Save in local db
                         await addDB('failed_deposit_confirms', req_body, req_body.flo_txid);
+                        
+                        // Txid could not be validated
+                        req_body.failed_deposit_txid_cnf = true;
+                        req_body.amount_deposited = depositing_amount;
+
+                        RM_RPC.send_rpc
+                        .call(this, "cashier_confirms_user_cash_deposit", req_body)
+                        .then(resp => doSend(websocket_conn, resp));
+
+                        deposit_req.token_transfer_success = false;
+                        updateinDB('deposits', deposit_req);
                         
                         btn.classList.remove('cnf_deposits');
                         btn.classList.remove('btn-info');
@@ -14041,6 +14081,10 @@
                     })
                     .then(resp => doSend(websocket_conn, resp));
 
+                    const withdraw_req = await readDB('withdraws', withdraw_id);
+                    withdraw_req.upi_txid = upi_txid;
+                    await updateinDB('withdraws', withdraw_req);
+
                     btn.classList.remove('cnf_withdrawal');
                     btn.classList.remove('btn-info');
                     btn.classList.add('btn-success');
@@ -14050,6 +14094,52 @@
                     
                 });
             });
+        }
+
+        async function display_processed_deposits() {
+            try {
+                const all_deposits = await readAllDB('deposits');
+                let t = `<ul>`;
+                for (const ad of all_deposits) {
+                    if(ad.token_transfer_txid !=="string") continue;
+                    t += `<li>User UPI: ${ad.user_upi}</li>`;
+                    t += `<li>Time: ${ad.timestamp}</li>`;
+                    t += `<li>Amount: ${ad.depositing_amount}</li>`;
+                    t += `<li>Currency: ${ad.currency}</li>`;
+                    t += `<li>Token Transfer Id: ${ad.token_transfer_txid}</li>`;
+                    t += `<li>Token Transfer Success: ${ad.token_transfer_success}</li>`;
+                    t += `<li></li>`;
+                }
+                t += `</ul>`;
+                const processed_cash_deposits_list = document.getElementById('processed_cash_deposits_list');
+                processed_cash_deposits_list.innerHTML = t;
+
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        async function display_processed_withdraws() {
+            try {
+                const all_withdraws = await readAllDB('withdraws');
+                let t = `<ul>`;
+                for (const ad of all_withdraws) {
+                    if(ad.upi_txid !=="string") continue;
+                    t += `<li>Cashier UPI TXID: ${ad.upi_txid}</li>`;
+                    t += `<li>Time: ${ad.timestamp}</li>`;
+                    t += `<li>Amount: ${ad.withdraw_amount}</li>`;
+                    t += `<li>Currency: ${ad.currency}</li>`;
+                    t += `<li>Supernode Token Transfer Id: ${ad.token_transfer_txid}</li>`;
+                    t += `<li></li>`;
+                }
+                t += `</ul>`;
+
+                const processed_cash_withdraws_list = document.getElementById('processed_cash_withdraws_list');
+                processed_cash_withdraws_list.innerHTML = t;
+
+            } catch(e) {
+                console.error(e);
+            }
         }
 
         async function transferTokensManually() {

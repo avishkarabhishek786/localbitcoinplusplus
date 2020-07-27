@@ -15138,6 +15138,10 @@
             function removeWhiteSpaces(text = '') {
                 return text.replace(/\s/g, '');
             }
+
+            function removeNewLines(text = '') {
+                return text.replace(/[\n\r]/g, '');
+            }
             // log event in the console
             function LogEvent(msg) {
                 log.textContent += "> " + msg + "\n";
@@ -19592,29 +19596,37 @@
                                             || user_deposit_req === null) return;
 
                                         let txidUrlDeposit = '';
-                                        if (ENVR === "LIVE") {
-                                            txidUrlDeposit = localbitcoinplusplus.server.flo_api_mainnet;
+                                        let amount_deposited;
+
+                                        if(typeof params.failed_deposit_txid_cnf!=="boolean") {
+
+                                            if (ENVR === "LIVE") {
+                                                txidUrlDeposit = localbitcoinplusplus.server.flo_api_mainnet;
+                                            } else {
+                                                txidUrlDeposit = localbitcoinplusplus.server.flo_api_testnet;
+                                            }
+
+                                            // Validate Flo txid
+                                            const validate_flo_txid = await helper_functions.chainAjaxRequest("TOKEN_TX_DETAIL", txidUrlDeposit, [params.flo_txid]);
+
+                                            if (typeof validate_flo_txid !== "object"
+                                                || typeof validate_flo_txid.transactionDetails !== "object"
+                                                || typeof validate_flo_txid.transactionDetails.floData !== "string"
+                                                || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
+                                            )
+                                                throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
+
+                                            /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/
+                                            const cashiers_pub_keys = Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers));
+                                            const cashiers_flo_keys = Object.values(cashiers_pub_keys).map(m => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(m));
+                                            if (!cashiers_flo_keys.includes(validate_flo_txid.transactionDetails.vin[0].addr)) return;
+
+                                            amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
+                                        } else if(typeof Number(params.amount_deposited)=="number" && Number(params.amount_deposited)>0) {
+                                            amount_deposited = Number(params.amount_deposited);
                                         } else {
-                                            txidUrlDeposit = localbitcoinplusplus.server.flo_api_testnet;
+                                            throw new Error('No amount found in Deposit Id Cashier confirmation: '+params.deposit_id);
                                         }
-
-                                        // Validate Flo txid
-                                        const validate_flo_txid = await helper_functions.chainAjaxRequest("TOKEN_TX_DETAIL", txidUrlDeposit, [params.flo_txid]);
-
-                                        if (typeof validate_flo_txid !== "object"
-                                            || typeof validate_flo_txid.transactionDetails !== "object"
-                                            || typeof validate_flo_txid.transactionDetails.floData !== "string"
-                                            || validate_flo_txid.transactionDetails.floData.length < 5 // without ':text'
-                                        )
-                                            throw new Error(`Error: Txid ${params.flo_txid} not found in Blockchain.`);
-
-                                        /** IMP: CHECK WHETHER VIN IS A VALID SUPERNODE FLO ID HERE **/
-                                        const cashiers_pub_keys = Object.keys(JSON.parse(localbitcoinplusplus.master_configurations.cashiers));
-                                        const cashiers_flo_keys = Object.values(cashiers_pub_keys).map(m => bitjs[localbitcoinplusplus.BASE_BLOCKCHAIN].pubkey2address(m));
-                                        if (!cashiers_flo_keys.includes(validate_flo_txid.transactionDetails.vin[0].addr)) return;
-
-                                        let amount_deposited = Number(validate_flo_txid.transactionDetails.floData.match(/\d+/g)[0]);
-
                                         // Update balances datastore
                                         const user_cash_id = `${user_deposit_req.trader_flo_address}_${user_deposit_req.currency}`;
                                         const get_user_balance = await _readDB('cash_balances', user_cash_id);
@@ -20690,7 +20702,7 @@
                             if (custom_floData.length > 0) {
                                 sendFloData = custom_floData;
                             }
-                            sendFloData = removeWhiteSpaces(sendFloData);
+                            sendFloData = removeNewLines(sendFloData);
                             if (crypto_type == "FLO" || crypto_type == "FLO_TEST") {
                                 trx.addflodata(sendFloData); // flochange .. create this function
                             }
