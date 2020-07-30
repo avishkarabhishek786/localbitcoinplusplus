@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cashier Token Transfers</title>
+
+    <style>
+
+        body {
+            margin: 10px 10px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+        
+        .myInput {
+            background-image: url('/css/searchicon.png');
+            background-position: 10px 10px;
+            background-repeat: no-repeat;
+            width: 100%;
+            font-size: 16px;
+            padding: 12px 20px 12px 40px;
+            border: 1px solid #ddd;
+            margin-bottom: 12px;
+        }
+        
+        .myTable {
+            border-collapse: separate;
+            width: 100%;
+            font-size: 18px;
+        }
+        
+        .myTable th, #myTable td {
+            text-align: left;
+            padding: 12px;
+        }
+        
+        .myTable tr {
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .myTable tr.header, #myTable tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .myTable td {
+            padding-top: .5em;
+            padding-bottom: .5em;
+        }
+    </style>
+</head>
+<body>
+
+    <div>
+        <h2>Insert Flo Address of Cashier:</h2>
+        <input type="text" id="cashier_addr_input">
+        <button id="cashier_addr_input_btn">Button</button>
+    </div>
+
+    <h2>Cashier's Requests List </h4>
+    <input
+        type="text"
+        id="searchbar_data"
+        class="myInput"
+        onkeyup="search_data()"
+        placeholder="Search anything"
+    />
+
+    <table id="data_list" class="myTable">
+        <tr class="header" id="tbl_head">
+            <th>Flodata</th>
+            <th>Token Amount</th>
+            <th>Event Type</th>
+            <th>Event Time</th>
+        </tr>
+    </table>
+
+    <div>
+        <h3>Total Deposits: <span id="deposits_sum"></span></h3>
+        <h3>Total Withdraws: <span id="withdraws_sum"></span></h3>
+    </div>
+
+    <script>
+        // https://stackoverflow.com/a/32062237/5348972
+        function getFormattedDate(timestamp=0) {
+            try {
+                var date = (timestamp>0) ? new Date(timestamp) : new Date();
+
+                var month = date.getMonth() + 1;
+                var day = date.getDate();
+                var hour = date.getHours();
+                var min = date.getMinutes();
+                var sec = date.getSeconds();
+
+                month = (month < 10 ? "0" : "") + month;
+                day = (day < 10 ? "0" : "") + day;
+                hour = (hour < 10 ? "0" : "") + hour;
+                min = (min < 10 ? "0" : "") + min;
+                sec = (sec < 10 ? "0" : "") + sec;
+
+                var str = date.getFullYear() + "-" + month + "-" + day + " " +  hour + ":" + min + ":" + sec;
+
+                return str;
+
+            } catch(e) {
+                console.error(e);
+                alert('Timestamp to date conversion failed.');
+            }
+        }
+
+        function dateToTimestamp(date) {
+            try {
+                return new Date(date).getTime();
+            } catch(e) {
+                console.error(e);
+                alert('Invalid Date');
+            }
+        }
+    </script>
+
+    <script>
+        
+        async function getAlltxes(addr='') {
+            try {
+                if(addr.length<1) throw new Error("Please enter a valid FLO address");
+                const api = `https://ranchimallflo.duckdns.org/api/v1.0/getFloAddressTransactions?floAddress=${addr}`;
+                const all_txes = await fetch(api);
+                if (all_txes.ok) { 
+                    const all_txes_json = await all_txes.json();
+                    display_data_table(all_txes_json);
+                } else {
+                    console.error("HTTP-Error: " + all_txes.status);
+                }
+                return true;
+            } catch(e) {
+                console.error(e);
+            }
+        }
+        
+        const cashier_addr_input = document.getElementById('cashier_addr_input');
+        const cashier_addr_input_btn = document.getElementById('cashier_addr_input_btn');
+        cashier_addr_input_btn.onclick = async function() {
+            this.disabled = true;
+            await getAlltxes(cashier_addr_input.value);
+            this.disabled = false;
+        }
+
+    </script>
+
+    <script>
+
+        function display_data_table(all_txes_json='') {
+            try {
+                let t = ``;
+                let data_table = document.getElementById("data_list");
+                let tbl_head = document.getElementById("tbl_head");
+                
+                data_table.innerHTML = '';
+
+                if(typeof all_txes_json.transactions == "object") {
+                    let t = `${tbl_head.outerHTML}`;
+                    for (const tx_hash in all_txes_json.transactions) {
+                        const tx_data = all_txes_json.transactions[tx_hash];
+                        console.log(tx_data.parsedFloData);
+                        let {flodata, tokenAmount, tokenIdentification, transferType, type} = tx_data.parsedFloData;
+                        let user_action = '';
+                        let event_action_class = '';
+                        if(flodata.indexOf('on behalf of')>-1) {
+                            user_action = 'deposit';
+                            event_action_class = 'deposit_action_class'
+                        } else if(flodata.indexOf('for')>-1) {
+                            user_action = 'withdraw';
+                            event_action_class = 'withdraw_action_class'
+                        }
+                        let txtime = getFormattedDate(tx_data.transactionDetails.blocktime*1000);
+
+                        if(tokenIdentification!=='rupee' || transferType!=='token' || type!=="transfer") continue;
+                
+                        t += `<tr>`;
+                        t += `<td>${flodata}</td>`;
+                        t += `<td class='${event_action_class}'>${tokenAmount}</td>`;
+                        t += `<td>${user_action}</td>`;
+                        t += `<td>${txtime}</td>`;
+                        t += `</tr>`;
+                    }
+                    data_table.insertAdjacentHTML("beforeend", t);
+                    sum_total_deposits_withdraws();
+                } else alert('No data found');
+
+            } catch(e) {
+
+            }
+        }
+
+        function sum_total_deposits_withdraws() {
+            try {
+                const deposits_sum = document.getElementById('deposits_sum');
+                const withdraws_sum = document.getElementById('withdraws_sum');
+                
+                const deposit_token_amount_list = document.getElementsByClassName('deposit_action_class');
+                const withdraw_token_amount_list = document.getElementsByClassName('withdraw_action_class');
+                let total_deposits = Object.values(deposit_token_amount_list)
+                .reduce((acc, cv) => {
+                    if(cv.parentElement.style.display!=="none") {
+                        if(typeof acc!=="number") acc=0;
+                        if(!isNaN(cv.innerText)) {
+                            return Number(acc) + Number(cv.innerText);
+                        } else {
+                            console.warn('Invalid value', cv.parentElement);
+                        }
+                    }
+                    return Number(acc);
+                }, 0);
+                let total_withdraws = Object.values(withdraw_token_amount_list)
+                .reduce((acc, cv) => {
+                    if(cv.parentElement.style.display!=="none") {
+                        if(typeof acc!=="number") acc=0;
+                        if(!isNaN(cv.innerText)) {
+                            return Number(acc) + Number(cv.innerText);
+                        } else {
+                            console.warn('Invalid value', cv.parentElement);
+                        }
+                    }
+                    return Number(acc);
+                }, 0);
+
+                deposits_sum.innerText = total_deposits;
+                withdraws_sum.innerText = total_withdraws;
+
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        function search_data() {
+            // Declare variables
+            var input, filter, table, tr, td, i, txtValue;
+            input = document.getElementById("searchbar_data");
+            filter = input.value.toUpperCase();
+            table = document.getElementById("data_list");
+            tr = table.getElementsByTagName("tr");
+
+            // Loop through all table rows, and hide those who don't match the search query
+            for (i = 0; i < tr.length; i++) {
+                td1 = tr[i].getElementsByTagName("td")[0];
+                td2 = tr[i].getElementsByTagName("td")[1];
+                td3 = tr[i].getElementsByTagName("td")[2];
+                td4 = tr[i].getElementsByTagName("td")[3];
+                if (td1 || td2 || td3 || td4) {
+                txtValue1 = td1.textContent || td1.innerText;
+                txtValue2 = td2.textContent || td2.innerText;
+                txtValue3 = td3.textContent || td3.innerText;
+                txtValue4 = td4.textContent || td4.innerText;
+                    if (
+                        txtValue1.toUpperCase().indexOf(filter) > -1 ||
+                        txtValue2.toUpperCase().indexOf(filter) > -1 ||
+                        txtValue3.toUpperCase().indexOf(filter) > -1 ||
+                        txtValue4.toUpperCase().indexOf(filter) > -1
+                    ) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }
+            }
+            sum_total_deposits_withdraws();
+            }
+    </script>
+
+</body>
+</html>
