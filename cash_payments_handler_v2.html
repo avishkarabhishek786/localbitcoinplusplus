@@ -246,6 +246,7 @@
                 <th>User FLO Id</th>
                 <th>Depositing Amount</th>
                 <th>Currency</th>
+                <th>Datetime</th>
                 <th>Action</th>
               </tr>
             </table>
@@ -13480,6 +13481,7 @@
                             t += `<td> ${m.trader_flo_address} </td>`;
                             t += `<td> ${m.depositing_amount} </td>`;
                             t += `<td> ${m.currency} </td>`;
+                            t += `<td> ${m.timestamp} </td>`;
                             if(m.status===1) {
                                 // This deposit, token transfer was done but supernode was not informed
                                 if(failed_confirms_in_deposits_ids.includes(m.id)) {
@@ -13930,7 +13932,10 @@
                 const depositorInfo = document.getElementById(`tr_${deposit_id}`);
                 const depositorInfoVals = depositorInfo.getElementsByTagName('td');
                 const depositing_amount = Number(depositorInfoVals[2].innerText);
-                const token_transfer_statement = `transfer ${depositing_amount} rupee# on behalf of ${depositorInfoVals[1].innerText}`;
+                const depositor_id = depositorInfoVals[1].innerText;
+                const depositor_upi = depositorInfoVals[0].innerText;
+                const deposit_time = Number(depositorInfoVals[4].innerText);
+                const token_transfer_statement = `transfer ${depositing_amount} rupee# on behalf of ${depositor_id}`;
                 const tx_amount = 0.01;
 
                 if(typeof websocket_name!=="string" || typeof requesting_supernode!=="string") return;
@@ -13989,6 +13994,10 @@
                     flo_txid: flo_txid,
                     deposit_id: deposit_id,
                     parent_supernode: websocket_name,
+                    depositor_id: depositor_id,
+                    depositor_upi: depositor_upi,
+                    amount_deposited: depositing_amount,
+                    deposit_time: deposit_time
                 }
 
                 let txidUrlDeposit = '';
@@ -14007,10 +14016,10 @@
                 let n=1;
                 (async function validateTxidInBlockchain() {
                     // Validate Flo txid
-                    await delay(60000); 
+                    //await delay(60000); 
                     const validate_flo_txid = await helper_functions.ajaxGet(txidUrlDeposit);
                     console.log(validate_flo_txid);
-                    if(typeof validate_flo_txid == "object"
+                    if(0 && typeof validate_flo_txid == "object"
                     && typeof validate_flo_txid.transactionDetails == "object"
                     && typeof validate_flo_txid.transactionDetails.floData == "string"
                     && validate_flo_txid.transactionDetails.floData.length > 5 // without ':text'
@@ -14029,16 +14038,19 @@
 
                         return true;
 
-                    } else if(n<=20) {
+                    } else if(0 && n<=20) {
                          validateTxidInBlockchain();
                          n++;
                     } else {
+
+                        await floCloudAPI.sendApplicationData(req_body, type="failed_cashier_confirms_in_deposits", 
+                        {receiverID: myFloID});
+
                         // Failed to validate token transfer. Save in local db
                         await addDB('failed_deposit_confirms', req_body, req_body.flo_txid);
                         
                         // Txid could not be validated
                         req_body.failed_deposit_txid_cnf = true;
-                        req_body.amount_deposited = depositing_amount;
 
                         RM_RPC.send_rpc
                         .call(this, "cashier_confirms_user_cash_deposit", req_body)
@@ -23629,14 +23641,9 @@ Bitcoin.Util = {
     </script>
     <script id="onLoadStartUp">
         function onLoadStartUp() {
-
-            //floDapps.addStartUpFunction('Sample', Promised Function)
-            //floDapps.setAppObjectStores({sampleObs1:{}, sampleObs2:{options{autoIncrement:true, keyPath:'SampleKey'}, Indexes:{sampleIndex:{}}}})
-            //floDapps.setCustomPrivKeyInput( () => { FUNCTION BODY *must return private key* } )
-
             floDapps.launchStartUp().then(result => {
                 console.log(result)
-                alert(`Welcome FLO_ID: ${myFloID}`)
+                alert(`Welcome FLO_ID: ${myFloID}. Cloud code is ready.`)
                 //App functions....
             }).catch(error => console.error(error))
         }
