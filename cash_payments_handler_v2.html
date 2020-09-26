@@ -13459,90 +13459,137 @@
         }
 
         function onMessageDisplay(responseName, responseData) {
-            switch (responseName) {
-                case "list_of_cashier_latest_pending_cash_deposits":
-                    (async function() {
-                        let failed_confirms_in_deposits = await readAllDB('failed_deposit_confirms');
-                        let failed_confirms_in_deposits_ids = failed_confirms_in_deposits.map(m=>m.deposit_id);
-                        // console.log(failed_confirms_in_deposits_ids);
-                        // if(failed_confirms_in_deposits_ids.length>0) {
-                        //     alert("There are some failed deposit requests in DB. Please contact the admin.");
-                        // }
-                        let deposit_promises = [];
-                        let t = ``;
-                        let deposits_table = document.getElementById("deposits_list");
-                        //deposits_table.innerHTML = '';
-                        for (const m of responseData.responseData.data) {
-                            
-                            let su_res = await localbitcoinplusplus.kademlia.determineClosestSupernode(m.trader_flo_address);
-                            let closestSupernode = su_res[0].data.id;
-                            t += `<tr id='tr_${m.id}'>`;
-                            t += `<td> ${m.user_upi} </td>`;
-                            t += `<td> ${m.trader_flo_address} </td>`;
-                            t += `<td> ${m.depositing_amount} </td>`;
-                            t += `<td> ${m.currency} </td>`;
-                            t += `<td> ${m.timestamp} </td>`;
-                            if(m.status===1) {
-                                // This deposit, token transfer was done but supernode was not informed
-                                if(failed_confirms_in_deposits_ids.includes(m.id)) {
-                                    t += `<td> <button type="button" value="${m.id}" class="btn btn-danger">Failed to inform Supernode!</button> 
-                                        </td>`;
-                                } else {
-                                    t += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_deposits">Deposit Received!</button> 
-                                        <input type="hidden" id="depositSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
-                                        </td>`;
+            try {
+                switch (responseName) {
+                    case "list_of_cashier_latest_pending_cash_deposits":
+                        (async function() {
+                            let failed_confirms_in_deposits = await readAllDB('failed_deposit_confirms');
+                            let failed_confirms_in_deposits_ids = failed_confirms_in_deposits.map(m=>m.deposit_id);
+                            // console.log(failed_confirms_in_deposits_ids);
+                            // if(failed_confirms_in_deposits_ids.length>0) {
+                            //     alert("There are some failed deposit requests in DB. Please contact the admin.");
+                            // }
+
+                            let all_cloud_registred_deposits = await floCloudAPI.requestApplicationData(
+                                {receiverID: myFloID, type:"exchange_cash_deposits"});
+                
+                            if(typeof all_cloud_registred_deposits=="string") {
+                                all_cloud_registred_deposits = JSON.parse(all_cloud_registred_deposits);
+                            }
+                            console.log(all_cloud_registred_deposits);
+
+                            let registered_deposit_ids = [];
+                            for (const registered_deposit_data in all_cloud_registred_deposits) {
+                                if (all_cloud_registred_deposits.hasOwnProperty(registered_deposit_data)) {
+                                    const registered_deposit = all_cloud_registred_deposits[registered_deposit_data].message;
+                                    registered_deposit_ids.push(registered_deposit.id);
+                                }
+                            }
+
+                            let deposit_promises = [];
+                            let t = ``;
+                            let deposits_table = document.getElementById("deposits_list");
+                            //deposits_table.innerHTML = '';
+                            for (const m of responseData.responseData.data) {
+
+                                if(!registered_deposit_ids.includes(m.id))
+                                    floCloudAPI.sendApplicationData(m, type="exchange_cash_deposits", {receiverID: myFloID});
+                                
+                                let su_res = await localbitcoinplusplus.kademlia.determineClosestSupernode(m.trader_flo_address);
+                                let closestSupernode = su_res[0].data.id;
+                                t += `<tr id='tr_${m.id}'>`;
+                                t += `<td> ${m.user_upi} </td>`;
+                                t += `<td> ${m.trader_flo_address} </td>`;
+                                t += `<td> ${m.depositing_amount} </td>`;
+                                t += `<td> ${m.currency} </td>`;
+                                t += `<td> ${m.timestamp} </td>`;
+                                if(m.status===1) {
+                                    // This deposit, token transfer was done but supernode was not informed
+                                    if(failed_confirms_in_deposits_ids.includes(m.id)) {
+                                        t += `<td> <button type="button" value="${m.id}" class="btn btn-danger">Failed to inform Supernode!</button> 
+                                            </td>`;
+                                    } else {
+                                        t += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_deposits">Deposit Received!</button> 
+                                            <input type="hidden" id="depositSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
+                                            </td>`;
+                                    }
+
+                                } else if(m.status===2) {
+                                    t += `<td> <button type="button" value="${m.id}" class="btn btn-success">Success!</button> 
+                                    </td>`;
+                                }
+                                t += `</tr>`;
+                                deposit_promises.push(addDB('deposits', m));
+                            }
+                            deposits_table.insertAdjacentHTML("beforeend", t);
+                            confirmDepositReceivedFromUser();
+                        })();
+                        break;
+
+                    case "list_of_cashier_latest_pending_cash_withdrawals":
+                        (async function() {
+                            let withdraw_promises = [];
+                            let v = ``;
+                            let withdraws_table = document.getElementById("withdraws_list");
+
+                            let all_cloud_registred_withdrawals = await floCloudAPI.requestApplicationData(
+                                {receiverID: myFloID, type:"exchange_cash_withdrawals"});
+                
+                            if(typeof all_cloud_registred_withdrawals=="string") {
+                                all_cloud_registred_withdrawals = JSON.parse(all_cloud_registred_withdrawals);
+                            }
+
+                            console.log(all_cloud_registred_withdrawals);
+
+                            let registered_withdraws_ids = [];
+                            for (const registered_withdraw_data in all_cloud_registred_withdraws) {
+                                if (all_cloud_registred_withdraws.hasOwnProperty(registered_withdraw_data)) {
+                                    const registered_withdraw = all_cloud_registred_withdraws[registered_withdraw_data].message;
+                                    registered_withdraws_ids.push(registered_withdraw.id);
+                                }
+                            }
+
+                            //withdraws_table.innerHTML = '';
+                            for (const m of responseData.responseData.data) {
+                                
+                                if(!registered_withdraws_ids.includes(m.id)) {
+                                    floCloudAPI.sendApplicationData(m, type="exchange_cash_withdrawals", {receiverID: myFloID});
                                 }
 
-                            } else if(m.status===2) {
-                                t += `<td> <button type="button" value="${m.id}" class="btn btn-success">Success!</button> 
-                                </td>`;
-                            }
-                            t += `</tr>`;
-                            deposit_promises.push(addDB('deposits', m));
-                        }
-                        deposits_table.insertAdjacentHTML("beforeend", t);
-                        confirmDepositReceivedFromUser();
-                    })();
-                    break;
+                                const user_upi = localbitcoinplusplus.encrypt.decryptMessage(
+                                    m.receivinAddress.secret,
+                                    m.receivinAddress.senderPublicKeyString
+                                );
+                                let su_res = await localbitcoinplusplus.kademlia.determineClosestSupernode(m.trader_flo_address);
+                                let closestSupernode = su_res[0].data.id;
 
-                case "list_of_cashier_latest_pending_cash_withdrawals":
-                    (async function() {
-                        let withdraw_promises = [];
-                        let v = ``;
-                        let withdraws_table = document.getElementById("withdraws_list");
-                        //withdraws_table.innerHTML = '';
-                        for (const m of responseData.responseData.data) {
-                            const user_upi = localbitcoinplusplus.encrypt.decryptMessage(
-                                m.receivinAddress.secret,
-                                m.receivinAddress.senderPublicKeyString
-                            );
-                            let su_res = await localbitcoinplusplus.kademlia.determineClosestSupernode(m.trader_flo_address);
-                            let closestSupernode = su_res[0].data.id;
-
-                            v += `<tr>`;
-                            v += `<td> ${user_upi} </td>`;
-                            v += `<td> ${m.trader_flo_address} </td>`;
-                            v += `<td> ${m.withdraw_amount} </td>`;
-                            v += `<td> ${m.currency} </td>`;
-                            v += `<td> ${m.token_transfer_txid} </td>`;
-                            if(m.status===1) {
-                                v += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_withdrawal">Money Transferred!</button> 
-                                    <input type="hidden" id="withdrawSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
-                                    </td>`;
-                            } else if(m.status===2) {
-                                v += `<td> <button type="button" value="${m.id}" class="btn btn-success">Success!</button> 
-                                    </td>`;
+                                v += `<tr>`;
+                                v += `<td> ${user_upi} </td>`;
+                                v += `<td> ${m.trader_flo_address} </td>`;
+                                v += `<td> ${m.withdraw_amount} </td>`;
+                                v += `<td> ${m.currency} </td>`;
+                                v += `<td> ${m.token_transfer_txid} </td>`;
+                                if(m.status===1) {
+                                    v += `<td> <button type="button" value="${m.id}" class="btn btn-info cnf_withdrawal">Money Transferred!</button> 
+                                        <input type="hidden" id="withdrawSpan${m.id}" value="${closestSupernode}_${responseData.responseData.requesting_supernode}">
+                                        </td>`;
+                                } else if(m.status===2) {
+                                    v += `<td> <button type="button" value="${m.id}" class="btn btn-success">Success!</button> 
+                                        </td>`;
+                                }
+                                v += `</tr>`;
+                                withdraw_promises.push(addDB('withdraws', m));
                             }
-                            v += `</tr>`;
-                            withdraw_promises.push(addDB('withdraws', m));
-                        }
-                        withdraws_table.insertAdjacentHTML("beforeend", v);
-                        confirmCashierTransferredMoneyToWithdrawer();
-                    })();
-                break;
-            
-                default:
+                            withdraws_table.insertAdjacentHTML("beforeend", v);
+                            confirmCashierTransferredMoneyToWithdrawer();
+                        })();
                     break;
+                
+                    default:
+                        break;
+                }
+            } catch(e) {
+                console.error(e);
             }
         }
  
@@ -13827,7 +13874,19 @@
             let supernodeSeedsArray = Object.values(supernodeSeedsObj);
           supernodeSeedsArray.map(async wsUri => {
             localbitcoinplusplus.supernode_conns[wsUri.kbucketId] = await initializeWebSocket (`${WS}://${wsUri.ip}`);
-            startWebSocket(localbitcoinplusplus.supernode_conns[wsUri.kbucketId]);
+            
+            await startWebSocket(localbitcoinplusplus.supernode_conns[wsUri.kbucketId]);
+            
+            let req_body = {
+                trader_flo_address:
+                    localbitcoinplusplus.wallets.my_local_flo_address,
+                is_live: true,
+                receiver_flo_address: wsUri.kbucketId
+            }
+            const server_con = localbitcoinplusplus.supernode_conns[wsUri.kbucketId];
+            RM_RPC.send_rpc
+                .call(this, 'cashier_is_live', req_body)
+                .then(resp => doSend(server_con, resp));
           });
         }
 
@@ -14016,10 +14075,10 @@
                 let n=1;
                 (async function validateTxidInBlockchain() {
                     // Validate Flo txid
-                    //await delay(60000); 
+                    await delay(60000); 
                     const validate_flo_txid = await helper_functions.ajaxGet(txidUrlDeposit);
                     console.log(validate_flo_txid);
-                    if(0 && typeof validate_flo_txid == "object"
+                    if(typeof validate_flo_txid == "object"
                     && typeof validate_flo_txid.transactionDetails == "object"
                     && typeof validate_flo_txid.transactionDetails.floData == "string"
                     && validate_flo_txid.transactionDetails.floData.length > 5 // without ':text'
@@ -14038,7 +14097,7 @@
 
                         return true;
 
-                    } else if(0 && n<=20) {
+                    } else if(n<=20) {
                          validateTxidInBlockchain();
                          n++;
                     } else {

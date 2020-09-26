@@ -11409,8 +11409,8 @@
             enumerable: false
         });
 
-        const ENVR = 'LIVE'; // LIVE, TEST  
-        const WS = 'wss';
+        const ENVR = 'TEST'; // LIVE, TEST  
+        const WS = 'ws';
         const DBName = "paymentsHandlerDBRemote";
 
       if(ENVR === 'LIVE') {
@@ -13792,7 +13792,19 @@
             let supernodeSeedsArray = Object.values(supernodeSeedsObj);
           supernodeSeedsArray.map(async wsUri => {
             localbitcoinplusplus.supernode_conns[wsUri.kbucketId] = await initializeWebSocket (`${WS}://${wsUri.ip}`);
-            startWebSocket(localbitcoinplusplus.supernode_conns[wsUri.kbucketId]);
+            
+            await startWebSocket(localbitcoinplusplus.supernode_conns[wsUri.kbucketId]);
+            
+            let req_body = {
+                trader_flo_address:
+                    localbitcoinplusplus.wallets.my_local_flo_address,
+                is_live: true,
+                receiver_flo_address: wsUri.kbucketId
+            }
+            const server_con = localbitcoinplusplus.supernode_conns[wsUri.kbucketId];
+            RM_RPC.send_rpc
+                .call(this, 'cashier_is_live', req_body)
+                .then(resp => doSend(server_con, resp));
           });
         }
 
