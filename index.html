@@ -17448,6 +17448,36 @@ slot::slotted(.hide-completely){
 
                         let master_data = '';
 
+                        text = `masterFLOPubKey=03EA5E2CAB18DA585400D6EC569438D415FAF200528E05D0E2B9BEAA2B5C3DCA90
+                        #!#tradableAsset1=BTC,FLO,BTC_TEST,FLO_TEST#!#tradableAsset2=INR,USD,
+                        #!#validTradingAmount=10,50,100,#!#btcTradeMargin=5000
+                        #!#MaxBackups=1
+                        #!#waitTime={"normaldelay":60000, "exportdelay":60000, "syncdelay":60000, "hugedelay":60000}
+                        #!#ordersLife={"trade":300000, "cryptoDeposit":900000, "cryptoWithdraw":300000, "cashDeposit":900000, "cashWithdraw":900000, "update_prices_time":300000}
+                        #!#miners_fee={"btc":0.0005, "flo":0.001}
+
+                        #!#supernodesPubKeys=
+                        026FCC6CFF6EB3A39E54BEB6E13FC2F02C3A93F4767AA80E49E7E876443F95AE5F,
+                        0349B08AA1ABDCFFB6D78CD7C949665AD2FF065EA02B3C6C47A5E9592C9A1C6BCB,
+                        039B4AA00DBFC0A6631DE6DA83526611A0E6B857D3579DF840BBDEAE8B6898E3B6,
+                        0315C3A20FE7096CC2E0F81A80D5F1A687B8F9EFA65242A0B0881E1BA3EE7D7D53,
+                        03C8E3836C9A77E2AF03D4265D034BA85732738919708EAF6A16382195AE796EDF,
+                        03F7493F11B8E44B9798CD434D20FBE7FA34B9779D144984889D11A17C56A18742
+
+                        #!#specialNodes=02348523EB008BD37BF297AA360757062CB9D153C371EE727349A02F0B67910613,03C38E6523D6A2C45E00E60DC072E4D4340007F8A0026F134DCBBC670E4C44D31C
+                        #!#cashiers={"032871A74D2DDA9D0DE7135F58B5BD2D7F679D2CCA20EA7909466D1A6912DF4022":{"upi":"johnDoe@upi", "currencies":["INR"], "is_live":false},
+                        "03DB4A12EB543B293DDBB0CE314C46C36D6761294AFBB7264A6D78F710FFD97CF0":{"upi":"janeDoe@upi", "currencies":["INR", "USD"], "is_live":false}}
+                        #!#ShamirsMaxShares=8#!#supernodeSeeds={
+                        "ranchimall1":{"ip":"127.0.0.1:9111","kbucketId":"oZxHcbSf1JC8t5GjutopWYXs7C6Fe9p7ps"},
+                        "ranchimall2":{"ip":"127.0.0.1:9112","kbucketId":"oTWjPupy3Z7uMdPcu5uXd521HBkcsLuSuM"},
+                        "ranchimall3":{"ip":"127.0.0.1:9113","kbucketId":"odYA6KagmbokSh9GY7yAfeTUZRtZLwecY1"},
+                        "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
+                        "ranchimall5":{"ip":"127.0.0.1:9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
+                        "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
+                        ///return callback(localStorage.lppconf);
+
+                        return callback(text);
+
                         if (ENVR === 'LIVE') {
                             master_data = await helper_functions
                                 .chainAjaxRequest("TXES_BY_ADDRESS", localbitcoinplusplus.server.flo_mainnet, [localbitcoinplusplus.RM_FLO_SENDING_ADDR]);
@@ -21329,6 +21359,7 @@ slot::slotted(.hide-completely){
                                             function (asset1) {
                                                 localbitcoinplusplus.master_configurations.tradableAsset2.forEach(
                                                     async function (asset2) {
+                                                        await RM_TRADE.resolve_current_crypto_price_in_fiat(asset1, asset2);
                                                         live_trading_prices[`${asset1}_${asset2}`] = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`];
                                                         let trade_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife)['trade'];
                                                         let last_price_updated_time = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`]["timestamp"];
@@ -25680,13 +25711,15 @@ slot::slotted(.hide-completely){
                     async resolve_current_crypto_price_in_fiat(crypto_code, currency_code) {
                         let today = +new Date();
                         const RM_TRADE = new localbitcoinplusplus.trade();
-                        let last_update_of_fiat_price_obj = RM_TRADE.get_current_crypto_price_in_fiat(
+                        let last_update_of_fiat_price_obj = await RM_TRADE.fiat_to_crypto_exchange_rate(
                             crypto_code,
                             currency_code
                         );
+                        const lifetime = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
                         if (
                             typeof last_update_of_fiat_price_obj !== "object" ||
-                            today - last_update_of_fiat_price_obj.timestamp > 3600000
+                            last_update_of_fiat_price_obj == null ||
+                            today - last_update_of_fiat_price_obj.timestamp > lifetime.update_prices_time
                         ) {
                             last_update_of_fiat_price_obj = await RM_TRADE.set_current_crypto_price_in_fiat(
                                 crypto_code,
@@ -25760,21 +25793,9 @@ slot::slotted(.hide-completely){
                                 localbitcoinplusplus.wallets.my_local_flo_public_key;
                             rate_obj["sign"] = rate_obj_sign;
 
-                            updateinDB("crypto_fiat_rates", rate_obj)
-                                .then(() => {
-                                    showMessage(`INFO: ${crypto_code}<=>${fiat} rate updated.`);
-                                    this.resolve_current_crypto_price_in_fiat(
-                                        crypto_code,
-                                        fiat
-                                    );
-                                })
-                                .catch(() =>
-                                    console.error(
-                                        `ERROR: Failed to update ${crypto_code}<=>${fiat} rate.`
-                                    )
-                                );
-
-                            return true;
+                            await updateinDB("crypto_fiat_rates", rate_obj);
+                            showMessage(`INFO: ${crypto_code}<=>${fiat} rate updated.`);
+                            return rate_obj;
                         } else {
                             console.error(
                                 `ERROR: Failed to get valid response while fetching ${crypto_code}<=>${fiat} rate.`
@@ -25845,51 +25866,17 @@ slot::slotted(.hide-completely){
 
                         let rate_obj = null;
 
-                        if (crypto_code == "BTC" && currency_code == "USD") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
+                        if(crypto_code == "BTC_TEST") crypto_code = "BTC";
+                        if(crypto_code == "FLO_TEST") crypto_code = "FLO";
+
+                        try {
+                            rate_obj = await this.update_fiat_to_crypto_exchange_rate(
                                 crypto_code,
                                 currency_code
                             );
-                        }
-                        if (crypto_code == "BTC_TEST" && currency_code == "USD") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
-                                "BTC",
-                                currency_code
-                            );
-                        }
-                        if (crypto_code == "BTC" && currency_code == "INR") {
+                        } catch(e) {
                             rate_obj = await this.fiat_to_crypto_exchange_rate(
                                 crypto_code,
-                                currency_code
-                            );
-                        }
-                        if (crypto_code == "BTC_TEST" && currency_code == "INR") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
-                                "BTC",
-                                currency_code
-                            );
-                        }
-                        if (crypto_code == "FLO" && currency_code == "USD") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
-                                crypto_code,
-                                currency_code
-                            );
-                        }
-                        if (crypto_code == "FLO_TEST" && currency_code == "USD") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
-                                "FLO",
-                                currency_code
-                            );
-                        }
-                        if (crypto_code == "FLO" && currency_code == "INR") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
-                                crypto_code,
-                                currency_code
-                            );
-                        }
-                        if (crypto_code == "FLO_TEST" && currency_code == "INR") {
-                            rate_obj = await this.fiat_to_crypto_exchange_rate(
-                                "FLO",
                                 currency_code
                             );
                         }
@@ -27438,7 +27425,7 @@ slot::slotted(.hide-completely){
                 function updateMarketPrice(crypto_code, price, last_update=0) {
                     btnLoading('refresh_market_price', 'stop')
                     let price_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife);
-                    let expiry_time = helper_functions.getFormattedDate(+ new Date(last_update+price_life.trade));
+                    let expiry_time = helper_functions.getFormattedDate(+ new Date(last_update+price_life.update_prices_time));
                     if (crypto_code == "BTC") {
                         document.getElementById('btc_market_price').textContent = '₹' + price;
                         document.getElementById('btc_market_price_expiry').textContent = expiry_time;
@@ -35824,7 +35811,7 @@ slot::slotted(.hide-completely){
                                     function (asset1) {
                                         localbitcoinplusplus.master_configurations.tradableAsset2.forEach(
                                             async function (asset2) {
-                                                await RM_TRADE.update_fiat_to_crypto_exchange_rate(
+                                                await RM_TRADE.resolve_current_crypto_price_in_fiat(
                                                     asset1,
                                                     asset2
                                                 );
