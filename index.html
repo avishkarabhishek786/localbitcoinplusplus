@@ -16851,8 +16851,8 @@ slot::slotted(.hide-completely){
                     enumerable: false
                 });
 
-                const ENVR = 'LIVE'; // LIVE, TEST  
-                const WS = 'wss';
+                const ENVR = 'TEST'; // LIVE, TEST  
+                const WS = 'ws';
                 const DBName = "localbitcoinDBUser"; // localbitcoinDBRemote1
 
                 if (DBName !== "localbitcoinDBUser") {
@@ -17474,7 +17474,7 @@ slot::slotted(.hide-completely){
                         "ranchimall4":{"ip":"127.0.0.1:9114","kbucketId":"oJosrve9dBv2Hj2bfncxv2oEpTysg3Wejv"},
                         "ranchimall5":{"ip":"127.0.0.1:9115","kbucketId":"oMhv5sAzqg77sYHxmUGZWKRrVo4P4JQduS"},
                         "ranchimall6":{"ip":"127.0.0.1:9116","kbucketId":"oV1wCeWca3VawbBTfUGKA7Vd368PATnKAx"}}`;
-                        ///return callback(localStorage.lppconf);
+                        //return callback(localStorage.lppconf);
 
                         return callback(text);
 
@@ -21347,7 +21347,7 @@ slot::slotted(.hide-completely){
                             }
 
                             if (method == "live_prices_request") {
-                                RM_RPC.filter_legit_requests(params.trader_flo_address, function (
+                                RM_RPC.filter_legit_requests(params.trader_flo_address, async function (
                                     is_valid_request
                                 ) {
                                     if (
@@ -21355,29 +21355,27 @@ slot::slotted(.hide-completely){
                                         params.trader_flo_address.length > 0
                                     ) {
                                         let live_trading_prices = {};
-                                        localbitcoinplusplus.master_configurations.tradableAsset1.forEach(
-                                            function (asset1) {
-                                                localbitcoinplusplus.master_configurations.tradableAsset2.forEach(
-                                                    async function (asset2) {
-                                                        await RM_TRADE.resolve_current_crypto_price_in_fiat(asset1, asset2);
-                                                        live_trading_prices[`${asset1}_${asset2}`] = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`];
-                                                        let trade_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife)['trade'];
-                                                        let last_price_updated_time = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`]["timestamp"];
-                                                        let t1 = new Date(last_price_updated_time);
-                                                        let t2 = new Date(last_price_updated_time+trade_life);
-                                                        live_trading_prices[`${asset1}_${asset2}`]['price_valid_upto'] = dateDiff(t1, t2, 'mins');
-                                                    }
-                                                );
-                                            }
-                                        );
+                                        
+                                        for (const asset1 of localbitcoinplusplus.master_configurations.tradableAsset1) {
+                                            for (const asset2 of localbitcoinplusplus.master_configurations.tradableAsset2) {
+                                                if(asset1 !== "BTC" && asset1 !== "FLO") continue;
+                                                await RM_TRADE.resolve_current_crypto_price_in_fiat(asset1, asset2);
+                                                live_trading_prices[`${asset1}_${asset2}`] = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`];
+                                                let trade_life = JSON.parse(localbitcoinplusplus.master_configurations.ordersLife)['trade'];
+                                                let last_price_updated_time = localbitcoinplusplus.trade[`current_${asset1}_price_in_${asset2}`]["timestamp"];
+                                                let t1 = new Date(last_price_updated_time);
+                                                let t2 = new Date(last_price_updated_time+trade_life);
+                                                live_trading_prices[`${asset1}_${asset2}`]['price_valid_upto'] = dateDiff(t1, t2, 'mins');
+                                            }   
+                                        }
+
                                         let live_trading_prices_response_object = {
                                             live_trading_prices: live_trading_prices,
                                             receiver_flo_address: params.trader_flo_address
                                         }
                                         RM_RPC.send_rpc
                                             .call(this, "live_trading_prices_response", live_trading_prices_response_object)
-                                            .then(response => doSend(response)
-                                            );
+                                            .then(response => doSend(response));
                                     }
                                 });
                                 return true;
@@ -25669,22 +25667,23 @@ slot::slotted(.hide-completely){
                         throw new Error(err_msg);
                     },
                     get_current_crypto_price_in_fiat(crypto_code, currency_code) {
+                        if (crypto_code == "BTC_TEST") {
+                            crypto_code = "BTC";
+                        }
+                        if (crypto_code == "FLO_TEST") {
+                            crypto_code = "FLO";
+                        }
                         let current_rate_obj =
-                            localbitcoinplusplus.trade[
+                        localbitcoinplusplus.trade[
                             `current_${crypto_code}_price_in_${currency_code}`
-                            ];
+                        ];
+                        
                         if (
                             typeof current_rate_obj == "object" &&
                             localbitcoinplusplus.master_configurations.supernodesPubKeys.includes(
                                 current_rate_obj.supernode_pub_key
                             )
                         ) {
-                            if (crypto_code == "BTC_TEST") {
-                                crypto_code = "BTC";
-                            }
-                            if (crypto_code == "FLO_TEST") {
-                                crypto_code = "FLO";
-                            }
                             let rate_obj = {
                                 id: `${crypto_code}_${currency_code}`,
                                 crypto_code: crypto_code,
@@ -25706,9 +25705,11 @@ slot::slotted(.hide-completely){
                                 return current_rate_obj;
                             }
                             return false;
-                        }
+                        } else return false;
                     },
                     async resolve_current_crypto_price_in_fiat(crypto_code, currency_code) {
+                        if(crypto_code == "BTC_TEST") crypto_code = "BTC";
+                        if(crypto_code == "FLO_TEST") crypto_code = "FLO";
                         let today = +new Date();
                         const RM_TRADE = new localbitcoinplusplus.trade();
                         let last_update_of_fiat_price_obj = await RM_TRADE.fiat_to_crypto_exchange_rate(
@@ -25818,15 +25819,14 @@ slot::slotted(.hide-completely){
                                         typeof res.prices == "object"
                                     ) {
                                         let new_price = res.prices[`${crypto_code}${fiat}`];
-                                        resolve(new_price);
-                                        return;
+                                        return resolve(new_price);
                                     } else {
                                         reject(false);
                                     }
                                 })
                                 .catch(e => {
                                     console.error(e);
-                                    reject(false);
+                                    return reject(false);
                                 });
                         });
                     },
@@ -27083,7 +27083,7 @@ slot::slotted(.hide-completely){
                         clearAllInputs(thisPopup)
                         zIndex--;
                         thisPopup.parentNode.setAttribute('style', `z-index: ${zIndex}`)
-                        if (thisPopup.querySelector('.btn')) {
+                        if (thisPopup.querySelector('.action')) {
                             btnLoading(thisPopup.querySelector('.action'), 'stop')
                             thisPopup.querySelector("button[type='submit']").disabled = true;
                         }
