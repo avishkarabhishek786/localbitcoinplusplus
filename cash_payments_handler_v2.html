@@ -11449,8 +11449,8 @@
             enumerable: false
         });
 
-        const ENVR = 'LIVE'; // LIVE, TEST  
-        const WS = 'wss';
+        const ENVR = 'TEST'; // LIVE, TEST  
+        const WS = 'ws';
         const DBName = "paymentsHandlerDBRemote";
 
       if(ENVR === 'LIVE') {
@@ -12364,9 +12364,8 @@
                 myLocalFLOPublicKey: ""
               },
               "00-01"
-            )
-              .then(() => true)
-              .catch(e => false);
+            );
+            informServerCashierIsGoingOffline();
             return Promise.resolve(true);
           },
           wifToDecimal(pk_wif, isPubKeyCompressed = false) {
@@ -14400,6 +14399,27 @@
           };
         }
 
+        // Inform Supernodes on logout
+
+        // https://developer.mozilla.org/en-US/docs/Web/API/WindowEventHandlers/onbeforeunload
+        function informServerCashierIsGoingOffline() {
+            const RM_RPC = new localbitcoinplusplus.rpc;
+                
+            for(let conns in localbitcoinplusplus.supernode_conns) {
+                let req_body = {
+                    trader_flo_address:
+                        localbitcoinplusplus.wallets.my_local_flo_address,
+                    is_live: false,
+                    receiver_flo_address: conns
+                }
+                const server_con = localbitcoinplusplus.supernode_conns[conns];
+                RM_RPC.send_rpc
+                    .call(this, 'cashier_left', req_body)
+                    .then(resp => doSend(server_con, resp));
+            }
+        
+        }
+
         // paymentsHandlerDetails Database
         const dataBaseUIOperations = async function() {
           localbitcoinplusplus.is_ui_loaded = true;
@@ -14424,24 +14444,10 @@
                 `Connection successfull. Welocome to Local Bitcoin Plus Plus Cash Handling platform.`
               );
 
-              // https://developer.mozilla.org/en-US/docs/Web/API/WindowEventHandlers/onbeforeunload
               window.addEventListener('beforeunload', function (e) {
                 e.preventDefault(); 
                 delete e['returnValue'];
-                const RM_RPC = new localbitcoinplusplus.rpc;
-                
-                for(let conns in localbitcoinplusplus.supernode_conns) {
-                    let req_body = {
-                        trader_flo_address:
-                            localbitcoinplusplus.wallets.my_local_flo_address,
-                        is_live: false,
-                        receiver_flo_address: conns
-                    }
-                    const server_con = localbitcoinplusplus.supernode_conns[conns];
-                    RM_RPC.send_rpc
-                        .call(this, 'cashier_left', req_body)
-                        .then(resp => doSend(server_con, resp));
-                }
+                informServerCashierIsGoingOffline();
               });
             
             });
